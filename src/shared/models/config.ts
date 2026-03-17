@@ -3,6 +3,7 @@ import { revalidateTag, unstable_cache } from 'next/cache';
 import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import { config } from '@/config/db/schema';
+import { isCloudflareWorker } from '@/shared/lib/env';
 import {
   getAllSettingNames,
   publicSettingNames,
@@ -53,7 +54,11 @@ export const getConfigs = unstable_cache(
   async (): Promise<Configs> => {
     const configs: Record<string, string> = {};
 
-    if (!envConfigs.database_url) {
+    // D1 is only available inside Cloudflare Workers runtime (not during build)
+    if (envConfigs.database_provider === 'd1' && !isCloudflareWorker) {
+      return configs;
+    }
+    if (!envConfigs.database_url && envConfigs.database_provider !== 'd1') {
       return configs;
     }
 
@@ -79,7 +84,8 @@ export async function getAllConfigs(): Promise<Configs> {
   let dbConfigs: Configs = {};
 
   // only get configs from db in server side
-  if (typeof window === 'undefined' && envConfigs.database_url) {
+  const hasDb = envConfigs.database_url || (envConfigs.database_provider === 'd1' && isCloudflareWorker);
+  if (typeof window === 'undefined' && hasDb) {
     try {
       dbConfigs = await getConfigs();
     } catch (e) {

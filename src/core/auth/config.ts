@@ -5,6 +5,7 @@ import { getLocale } from 'next-intl/server';
 import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
+import { isCloudflareWorker } from '@/shared/lib/env';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
 import {
   getCookieFromCtx,
@@ -78,7 +79,8 @@ export async function getAuthOptions(configs: Record<string, string>) {
   return {
     ...authOptions,
     // Add database connection only when actually needed (runtime)
-    database: envConfigs.database_url
+    // D1 is only available inside Cloudflare Workers runtime (not during build)
+    database: (envConfigs.database_url || (envConfigs.database_provider === 'd1' && isCloudflareWorker))
       ? drizzleAdapter(db(), {
           provider: getDatabaseProvider(envConfigs.database_provider),
           schema: schema,
@@ -239,6 +241,8 @@ export function getDatabaseProvider(
     case 'sqlite':
       return 'sqlite';
     case 'turso':
+      return 'sqlite';
+    case 'd1':
       return 'sqlite';
     case 'postgresql':
       return 'pg';

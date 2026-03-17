@@ -7,6 +7,12 @@ compatibility_flags = ["nodejs_compat"]
 binding = "ASSETS"
 directory = ".open-next/assets"
 
+[[d1_databases]]
+binding = "DB"
+database_name = ""
+database_id = ""
+migrations_dir = "src/config/db/migrations_d1"
+
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = ""

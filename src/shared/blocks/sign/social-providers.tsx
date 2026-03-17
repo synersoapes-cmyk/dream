@@ -1,11 +1,11 @@
 'use client';
 
+import { useCallback, useEffect, useRef } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { RiGithubFill, RiGoogleFill } from 'react-icons/ri';
 import { toast } from 'sonner';
 
 import { signIn } from '@/core/auth/client';
-import { useRouter } from '@/core/i18n/navigation';
 import { defaultLocale } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import { useAppContext } from '@/shared/contexts/app';
@@ -24,12 +24,13 @@ export function SocialProviders({
   setLoading: (loading: boolean) => void;
 }) {
   const t = useTranslations('common.sign');
-  const router = useRouter();
+  const locale = useLocale();
 
   const { setIsShowSignModal } = useAppContext();
+  const popupRef = useRef<Window | null>(null);
+  const popupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   if (callbackUrl) {
-    const locale = useLocale();
     if (
       locale !== defaultLocale &&
       callbackUrl.startsWith('/') &&
@@ -39,29 +40,86 @@ export function SocialProviders({
     }
   }
 
-  const handleSignIn = async ({ provider }: { provider: string }) => {
-    await signIn.social(
-      {
-        provider: provider,
-        callbackURL: callbackUrl,
-      },
-      {
-        onRequest: (ctx) => {
-          setLoading(true);
-        },
-        onResponse: (ctx) => {
-          // Do NOT reset loading here; navigation may not have completed yet.
-        },
-        onSuccess: (ctx) => {
-          // Close modal if any; navigation will proceed.
-          setIsShowSignModal(false);
-        },
-        onError: (e: any) => {
-          toast.error(e?.error?.message || 'sign in failed');
-          setLoading(false);
-        },
+  const cleanupPopup = useCallback(() => {
+    if (popupTimerRef.current) {
+      clearInterval(popupTimerRef.current);
+      popupTimerRef.current = null;
+    }
+    popupRef.current = null;
+  }, []);
+
+  const handleAuthCallback = useCallback(() => {
+    cleanupPopup();
+    setIsShowSignModal(false);
+    // Hard reload the page so the browser picks up the new session cookie
+    window.location.reload();
+  }, [cleanupPopup, setIsShowSignModal]);
+
+  // Listen for localStorage event from the popup callback page
+  // (works even when COOP blocks window.opener / postMessage)
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'auth-callback-success') {
+        handleAuthCallback();
       }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [handleAuthCallback]);
+
+  const handleSignIn = async ({ provider }: { provider: string }) => {
+    setLoading(true);
+
+    // Open popup to the intermediate page that triggers signIn.social()
+    const popupPath =
+      locale !== defaultLocale
+        ? `/${locale}/auth-popup?provider=${provider}`
+        : `/auth-popup?provider=${provider}`;
+    const popupUrl = `${window.location.origin}${popupPath}`;
+
+    // Open centered popup window
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+
+    const popup = window.open(
+      popupUrl,
+      'oauth-popup',
+      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
     );
+
+    if (!popup) {
+      // Popup blocked - fall back to redirect
+      toast.error('Popup blocked. Trying redirect...');
+      setLoading(false);
+      await signIn.social(
+        { provider, callbackURL: callbackUrl },
+        {
+          onRequest: () => setLoading(true),
+          onSuccess: () => setIsShowSignModal(false),
+          onError: (e: any) => {
+            toast.error(e?.error?.message || 'Sign in failed');
+            setLoading(false);
+          },
+        }
+      );
+      return;
+    }
+
+    popupRef.current = popup;
+
+    // Poll to detect if popup was closed manually (without completing auth)
+    popupTimerRef.current = setInterval(() => {
+      try {
+        if (popup.closed) {
+          cleanupPopup();
+          setLoading(false);
+        }
+      } catch {
+        // COOP may block access to popup.closed; ignore and keep polling
+      }
+    }, 500);
   };
 
   const providers: ButtonType[] = [];

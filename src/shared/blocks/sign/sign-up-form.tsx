@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 
-import { authClient, signIn } from '@/core/auth/client';
-import { Link, useRouter } from '@/core/i18n/navigation';
+import { authClient, signUp } from '@/core/auth/client';
 import { defaultLocale } from '@/config/locale';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -15,18 +15,20 @@ import { useAppContext } from '@/shared/contexts/app';
 
 import { SocialProviders } from './social-providers';
 
-export function SignInForm({
+export function SignUpForm({
   callbackUrl = '/',
   className,
-  onSwitchToSignUp,
+  onSwitchToSignIn,
 }: {
   callbackUrl: string;
   className?: string;
-  onSwitchToSignUp?: () => void;
+  onSwitchToSignIn?: () => void;
 }) {
   const t = useTranslations('common.sign');
   const router = useRouter();
   const locale = useLocale();
+
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,9 @@ export function SignInForm({
   const isGithubAuthEnabled = configs.github_auth_enabled === 'true';
   const isEmailAuthEnabled =
     configs.email_auth_enabled !== 'false' ||
-    (!isGoogleAuthEnabled && !isGithubAuthEnabled); // no social providers enabled, auto enable email auth
+    (!isGoogleAuthEnabled && !isGithubAuthEnabled);
+  const emailVerificationEnabled =
+    configs.email_verification_enabled === 'true';
 
   if (callbackUrl) {
     if (
@@ -59,34 +63,69 @@ export function SignInForm({
     return path;
   };
 
-  const handleSignIn = async () => {
+  const reportAffiliate = ({
+    userEmail,
+    stripeCustomerId,
+  }: {
+    userEmail: string;
+    stripeCustomerId?: string;
+  }) => {
+    if (typeof window === 'undefined' || !configs) {
+      return;
+    }
+
+    const windowObject = window as any;
+
+    if (configs.affonso_enabled === 'true' && windowObject.Affonso) {
+      windowObject.Affonso.signup(userEmail);
+    }
+
+    if (configs.promotekit_enabled === 'true' && windowObject.promotekit) {
+      windowObject.promotekit.refer(userEmail, stripeCustomerId);
+    }
+  };
+
+  const handleSignUp = async () => {
     if (loading) {
       return;
     }
 
-    if (!email || !password) {
-      toast.error('email and password are required');
+    if (!email || !password || !name) {
+      toast.error('email, password and name are required');
       return;
     }
 
-    // Set loading immediately to avoid duplicate submits before request hooks fire.
     setLoading(true);
 
     try {
-      await signIn.email(
+      await signUp.email(
         {
           email,
           password,
-          callbackURL: callbackUrl,
+          name,
         },
         {
-          onRequest: (ctx) => {
-            // loading is already set above; keep as no-op for safety
-          },
-          onResponse: (ctx) => {
-            // Do NOT reset loading here; navigation may not have completed yet.
-          },
+          onRequest: () => {},
+          onResponse: () => {},
           onSuccess: async () => {
+            reportAffiliate({ userEmail: email });
+
+            if (emailVerificationEnabled) {
+              const normalizedCallbackUrl = stripLocalePrefix(callbackUrl);
+              const verifyPath = `/verify-email?sent=1&email=${encodeURIComponent(
+                email
+              )}&callbackUrl=${encodeURIComponent(normalizedCallbackUrl)}`;
+
+              void authClient.sendVerificationEmail({
+                email,
+                callbackURL: `${base}${normalizedCallbackUrl || '/'}`,
+              });
+
+              setIsShowSignModal(false);
+              router.push(`${base}${verifyPath}`);
+              return;
+            }
+
             try {
               const res: any = await authClient.getSession();
               const freshUser = res?.data?.user ?? res?.user ?? null;
@@ -100,31 +139,13 @@ export function SignInForm({
             router.refresh();
           },
           onError: (e: any) => {
-            const status = e?.error?.status;
-            if (status === 403) {
-              const normalizedCallbackUrl = stripLocalePrefix(callbackUrl);
-              const verifyPath = `/verify-email?sent=1&email=${encodeURIComponent(
-                email
-              )}&callbackUrl=${encodeURIComponent(normalizedCallbackUrl)}`;
-
-              // Send verification email with callback to verify page.
-              void authClient.sendVerificationEmail({
-                email,
-                callbackURL: `${base}${verifyPath}`,
-              });
-
-              // i18n router will prefix locale automatically; do NOT include locale here.
-              router.push(verifyPath);
-              return;
-            }
-
-            toast.error(e?.error?.message || 'sign in failed');
+            toast.error(e?.error?.message || 'sign up failed');
             setLoading(false);
           },
         }
       );
     } catch (e: any) {
-      toast.error(e?.message || 'sign in failed');
+      toast.error(e?.message || 'sign up failed');
       setLoading(false);
     }
   };
@@ -137,13 +158,27 @@ export function SignInForm({
             className="grid gap-4"
             onSubmit={(e) => {
               e.preventDefault();
-              void handleSignIn();
+              void handleSignUp();
             }}
           >
             <div className="grid gap-2">
-              <Label htmlFor="email">{t('email_title')}</Label>
+              <Label htmlFor="signup-name">{t('name_title')}</Label>
               <Input
-                id="email"
+                id="signup-name"
+                type="text"
+                placeholder={t('name_placeholder')}
+                required
+                onChange={(e) => {
+                  setName(e.target.value);
+                }}
+                value={name}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="signup-email">{t('email_title')}</Label>
+              <Input
+                id="signup-email"
                 type="email"
                 placeholder={t('email_placeholder')}
                 required
@@ -152,42 +187,30 @@ export function SignInForm({
                 }}
                 value={email}
               />
+              {emailVerificationEnabled && (
+                <p className="text-amber-600 text-xs">
+                  {t('email_verification_hint')}
+                </p>
+              )}
             </div>
 
             <div className="grid gap-2">
-              {/* <div className="flex items-center">
-              <Label htmlFor="password">{t("password_title")}</Label>
-              <Link href="#" className="ml-auto inline-block text-sm underline">
-                Forgot your password?
-              </Link>
-            </div> */}
-
+              <Label htmlFor="signup-password">{t('password_title')}</Label>
               <Input
-                id="password"
+                id="signup-password"
                 type="password"
                 placeholder={t('password_placeholder')}
                 autoComplete="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
               />
             </div>
-
-            {/* <div className="flex items-center gap-2">
-            <Checkbox
-              id="remember"
-              onClick={() => {
-                setRememberMe(!rememberMe);
-              }}
-            />
-            <Label htmlFor="remember">{t("remember_me_title")}</Label>
-          </div> */}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
-                <p> {t('sign_in_title')} </p>
+                <p>{t('sign_up_title')}</p>
               )}
             </Button>
           </form>
@@ -203,21 +226,13 @@ export function SignInForm({
       {isEmailAuthEnabled && (
         <div className="flex w-full justify-center border-t py-4">
           <p className="text-center text-xs text-neutral-500">
-            {t('no_account')}
-            {onSwitchToSignUp ? (
-              <span
-                className="cursor-pointer underline dark:text-white/70"
-                onClick={onSwitchToSignUp}
-              >
-                {t('sign_up_title')}
-              </span>
-            ) : (
-              <Link href="/sign-up" className="underline">
-                <span className="cursor-pointer dark:text-white/70">
-                  {t('sign_up_title')}
-                </span>
-              </Link>
-            )}
+            {t('already_have_account')}
+            <span
+              className="cursor-pointer underline dark:text-white/70"
+              onClick={onSwitchToSignIn}
+            >
+              {t('sign_in_title')}
+            </span>
           </p>
         </div>
       )}

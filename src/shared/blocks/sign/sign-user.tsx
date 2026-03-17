@@ -106,11 +106,14 @@ export function SignUser({
     if (sessionUser && sessionUserId !== currentUserId) {
       setUser(sessionUser as UserType);
       fetchUserInfo();
-    } else if (!sessionUser && currentUserId) {
+    } else if (!sessionUser && currentUserId && !isPending) {
+      // Only clear user when session is definitively resolved (not pending).
+      // This prevents a race where fetchUserInfo() sets user but useSession
+      // hasn't re-fetched yet, which would incorrectly clear the user.
       setUser(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionUser?.id, (sessionUser as any)?.email, user?.id]);
+  }, [sessionUser?.id, (sessionUser as any)?.email, user?.id, isPending]);
 
   // Fallback: if the session cookie is present but useSession lags, do a single refresh.
   useEffect(() => {

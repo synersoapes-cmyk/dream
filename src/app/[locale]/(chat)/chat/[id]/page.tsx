@@ -25,7 +25,7 @@ export default function ChatPage() {
       if (!resp.ok) {
         throw new Error(`request failed with status: ${resp.status}`);
       }
-      const { code, message, data } = await resp.json();
+      const { code, message, data } = (await resp.json()) as any;
       if (code !== 0) {
         throw new Error(message);
       }
@@ -58,7 +58,7 @@ export default function ChatPage() {
       if (!resp.ok) {
         throw new Error(`request failed with status: ${resp.status}`);
       }
-      const { code, message, data } = await resp.json();
+      const { code, message, data } = (await resp.json()) as any;
       if (code !== 0) {
         throw new Error(message);
       }

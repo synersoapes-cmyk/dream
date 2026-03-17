@@ -1,5 +1,6 @@
 import { envConfigs } from '@/config';
 
+import { getD1Db } from './d1';
 import { closeMysqlDb, getMysqlDb } from './mysql';
 import { closePostgresDb, getPostgresDb } from './postgres';
 import { getSqliteDb } from './sqlite';
@@ -184,6 +185,10 @@ function withSqliteCompat<T extends object>(dbInstance: T): T {
  * So we intentionally return `any` to keep call sites stable.
  */
 export function db(): any {
+  if (envConfigs.database_provider === 'd1') {
+    return withSqliteCompat(getD1Db() as any);
+  }
+
   if (['sqlite', 'turso'].includes(envConfigs.database_provider)) {
     return withSqliteCompat(getSqliteDb() as any);
   }
@@ -217,6 +222,14 @@ export function dbSqlite(): ReturnType<typeof getSqliteDb> {
   }
 
   return getSqliteDb();
+}
+
+export function dbD1(): ReturnType<typeof getD1Db> {
+  if (envConfigs.database_provider !== 'd1') {
+    throw new Error('Database provider is not D1');
+  }
+
+  return getD1Db();
 }
 
 export async function closeDb() {

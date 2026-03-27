@@ -119,7 +119,7 @@ function withMysqlCompat<T extends object>(dbInstance: T): T {
  * - SQLite doesn't support row-level locking; Drizzle's select builder may not implement `.for()`.
  *   We polyfill `.for(...)` as a no-op to keep call sites portable.
  */
-function withSqliteCompat<T extends object>(dbInstance: T): T {
+function withSqliteCompat<T extends object>(dbInstance: T, provider?: string): T {
   if (dbInstance && typeof dbInstance === 'object') {
     const cached = sqliteCompatProxyCache.get(dbInstance);
     if (cached) return cached as T;
@@ -150,14 +150,17 @@ function withSqliteCompat<T extends object>(dbInstance: T): T {
     get(target, prop, receiver) {
       // Wrap transaction callback so `tx` is also shimmed.
       if (prop === 'transaction') {
-        const original = Reflect.get(target, prop, receiver);
-        // D1 doesn't support Drizzle's .transaction() API.
-        // Fall back to running the callback directly with `db` as `tx`.
-        if (typeof original !== 'function') {
+        // D1 doesn't support interactive transactions (BEGIN/COMMIT as
+        // separate calls). Drizzle provides a .transaction() method but it
+        // fails at runtime. Fall back to running the callback directly with
+        // `db` as the "tx" — individual statements are still atomic.
+        if (provider === 'd1') {
           return (fn: any) => fn(proxied);
         }
+        const original = Reflect.get(target, prop, receiver);
+        if (typeof original !== 'function') return original;
         return (fn: any, ...rest: any[]) =>
-          original.call(target, (tx: any) => fn(withSqliteCompat(tx)), ...rest);
+          original.call(target, (tx: any) => fn(withSqliteCompat(tx, provider)), ...rest);
       }
 
       const value = Reflect.get(target, prop, receiver);
@@ -190,11 +193,11 @@ function withSqliteCompat<T extends object>(dbInstance: T): T {
  */
 export function db(): any {
   if (envConfigs.database_provider === 'd1') {
-    return withSqliteCompat(getD1Db() as any);
+    return withSqliteCompat(getD1Db() as any, 'd1');
   }
 
   if (['sqlite', 'turso'].includes(envConfigs.database_provider)) {
-    return withSqliteCompat(getSqliteDb() as any);
+    return withSqliteCompat(getSqliteDb() as any, envConfigs.database_provider);
   }
 
   if (envConfigs.database_provider === 'mysql') {

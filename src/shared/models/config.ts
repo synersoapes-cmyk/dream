@@ -18,8 +18,29 @@ export type Configs = Record<string, string>;
 export const CACHE_TAG_CONFIGS = 'configs';
 
 export async function saveConfigs(configs: Record<string, string>) {
-  const result = await db().transaction(async (tx: any) => {
-    const configEntries = Object.entries(configs);
+  const database = db();
+  const configEntries = Object.entries(configs);
+
+  // D1: use batch() to send all upserts in a single round-trip
+  if (envConfigs.database_provider === 'd1') {
+    const queries = configEntries.map(([name, configValue]) =>
+      database
+        .insert(config)
+        .values({ name, value: configValue })
+        .onConflictDoUpdate({
+          target: config.name,
+          set: { value: configValue },
+        })
+        .returning()
+    );
+
+    const batchResults = queries.length > 0 ? await database.batch(queries) : [];
+    revalidateTag(CACHE_TAG_CONFIGS);
+    return batchResults.flat();
+  }
+
+  // Other databases: use transaction for atomicity
+  const result = await database.transaction(async (tx: any) => {
     const results: any[] = [];
 
     for (const [name, configValue] of configEntries) {

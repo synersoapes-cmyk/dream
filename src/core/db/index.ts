@@ -151,7 +151,11 @@ function withSqliteCompat<T extends object>(dbInstance: T): T {
       // Wrap transaction callback so `tx` is also shimmed.
       if (prop === 'transaction') {
         const original = Reflect.get(target, prop, receiver);
-        if (typeof original !== 'function') return original;
+        // D1 doesn't support Drizzle's .transaction() API.
+        // Fall back to running the callback directly with `db` as `tx`.
+        if (typeof original !== 'function') {
+          return (fn: any) => fn(proxied);
+        }
         return (fn: any, ...rest: any[]) =>
           original.call(target, (tx: any) => fn(withSqliteCompat(tx)), ...rest);
       }

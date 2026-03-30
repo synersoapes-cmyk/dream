@@ -3,9 +3,9 @@ import { oneTap } from 'better-auth/plugins';
 import { getLocale } from 'next-intl/server';
 
 import { db } from '@/core/db';
+import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
-import { isCloudflareWorker } from '@/shared/lib/env';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
 import {
   getCookieFromCtx,
@@ -76,11 +76,15 @@ export async function getAuthOptions(configs: Record<string, string>) {
   const emailVerificationEnabled =
     configs.email_verification_enabled === 'true' && !!configs.resend_api_key;
 
+  if (envConfigs.database_provider === 'd1') {
+    await initD1ContextForDev();
+  }
+
   return {
     ...authOptions,
-    // Add database connection only when actually needed (runtime)
-    // D1 is only available inside Cloudflare Workers runtime (not during build)
-    database: (envConfigs.database_url || (envConfigs.database_provider === 'd1' && isCloudflareWorker))
+    // Add database connection only when actually needed (runtime).
+    // D1 can also be available in local `next dev` via OpenNext Cloudflare bindings.
+    database: (envConfigs.database_url || envConfigs.database_provider === 'd1')
       ? drizzleAdapter(db(), {
           provider: getDatabaseProvider(envConfigs.database_provider),
           schema: schema,

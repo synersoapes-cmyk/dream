@@ -33,8 +33,12 @@ NEXT_PUBLIC_THEME = "default"
 NEXT_PUBLIC_APPEARANCE = "system"
 
 # database
-DATABASE_PROVIDER = "postgresql"
+DATABASE_PROVIDER = "d1"
 DATABASE_URL = ""
+DB_SCHEMA_FILE = "./src/config/db/schema.sqlite.ts"
+DB_MIGRATIONS_OUT = "./src/config/db/migrations_d1"
+DB_SINGLETON_ENABLED = "false"
+DB_MAX_CONNECTIONS = "1"
 DB_SINGLETON_ENABLED = "true"
 DB_MAX_CONNECTIONS = "1"
 

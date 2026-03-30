@@ -1,9 +1,9 @@
 import { revalidateTag, unstable_cache } from 'next/cache';
 
 import { db } from '@/core/db';
+import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import { config } from '@/config/db/schema';
-import { isCloudflareWorker } from '@/shared/lib/env';
 import {
   getAllSettingNames,
   publicSettingNames,
@@ -18,6 +18,10 @@ export type Configs = Record<string, string>;
 export const CACHE_TAG_CONFIGS = 'configs';
 
 export async function saveConfigs(configs: Record<string, string>) {
+  if (envConfigs.database_provider === 'd1') {
+    await initD1ContextForDev();
+  }
+
   const database = db();
   const configEntries = Object.entries(configs);
 
@@ -35,7 +39,7 @@ export async function saveConfigs(configs: Record<string, string>) {
     );
 
     const batchResults = queries.length > 0 ? await database.batch(queries) : [];
-    revalidateTag(CACHE_TAG_CONFIGS);
+    revalidateTag(CACHE_TAG_CONFIGS, 'max');
     return batchResults.flat();
   }
 
@@ -65,6 +69,10 @@ export async function saveConfigs(configs: Record<string, string>) {
 }
 
 export async function addConfig(newConfig: NewConfig) {
+  if (envConfigs.database_provider === 'd1') {
+    await initD1ContextForDev();
+  }
+
   const [result] = await db().insert(config).values(newConfig).returning();
   revalidateTag(CACHE_TAG_CONFIGS, 'max');
 
@@ -75,9 +83,8 @@ export const getConfigs = unstable_cache(
   async (): Promise<Configs> => {
     const configs: Record<string, string> = {};
 
-    // D1 is only available inside Cloudflare Workers runtime (not during build)
-    if (envConfigs.database_provider === 'd1' && !isCloudflareWorker) {
-      return configs;
+    if (envConfigs.database_provider === 'd1') {
+      await initD1ContextForDev();
     }
     if (!envConfigs.database_url && envConfigs.database_provider !== 'd1') {
       return configs;
@@ -105,7 +112,7 @@ export async function getAllConfigs(): Promise<Configs> {
   let dbConfigs: Configs = {};
 
   // only get configs from db in server side
-  const hasDb = envConfigs.database_url || (envConfigs.database_provider === 'd1' && isCloudflareWorker);
+  const hasDb = envConfigs.database_url || envConfigs.database_provider === 'd1';
   if (typeof window === 'undefined' && hasDb) {
     try {
       dbConfigs = await getConfigs();

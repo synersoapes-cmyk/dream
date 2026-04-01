@@ -1,5 +1,12 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 // SQLite has no schema concept like Postgres. Keep a `table` alias to minimize diff with pg schema.
 const table = sqliteTable;
@@ -118,6 +125,250 @@ export const verification = table(
   (table) => [
     // Find verification code by identifier (e.g., find code by email)
     index('idx_verification_identifier').on(table.identifier),
+  ]
+);
+
+
+export const gameCharacter = table(
+  'game_character',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    serverName: text('server_name').notNull().default(''),
+    school: text('school').notNull().default('龙宫'),
+    roleType: text('role_type').notNull().default('法师'),
+    level: integer('level').notNull().default(89),
+    race: text('race').notNull().default(''),
+    status: text('status').notNull().default('active'),
+    currentSnapshotId: text('current_snapshot_id'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_game_character_user_name').on(table.userId, table.name),
+    index('idx_game_character_user_status').on(table.userId, table.status),
+  ]
+);
+
+export const characterSnapshot = table(
+  'character_snapshot',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    snapshotType: text('snapshot_type').notNull().default('current'),
+        name: text('name').notNull().default('????'),
+    versionNo: integer('version_no').notNull().default(1),
+    source: text('source').notNull().default('manual'),
+    notes: text('notes').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_character_snapshot_character_created').on(
+      table.characterId,
+      table.createdAt
+    ),
+    index('idx_character_snapshot_character_type').on(
+      table.characterId,
+      table.snapshotType
+    ),
+  ]
+);
+
+export const characterProfile = table(
+  'character_profile',
+  {
+    snapshotId: text('snapshot_id')
+      .primaryKey()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    school: text('school').notNull().default('龙宫'),
+    level: integer('level').notNull().default(89),
+    physique: integer('physique').notNull().default(0),
+    magic: integer('magic').notNull().default(0),
+    strength: integer('strength').notNull().default(0),
+    endurance: integer('endurance').notNull().default(0),
+    agility: integer('agility').notNull().default(0),
+    potentialPoints: integer('potential_points').notNull().default(0),
+    hp: real('hp').notNull().default(0),
+    mp: real('mp').notNull().default(0),
+    damage: real('damage').notNull().default(0),
+    defense: real('defense').notNull().default(0),
+    magicDamage: real('magic_damage').notNull().default(0),
+    magicDefense: real('magic_defense').notNull().default(0),
+    speed: real('speed').notNull().default(0),
+    hit: real('hit').notNull().default(0),
+    sealHit: real('seal_hit').notNull().default(0),
+    rawBodyJson: text('raw_body_json').notNull().default('{}'),
+  }
+);
+
+export const characterSkill = table(
+  'character_skill',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    skillCode: text('skill_code').notNull().default(''),
+    skillName: text('skill_name').notNull(),
+    baseLevel: integer('base_level').notNull().default(0),
+    extraLevel: integer('extra_level').notNull().default(0),
+    finalLevel: integer('final_level').notNull().default(0),
+    sourceDetailJson: text('source_detail_json').notNull().default('{}'),
+  },
+  (table) => [
+    uniqueIndex('uidx_character_skill_snapshot_code').on(
+      table.snapshotId,
+      table.skillCode
+    ),
+  ]
+);
+
+export const characterCultivation = table(
+  'character_cultivation',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    cultivationType: text('cultivation_type').notNull(),
+    level: integer('level').notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex('uidx_character_cultivation_snapshot_type').on(
+      table.snapshotId,
+      table.cultivationType
+    ),
+  ]
+);
+
+export const equipmentItem = table(
+  'equipment_item',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    name: text('name').notNull(),
+    level: integer('level').notNull().default(0),
+    quality: text('quality').notNull().default(''),
+    price: integer('price').notNull().default(0),
+    source: text('source').notNull().default('manual'),
+    status: text('status').notNull().default('equipped'),
+    isLocked: integer('is_locked', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_equipment_item_character_slot_status').on(
+      table.characterId,
+      table.slot,
+      table.status
+    ),
+  ]
+);
+
+export const equipmentBuild = table(
+  'equipment_build',
+  {
+    equipmentId: text('equipment_id')
+      .primaryKey()
+      .references(() => equipmentItem.id, { onDelete: 'cascade' }),
+    holeCount: integer('hole_count').notNull().default(0),
+    gemLevelTotal: integer('gem_level_total').notNull().default(0),
+    refineLevel: integer('refine_level').notNull().default(0),
+    specialEffectJson: text('special_effect_json').notNull().default('{}'),
+    setEffectJson: text('set_effect_json').notNull().default('{}'),
+    notesJson: text('notes_json').notNull().default('{}'),
+  }
+);
+
+export const equipmentAttr = table(
+  'equipment_attr',
+  {
+    id: text('id').primaryKey(),
+    equipmentId: text('equipment_id')
+      .notNull()
+      .references(() => equipmentItem.id, { onDelete: 'cascade' }),
+    attrGroup: text('attr_group').notNull().default('extra'),
+    attrType: text('attr_type').notNull(),
+    valueType: text('value_type').notNull().default('flat'),
+    attrValue: real('attr_value').notNull().default(0),
+    displayOrder: integer('display_order').notNull().default(0),
+  }
+);
+
+export const snapshotEquipmentSlot = table(
+  'snapshot_equipment_slot',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    equipmentId: text('equipment_id')
+      .notNull()
+      .references(() => equipmentItem.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('uidx_snapshot_equipment_slot').on(table.snapshotId, table.slot),
+  ]
+);
+
+export const attributeRule = table(
+  'attribute_rule',
+  {
+    id: text('id').primaryKey(),
+    school: text('school').notNull(),
+    roleType: text('role_type').notNull(),
+    sourceAttr: text('source_attr').notNull(),
+    targetAttr: text('target_attr').notNull(),
+    addValue: real('add_value').notNull(),
+    notes: text('notes').notNull().default(''),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    sort: integer('sort').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_attribute_rule_scope').on(
+      table.school,
+      table.roleType,
+      table.sourceAttr,
+      table.targetAttr
+    ),
+    index('idx_attribute_rule_query').on(
+      table.school,
+      table.roleType,
+      table.sourceAttr,
+      table.enabled
+    ),
   ]
 );
 

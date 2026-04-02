@@ -105,6 +105,182 @@
 
 ## 5. 表设计
 
+### 规则中心（新增，2026-04）
+
+为支持“伤害规则写到后台配置并持久化到 D1”，新增一组 `rule_*` 表，和现有角色/装备快照表解耦。第一期仅覆盖：
+
+- 龙宫
+- 法师
+- 龙卷雨击
+- 属性转化
+- 分灵系数
+- 阵法/阵法克制
+- 五行克制
+- 神木符
+- 法伤结果
+- 九龙诀 / 呼风唤雨 / 龙腾 技能等级加成
+
+命名约定：
+
+- 规则配置：`rule_*`
+- 战斗模板：后续使用 `battle_*`
+- 计算结果：后续使用 `calc_*`
+
+#### `rule_version`
+
+用途：一套伤害规则的版本主表，支持草稿、发布、生效、回滚。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 规则版本 ID |
+| `rule_domain` | `TEXT` | 规则域，第一期固定 `damage` |
+| `version_code` | `TEXT` | 唯一编码，如 `damage_v1` |
+| `version_name` | `TEXT` | 展示名称 |
+| `status` | `TEXT` | `draft` / `published` / `archived` |
+| `is_active` | `INTEGER` | 是否当前生效 |
+| `source_doc_url` | `TEXT` | 规则来源文档 |
+| `notes` | `TEXT` | 备注 |
+| `created_by` | `TEXT` | 创建人 |
+| `published_by` | `TEXT` | 发布人 |
+| `published_at` | `INTEGER` | 发布时间 |
+| `created_at` | `INTEGER` | 创建时间 |
+| `updated_at` | `INTEGER` | 更新时间 |
+
+索引：
+
+- `UNIQUE(version_code)`
+- `INDEX(rule_domain, is_active, status)`
+
+#### `rule_attribute_conversion`
+
+用途：属性转化规则，如体质、魔力、灵力到最终面板属性的线性映射。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 主键 |
+| `version_id` | `TEXT` | 关联 `rule_version` |
+| `school` | `TEXT` | 门派 |
+| `role_type` | `TEXT` | 角色流派 |
+| `source_attr` | `TEXT` | 来源属性，如 `physique` |
+| `target_attr` | `TEXT` | 目标属性，如 `hp` |
+| `coefficient` | `REAL` | 系数 |
+| `value_type` | `TEXT` | 第一期固定 `linear` |
+| `condition_json` | `TEXT` | 附加条件 |
+| `sort` | `INTEGER` | 排序 |
+| `enabled` | `INTEGER` | 是否启用 |
+| `created_at` | `INTEGER` | 创建时间 |
+| `updated_at` | `INTEGER` | 更新时间 |
+
+索引/约束：
+
+- `UNIQUE(version_id, school, role_type, source_attr, target_attr)`
+- `INDEX(version_id, school, role_type, enabled, sort)`
+
+#### `rule_skill_formula`
+
+用途：技能主公式定义。第一期只存龙卷雨击。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 主键 |
+| `version_id` | `TEXT` | 关联 `rule_version` |
+| `school` | `TEXT` | 门派 |
+| `role_type` | `TEXT` | 角色流派 |
+| `skill_code` | `TEXT` | 技能编码 |
+| `skill_name` | `TEXT` | 技能名称 |
+| `formula_key` | `TEXT` | 公式模板键 |
+| `base_formula_json` | `TEXT` | 基础项参数 |
+| `extra_formula_json` | `TEXT` | 公式扩展参数 |
+| `condition_json` | `TEXT` | 适用条件 |
+| `sort` | `INTEGER` | 排序 |
+| `enabled` | `INTEGER` | 是否启用 |
+| `created_at` | `INTEGER` | 创建时间 |
+| `updated_at` | `INTEGER` | 更新时间 |
+
+索引/约束：
+
+- `UNIQUE(version_id, skill_code)`
+- `INDEX(version_id, school, role_type, enabled)`
+
+#### `rule_damage_modifier`
+
+用途：伤害修正项，如分灵系数、阵法系数、五行系数、神木符、法伤结果。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 主键 |
+| `version_id` | `TEXT` | 关联 `rule_version` |
+| `modifier_domain` | `TEXT` | 修正域，如 `split_factor` |
+| `modifier_key` | `TEXT` | 修正键 |
+| `modifier_type` | `TEXT` | `multiplier` / `addend` / `lookup` |
+| `source_key` | `TEXT` | 来源键 |
+| `target_key` | `TEXT` | 目标键 |
+| `value` | `REAL` | 直接数值 |
+| `value_json` | `TEXT` | lookup 表或结构化配置 |
+| `condition_json` | `TEXT` | 条件 |
+| `sort` | `INTEGER` | 排序 |
+| `enabled` | `INTEGER` | 是否启用 |
+| `created_at` | `INTEGER` | 创建时间 |
+| `updated_at` | `INTEGER` | 更新时间 |
+
+索引：
+
+- `INDEX(version_id, modifier_domain, modifier_key, enabled, sort)`
+
+#### `rule_skill_bonus`
+
+用途：技能等级加成规则，如九龙诀、呼风唤雨、龙腾。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 主键 |
+| `version_id` | `TEXT` | 关联 `rule_version` |
+| `bonus_group` | `TEXT` | 规则分组，如 `school_skill_rune` |
+| `rule_code` | `TEXT` | 规则编码 |
+| `skill_code` | `TEXT` | 技能编码 |
+| `skill_name` | `TEXT` | 技能名称 |
+| `bonus_type` | `TEXT` | 第一期固定 `skill_level` |
+| `bonus_value` | `INTEGER` | 加成值 |
+| `condition_json` | `TEXT` | 颜色序列、孔数、部位范围等 |
+| `conflict_policy` | `TEXT` | 冲突策略，如 `take_max` |
+| `limit_policy_json` | `TEXT` | 全局生效限制 |
+| `sort` | `INTEGER` | 排序 |
+| `enabled` | `INTEGER` | 是否启用 |
+| `created_at` | `INTEGER` | 创建时间 |
+| `updated_at` | `INTEGER` | 更新时间 |
+
+索引：
+
+- `INDEX(version_id, skill_code, rule_code, enabled, sort)`
+
+#### `rule_publish_log`
+
+用途：规则发布、回滚、启停审计。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `TEXT PK` | 主键 |
+| `version_id` | `TEXT` | 关联 `rule_version` |
+| `action` | `TEXT` | `publish` / `rollback` / `activate` / `deactivate` |
+| `operator_id` | `TEXT` | 操作人 |
+| `before_snapshot_json` | `TEXT` | 操作前快照 |
+| `after_snapshot_json` | `TEXT` | 操作后快照 |
+| `notes` | `TEXT` | 备注 |
+| `created_at` | `INTEGER` | 操作时间 |
+
+索引：
+
+- `INDEX(version_id, created_at)`
+
+规则执行建议：
+
+1. 先读取当前生效的 `rule_version`
+2. 按版本加载 `rule_attribute_conversion`
+3. 按版本加载 `rule_skill_formula`
+4. 按版本加载 `rule_damage_modifier`
+5. 按版本加载 `rule_skill_bonus`
+6. 服务端统一执行伤害计算，前端不再持有正式公式
+
 ## 5.1 用户与角色
 
 ### `app_user`
@@ -1216,3 +1392,31 @@ SQLite 没有原生枚举类型，建议：
 - 实验室核心表的 ER 图
 - 后台规则中心的数据结构草案
 - 或按这个文档继续把第一版 schema 写进项目
+
+## 13. 规则试算样例（新增，2026-04）
+
+为支持后台规则回归验证，新增 `rule_simulation_case` 表，专门保存“试算输入 + 期望结果快照”。
+
+字段建议：
+
+- `id`: 样例 ID
+- `name`: 样例名称
+- `version_id`: 可选绑定的规则版本
+- `input_json`: 试算输入参数
+- `expected_result_json`: 期望结果快照
+- `notes`: 备注
+- `enabled`: 是否启用
+- `created_by`: 创建人
+- `created_at`: 创建时间
+- `updated_at`: 更新时间
+
+索引建议：
+
+- `INDEX(enabled, created_at DESC)`
+- `INDEX(version_id, enabled, created_at DESC)`
+
+用途说明：
+
+- 后台规则试算页可以将当前参数保存为回归样例
+- 后续修改 `rule_damage_modifier`、`rule_skill_bonus`、`rule_skill_formula` 时，可以直接载入样例重跑
+- 样例保存的是业务输入和期望输出，不绑定前端实现细节，方便后续继续扩展到更多技能

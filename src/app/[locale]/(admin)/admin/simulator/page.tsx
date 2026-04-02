@@ -7,6 +7,13 @@ import {
 } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { SimulatorDefaultsEditor } from '@/shared/blocks/simulator/defaults-editor';
+import { RulePlaygroundPanel } from '@/shared/blocks/simulator/rule-playground';
+import { RuleCenterPanel } from '@/shared/blocks/simulator/rule-center';
+import {
+  getDamageRuleVersionDetail,
+  listDamageRuleVersions,
+} from '@/shared/models/damage-rules';
+import { listRuleSimulationCases } from '@/shared/models/rule-simulation-cases';
 import { getSimulatorSeedConfig, serializeSimulatorSeedConfig } from '@/shared/models/simulator-seed';
 import { Crumb } from '@/shared/types/blocks/common';
 
@@ -30,6 +37,13 @@ export default async function SimulatorAdminPage({
 
   const seedConfig = await getSimulatorSeedConfig();
   const serializedConfig = serializeSimulatorSeedConfig(seedConfig);
+  const ruleVersions = await listDamageRuleVersions();
+  const simulationCases = await listRuleSimulationCases();
+  const activeVersion =
+    ruleVersions.find((item) => item.isActive) ?? ruleVersions[0] ?? null;
+  const initialRuleDetail = activeVersion
+    ? await getDamageRuleVersionDetail({ versionId: activeVersion.id })
+    : null;
 
   const crumbs: Crumb[] = [
     { title: 'Admin', url: '/admin' },
@@ -53,6 +67,16 @@ export default async function SimulatorAdminPage({
             cultivations: serializedConfig['simulator.default.cultivations'],
             equipments: serializedConfig['simulator.default.equipments'],
           }}
+        />
+        <RuleCenterPanel
+          canEdit={Boolean(writableUser)}
+          initialVersions={ruleVersions}
+          initialDetail={initialRuleDetail}
+        />
+        <RulePlaygroundPanel
+          canEdit={Boolean(writableUser)}
+          initialVersions={ruleVersions}
+          initialCases={simulationCases}
         />
       </Main>
     </>

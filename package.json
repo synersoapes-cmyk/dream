@@ -32,6 +32,7 @@
     "d1:migrate:local": "wrangler d1 migrations apply DB --local",
     "d1:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "d1:test": "tsx scripts/test-d1.ts",
+    "d1:seed:rules": "tsx scripts/init-damage-rules.ts",
     "auth:generate": "tsx scripts/with-env.ts npx @better-auth/cli generate --config=src/core/auth/index.ts",
     "rbac:init": "tsx scripts/with-env.ts npx tsx scripts/init-rbac.ts",
     "rbac:assign": "tsx scripts/with-env.ts npx tsx scripts/assign-role.ts",

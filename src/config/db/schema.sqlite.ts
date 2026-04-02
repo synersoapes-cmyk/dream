@@ -372,6 +372,236 @@ export const attributeRule = table(
   ]
 );
 
+export const ruleVersion = table(
+  'rule_version',
+  {
+    id: text('id').primaryKey(),
+    ruleDomain: text('rule_domain').notNull().default('damage'),
+    versionCode: text('version_code').notNull(),
+    versionName: text('version_name').notNull(),
+    status: text('status').notNull().default('draft'),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+    sourceDocUrl: text('source_doc_url').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    createdBy: text('created_by').notNull().default('system'),
+    publishedBy: text('published_by').notNull().default(''),
+    publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_rule_version_code').on(table.versionCode),
+    index('idx_rule_version_domain_active').on(
+      table.ruleDomain,
+      table.isActive,
+      table.status
+    ),
+  ]
+);
+
+export const ruleAttributeConversion = table(
+  'rule_attribute_conversion',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => ruleVersion.id, { onDelete: 'cascade' }),
+    school: text('school').notNull(),
+    roleType: text('role_type').notNull(),
+    sourceAttr: text('source_attr').notNull(),
+    targetAttr: text('target_attr').notNull(),
+    coefficient: real('coefficient').notNull().default(0),
+    valueType: text('value_type').notNull().default('linear'),
+    conditionJson: text('condition_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_rule_attr_conversion_scope').on(
+      table.versionId,
+      table.school,
+      table.roleType,
+      table.sourceAttr,
+      table.targetAttr
+    ),
+    index('idx_rule_attr_conversion_lookup').on(
+      table.versionId,
+      table.school,
+      table.roleType,
+      table.enabled,
+      table.sort
+    ),
+  ]
+);
+
+export const ruleSkillFormula = table(
+  'rule_skill_formula',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => ruleVersion.id, { onDelete: 'cascade' }),
+    school: text('school').notNull(),
+    roleType: text('role_type').notNull(),
+    skillCode: text('skill_code').notNull(),
+    skillName: text('skill_name').notNull(),
+    formulaKey: text('formula_key').notNull(),
+    baseFormulaJson: text('base_formula_json').notNull().default('{}'),
+    extraFormulaJson: text('extra_formula_json').notNull().default('{}'),
+    conditionJson: text('condition_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_rule_skill_formula_scope').on(
+      table.versionId,
+      table.skillCode
+    ),
+    index('idx_rule_skill_formula_lookup').on(
+      table.versionId,
+      table.school,
+      table.roleType,
+      table.enabled
+    ),
+  ]
+);
+
+export const ruleDamageModifier = table(
+  'rule_damage_modifier',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => ruleVersion.id, { onDelete: 'cascade' }),
+    modifierDomain: text('modifier_domain').notNull(),
+    modifierKey: text('modifier_key').notNull(),
+    modifierType: text('modifier_type').notNull(),
+    sourceKey: text('source_key').notNull().default(''),
+    targetKey: text('target_key').notNull().default(''),
+    value: real('value').notNull().default(0),
+    valueJson: text('value_json').notNull().default('{}'),
+    conditionJson: text('condition_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_rule_damage_modifier_lookup').on(
+      table.versionId,
+      table.modifierDomain,
+      table.modifierKey,
+      table.enabled,
+      table.sort
+    ),
+  ]
+);
+
+export const ruleSkillBonus = table(
+  'rule_skill_bonus',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => ruleVersion.id, { onDelete: 'cascade' }),
+    bonusGroup: text('bonus_group').notNull(),
+    ruleCode: text('rule_code').notNull(),
+    skillCode: text('skill_code').notNull(),
+    skillName: text('skill_name').notNull(),
+    bonusType: text('bonus_type').notNull().default('skill_level'),
+    bonusValue: integer('bonus_value').notNull().default(0),
+    conditionJson: text('condition_json').notNull().default('{}'),
+    conflictPolicy: text('conflict_policy').notNull().default('take_max'),
+    limitPolicyJson: text('limit_policy_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_rule_skill_bonus_lookup').on(
+      table.versionId,
+      table.skillCode,
+      table.ruleCode,
+      table.enabled,
+      table.sort
+    ),
+  ]
+);
+
+export const rulePublishLog = table(
+  'rule_publish_log',
+  {
+    id: text('id').primaryKey(),
+    versionId: text('version_id')
+      .notNull()
+      .references(() => ruleVersion.id, { onDelete: 'cascade' }),
+    action: text('action').notNull(),
+    operatorId: text('operator_id').notNull().default('system'),
+    beforeSnapshotJson: text('before_snapshot_json').notNull().default('{}'),
+    afterSnapshotJson: text('after_snapshot_json').notNull().default('{}'),
+    notes: text('notes').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+  },
+  (table) => [index('idx_rule_publish_log_version_created').on(table.versionId, table.createdAt)]
+);
+
+export const ruleSimulationCase = table(
+  'rule_simulation_case',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    versionId: text('version_id').references(() => ruleVersion.id, { onDelete: 'set null' }),
+    inputJson: text('input_json').notNull().default('{}'),
+    expectedResultJson: text('expected_result_json').notNull().default('{}'),
+    notes: text('notes').notNull().default(''),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdBy: text('created_by').notNull().default('system'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_rule_simulation_case_enabled_created').on(table.enabled, table.createdAt),
+    index('idx_rule_simulation_case_version').on(table.versionId),
+  ]
+);
+
 export const config = table('config', {
   name: text('name').unique().notNull(),
   value: text('value'),

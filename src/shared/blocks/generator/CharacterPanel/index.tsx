@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { useState, useRef } from 'react';
 import { EquipmentSlot } from './EquipmentSlot';
@@ -79,6 +80,8 @@ function generateMockEquipment(type: Equipment['type']): Equipment {
 }
 
 export function CharacterPanel() {
+  const accounts = useGameStore((state) => state.accounts);
+  const activeAccountId = useGameStore((state) => state.activeAccountId);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
   const updateBaseAttribute = useGameStore((state) => state.updateBaseAttribute);
@@ -95,7 +98,14 @@ export function CharacterPanel() {
   
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'attributes' | 'cultivation'>('attributes');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [saveProfileMessage, setSaveProfileMessage] = useState<string | null>(null);
+  const [saveProfileError, setSaveProfileError] = useState<string | null>(null);
+  const [isSavingCultivation, setIsSavingCultivation] = useState(false);
+  const [saveCultivationMessage, setSaveCultivationMessage] = useState<string | null>(null);
+  const [saveCultivationError, setSaveCultivationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeAccount = accounts.find((account) => account.id === activeAccountId) || null;
   
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -131,6 +141,92 @@ export function CharacterPanel() {
     
     enterPreviewMode(currentEquipment, newEquipment, type);
   };
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    setSaveProfileError(null);
+    setSaveProfileMessage(null);
+
+    try {
+      const resp = await fetch('/api/simulator/current/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          level: baseAttributes.level,
+          faction: baseAttributes.faction,
+          physique: baseAttributes.physique,
+          magic: baseAttributes.magic,
+          strength: baseAttributes.strength,
+          endurance: baseAttributes.endurance,
+          agility: baseAttributes.agility,
+          magicPower: baseAttributes.magicPower || 0,
+          hp: combatStats.hp || 0,
+          mp: combatStats.magic || 0,
+          damage: combatStats.damage || 0,
+          defense: combatStats.defense || 0,
+          magicDamage: combatStats.magicDamage || 0,
+          magicDefense: combatStats.magicDefense || 0,
+          speed: combatStats.speed || 0,
+          hit: combatStats.hit || 0,
+          dodge: combatStats.dodge || 0,
+          sealHit: combatStats.sealHit || 0,
+        }),
+      });
+
+      const payload = await resp.json();
+      if (!resp.ok || payload?.code !== 0 || !payload?.data) {
+        throw new Error(payload?.message || '保存失败');
+      }
+
+      applySimulatorBundleToStore(payload.data);
+      setSaveProfileMessage('基础属性已保存到云端');
+    } catch (error) {
+      console.error('Failed to save simulator profile:', error);
+      setSaveProfileError(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleSaveCultivation = async () => {
+    setIsSavingCultivation(true);
+    setSaveCultivationError(null);
+    setSaveCultivationMessage(null);
+
+    try {
+      const resp = await fetch('/api/simulator/current/cultivation', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          physicalAttack: cultivation.physicalAttack || 0,
+          physicalDefense: cultivation.physicalDefense || 0,
+          magicAttack: cultivation.magicAttack || 0,
+          magicDefense: cultivation.magicDefense || 0,
+          petPhysicalAttack: cultivation.petPhysicalAttack || 0,
+          petPhysicalDefense: cultivation.petPhysicalDefense || 0,
+          petMagicAttack: cultivation.petMagicAttack || 0,
+          petMagicDefense: cultivation.petMagicDefense || 0,
+        }),
+      });
+
+      const payload = await resp.json();
+      if (!resp.ok || payload?.code !== 0 || !payload?.data) {
+        throw new Error(payload?.message || '保存失败');
+      }
+
+      applySimulatorBundleToStore(payload.data);
+      setSaveCultivationMessage('修炼等级已保存到云端');
+    } catch (error) {
+      console.error('Failed to save simulator cultivation:', error);
+      setSaveCultivationError(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setIsSavingCultivation(false);
+    }
+  };
   
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-yellow-800/60 rounded-2xl shadow-2xl overflow-hidden">
@@ -146,8 +242,17 @@ export function CharacterPanel() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-yellow-400/90 bg-yellow-900/40 px-4 py-1.5 rounded-lg border border-yellow-700/40">门派：龙宫</span>
-          <span className="text-sm text-yellow-400/90 bg-yellow-900/40 px-4 py-1.5 rounded-lg border border-yellow-700/40">等级：89</span>
+          {activeAccount && (
+            <span className="text-sm text-yellow-100 bg-slate-900/60 px-4 py-1.5 rounded-lg border border-yellow-700/30">
+              角色：{activeAccount.name}
+            </span>
+          )}
+          <span className="text-sm text-yellow-400/90 bg-yellow-900/40 px-4 py-1.5 rounded-lg border border-yellow-700/40">
+            门派：{baseAttributes.faction}
+          </span>
+          <span className="text-sm text-yellow-400/90 bg-yellow-900/40 px-4 py-1.5 rounded-lg border border-yellow-700/40">
+            等级：{baseAttributes.level}
+          </span>
         </div>
       </div>
       
@@ -173,6 +278,40 @@ export function CharacterPanel() {
         >
           修炼
         </button>
+        {activeTab === 'attributes' && (
+          <div className="ml-auto flex items-center gap-3 pb-2">
+            {saveProfileError && (
+              <span className="text-xs text-red-300">{saveProfileError}</span>
+            )}
+            {!saveProfileError && saveProfileMessage && (
+              <span className="text-xs text-emerald-300">{saveProfileMessage}</span>
+            )}
+            <button
+              className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSavingProfile}
+              onClick={handleSaveProfile}
+            >
+              {isSavingProfile ? '保存中...' : '保存到云端'}
+            </button>
+          </div>
+        )}
+        {activeTab === 'cultivation' && (
+          <div className="ml-auto flex items-center gap-3 pb-2">
+            {saveCultivationError && (
+              <span className="text-xs text-red-300">{saveCultivationError}</span>
+            )}
+            {!saveCultivationError && saveCultivationMessage && (
+              <span className="text-xs text-emerald-300">{saveCultivationMessage}</span>
+            )}
+            <button
+              className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSavingCultivation}
+              onClick={handleSaveCultivation}
+            >
+              {isSavingCultivation ? '保存中...' : '保存修炼'}
+            </button>
+          </div>
+        )}
       </div>
       
       {/* 滚动区域 - 展示所有属性 */}

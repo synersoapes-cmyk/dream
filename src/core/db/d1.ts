@@ -7,6 +7,7 @@ import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import { drizzle as drizzleLibsql } from 'drizzle-orm/libsql';
 
 import { envConfigs } from '@/config';
+import { isCloudflareWorker } from '@/shared/lib/env';
 
 // Minimal D1Database type to avoid pulling in @cloudflare/workers-types globally,
 // which overrides built-in types like Response.json() and breaks non-Workers code.
@@ -21,6 +22,14 @@ type D1Database = {
 let d1DbInstance: ReturnType<typeof drizzleD1> | ReturnType<typeof drizzleLibsql> | null = null;
 let d1ContextInitPromise: Promise<void> | null = null;
 let resolvedD1Binding: D1Database | null = null;
+
+function shouldCacheD1Instance() {
+  if (envConfigs.db_singleton_enabled === 'true') {
+    return true;
+  }
+
+  return isCloudflareWorker && process.env.NODE_ENV === 'production';
+}
 
 function isLocalD1FallbackEnabled() {
   return process.env.ALLOW_LOCAL_D1_FALLBACK === 'true';
@@ -41,7 +50,7 @@ function isD1Database(value: unknown): value is D1Database {
  * handle the error gracefully (e.g. config.ts already catches it).
  */
 function getD1Binding(): D1Database {
-  if (resolvedD1Binding) {
+  if (shouldCacheD1Instance() && resolvedD1Binding) {
     return resolvedD1Binding;
   }
 
@@ -51,14 +60,18 @@ function getD1Binding(): D1Database {
     ?.DB;
 
   if (isD1Database(maybeGlobalBinding)) {
-    resolvedD1Binding = maybeGlobalBinding;
+    if (shouldCacheD1Instance()) {
+      resolvedD1Binding = maybeGlobalBinding;
+    }
     return maybeGlobalBinding;
   }
 
   try {
     const cloudflareContextBinding = getCloudflareContext().env?.DB;
     if (isD1Database(cloudflareContextBinding)) {
-      resolvedD1Binding = cloudflareContextBinding;
+      if (shouldCacheD1Instance()) {
+        resolvedD1Binding = cloudflareContextBinding;
+      }
       return cloudflareContextBinding;
     }
   } catch {
@@ -75,16 +88,25 @@ export async function initD1ContextForDev() {
     return;
   }
 
+  if (!shouldCacheD1Instance()) {
+    resolvedD1Binding = null;
+    d1DbInstance = null;
+  }
+
   const globalBinding = (globalThis as { Cloudflare?: { env?: { DB?: unknown } } }).Cloudflare?.env?.DB;
   if (isD1Database(globalBinding)) {
-    resolvedD1Binding = globalBinding;
+    if (shouldCacheD1Instance()) {
+      resolvedD1Binding = globalBinding;
+    }
     return;
   }
 
   try {
     const context = getCloudflareContext();
     if (isD1Database(context.env?.DB)) {
-      resolvedD1Binding = context.env.DB;
+      if (shouldCacheD1Instance()) {
+        resolvedD1Binding = context.env.DB;
+      }
       return;
     }
   } catch {
@@ -95,7 +117,9 @@ export async function initD1ContextForDev() {
     d1ContextInitPromise = getCloudflareContext({ async: true })
       .then((context) => {
         if (isD1Database(context.env?.DB)) {
-          resolvedD1Binding = context.env.DB;
+          if (shouldCacheD1Instance()) {
+            resolvedD1Binding = context.env.DB;
+          }
         }
       })
       .catch(() => undefined);
@@ -141,12 +165,16 @@ function getLocalD1DatabaseUrl(): string | null {
 }
 
 export function getD1Db() {
-  if (d1DbInstance) return d1DbInstance;
+  if (shouldCacheD1Instance() && d1DbInstance) return d1DbInstance;
 
   try {
     const binding = getD1Binding();
-    d1DbInstance = drizzleD1(binding);
-    return d1DbInstance;
+    const instance = drizzleD1(binding);
+    if (shouldCacheD1Instance()) {
+      d1DbInstance = instance;
+      return d1DbInstance;
+    }
+    return instance;
   } catch (workerBindingError) {
     if (!isLocalD1FallbackEnabled()) {
       throw new Error(
@@ -160,8 +188,11 @@ export function getD1Db() {
     }
 
     const client = createClient({ url: localD1Url });
-    d1DbInstance = drizzleLibsql({ client });
+    const instance = drizzleLibsql({ client });
+    if (shouldCacheD1Instance()) {
+      d1DbInstance = instance;
+      return d1DbInstance;
+    }
+    return instance;
   }
-
-  return d1DbInstance;
 }

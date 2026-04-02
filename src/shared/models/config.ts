@@ -81,6 +81,7 @@ export async function addConfig(newConfig: NewConfig) {
 
 export const getConfigs = unstable_cache(
   async (): Promise<Configs> => {
+    const startedAt = Date.now();
     const configs: Record<string, string> = {};
 
     if (envConfigs.database_provider === 'd1') {
@@ -93,6 +94,13 @@ export const getConfigs = unstable_cache(
     const result = await db().select().from(config);
     if (!result) {
       return configs;
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[config] getConfigs db timings', {
+        rows: result.length,
+        elapsedMs: Date.now() - startedAt,
+      });
     }
 
     for (const config of result) {

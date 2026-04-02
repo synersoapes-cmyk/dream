@@ -3,7 +3,6 @@ import { oneTap } from 'better-auth/plugins';
 import { getLocale } from 'next-intl/server';
 
 import { db } from '@/core/db';
-import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
@@ -76,10 +75,6 @@ export async function getAuthOptions(configs: Record<string, string>) {
   const emailVerificationEnabled =
     configs.email_verification_enabled === 'true' && !!configs.resend_api_key;
 
-  if (envConfigs.database_provider === 'd1') {
-    await initD1ContextForDev();
-  }
-
   return {
     ...authOptions,
     // Add database connection only when actually needed (runtime).
@@ -146,8 +141,9 @@ export async function getAuthOptions(configs: Record<string, string>) {
 
               // grant role for new user
               await grantRoleForNewUser(user);
+
             } catch (e) {
-              console.log('grant credits or role for new user failed', e);
+              console.log('post sign-up bootstrap failed', e);
             }
           },
         },

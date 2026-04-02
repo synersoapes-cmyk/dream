@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import {
   createInitialEquipment,
   createInitialEquipmentSets,
@@ -52,7 +51,7 @@ const defaultSeed = {
   equipmentSets: initialEquipmentSets,
 };
 
-export const useGameStore = create<GameState>()(persist((set, get) => ({
+export const useGameStore = create<GameState>()((set, get) => ({
   // Account state
   accounts: createDefaultAccounts(defaultSeed),
   activeAccountId: 'default_account_1',
@@ -211,26 +210,4 @@ export const useGameStore = create<GameState>()(persist((set, get) => ({
   damageHistory: [],
   formation: '天覆阵',
   ...createStatActions(set, get),
-}), {
-  name: 'mhxy-sim-store',
-  version: 3, // Changed version to 3 to invalidate cache and show new multi-account mock data
-  migrate: (persistedState: unknown, version: number) => {
-    if (version < 3) {
-      // Drop older persisted payloads and rebuild from current seeds.
-      return undefined;
-    }
-    return persistedState as GameState;
-  },
-  // Persist only the slices that are meaningful across sessions.
-  partialize: (state) => ({
-    accounts: state.accounts,
-    activeAccountId: state.activeAccountId,
-    baseAttributes: state.baseAttributes,
-    equipment: state.equipment,
-    equipmentSets: state.equipmentSets,
-    pendingEquipments: state.pendingEquipments,
-    experimentSeats: state.experimentSeats,
-    cultivation: state.cultivation,
-    treasure: state.treasure,
-  }) as unknown as GameState,
 }));

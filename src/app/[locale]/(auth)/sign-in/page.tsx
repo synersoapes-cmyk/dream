@@ -55,7 +55,6 @@ export default async function SignInPage({
   const { callbackUrl, email } = await searchParams;
   const { locale } = await params;
 
-  // If user is already signed in, don't show sign-in form again.
   const sessionUser = await getSignUser();
   if (sessionUser) {
     const target = stripLocalePrefix(safeInternalPath(callbackUrl), locale);

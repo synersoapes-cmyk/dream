@@ -87,6 +87,11 @@
           "title": "AI Chats",
           "url": "/admin/chats",
           "icon": "MessageCircle"
+        },
+        {
+          "title": "Simulator Defaults",
+          "url": "/admin/simulator",
+          "icon": "FlaskConical"
         }
       ]
     }

@@ -1,20 +1,77 @@
-// @ts-nocheck
+'use client';
+
 import * as React from 'react';
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select';
 import { cn } from '@/shared/lib/utils';
 
-export function SimpleSelect({ className, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+type SimpleSelectProps = {
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  placeholder?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
+};
+
+type SelectOptionElement = React.ReactElement<{
+  value?: string;
+  children?: React.ReactNode;
+}>;
+
+function getOptionLabel(option: SelectOptionElement): string {
+  if (typeof option.props.children === 'string') {
+    return option.props.children;
+  }
+
+  return String(option.props.value ?? '');
+}
+
+export function SimpleSelect({
+  className,
+  children,
+  disabled,
+  placeholder,
+  value,
+  onValueChange,
+}: SimpleSelectProps) {
+  const options = React.Children.toArray(children).filter(React.isValidElement);
+
   return (
-    <select
-      className={cn(
-        'flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none',
-        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        className
-      )}
-      {...props}
+    <Select
+      disabled={disabled}
+      value={value}
+      onValueChange={onValueChange}
     >
-      {children}
-    </select>
+      <SelectTrigger
+        className={cn(
+          'h-10 w-full border-yellow-700/60 bg-slate-950/80 text-yellow-100 shadow-none focus-visible:border-yellow-500 focus-visible:ring-yellow-500/20',
+          className,
+        )}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent className="min-w-[var(--radix-select-trigger-width)] border-yellow-700/60 bg-slate-900 text-yellow-100">
+        {(options as SelectOptionElement[]).map((option) => {
+          const itemValue = String(option.props.value ?? '');
+
+          return (
+            <SelectItem
+              key={itemValue}
+              value={itemValue}
+              className="text-yellow-100 focus:bg-blue-600 focus:text-white"
+            >
+              {getOptionLabel(option)}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }

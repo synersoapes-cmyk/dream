@@ -28,9 +28,25 @@ export async function POST(request: Request) {
     return limited;
   }
 
+  const startedAt = Date.now();
   const auth = await getAuth();
+  const authReadyAt = Date.now();
   const handler = toNextJsHandler(auth.handler);
-  return handler.POST(request);
+  const response = await handler.POST(request);
+
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    new URL(request.url).pathname.endsWith('/api/auth/get-session')
+  ) {
+    console.log('[auth-route] POST /api/auth/get-session timings', {
+      getAuthMs: authReadyAt - startedAt,
+      handlerMs: Date.now() - authReadyAt,
+      totalMs: Date.now() - startedAt,
+      status: response.status,
+    });
+  }
+
+  return response;
 }
 
 export async function GET(request: Request) {
@@ -39,7 +55,23 @@ export async function GET(request: Request) {
     return limited;
   }
 
+  const startedAt = Date.now();
   const auth = await getAuth();
+  const authReadyAt = Date.now();
   const handler = toNextJsHandler(auth.handler);
-  return handler.GET(request);
+  const response = await handler.GET(request);
+
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    new URL(request.url).pathname.endsWith('/api/auth/get-session')
+  ) {
+    console.log('[auth-route] GET /api/auth/get-session timings', {
+      getAuthMs: authReadyAt - startedAt,
+      handlerMs: Date.now() - authReadyAt,
+      totalMs: Date.now() - startedAt,
+      status: response.status,
+    });
+  }
+
+  return response;
 }

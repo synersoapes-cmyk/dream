@@ -87,6 +87,11 @@
           "title": "AI 对话",
           "url": "/admin/chats",
           "icon": "MessageCircle"
+        },
+        {
+          "title": "Simulator 默认模板",
+          "url": "/admin/simulator",
+          "icon": "FlaskConical"
         }
       ]
     }

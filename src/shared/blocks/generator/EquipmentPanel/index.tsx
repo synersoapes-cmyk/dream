@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { Sword, Shield, Gem, Sparkles, Settings, Edit2, Package, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
@@ -423,6 +424,9 @@ export function EquipmentPanel() {
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [editedSetName, setEditedSetName] = useState('');
+  const [isSavingEquipment, setIsSavingEquipment] = useState(false);
+  const [saveEquipmentMessage, setSaveEquipmentMessage] = useState<string | null>(null);
+  const [saveEquipmentError, setSaveEquipmentError] = useState<string | null>(null);
   const [libraryModalInfo, setLibraryModalInfo] = useState<{
     type: Equipment['type'];
     name: string;
@@ -494,6 +498,35 @@ export function EquipmentPanel() {
     });
   };
 
+  const handleSaveEquipment = async () => {
+    setIsSavingEquipment(true);
+    setSaveEquipmentError(null);
+    setSaveEquipmentMessage(null);
+
+    try {
+      const resp = await fetch('/api/simulator/current/equipment', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ equipment }),
+      });
+
+      const payload = await resp.json();
+      if (!resp.ok || payload?.code !== 0 || !payload?.data) {
+        throw new Error(payload?.message || '保存失败');
+      }
+
+      applySimulatorBundleToStore(payload.data);
+      setSaveEquipmentMessage('当前装备已保存到云端');
+    } catch (error) {
+      console.error('Failed to save simulator equipment:', error);
+      setSaveEquipmentError(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setIsSavingEquipment(false);
+    }
+  };
+
   return (
     <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-2xl border border-yellow-800/60 flex flex-col overflow-hidden shadow-2xl">
       {/* 标题栏 */}
@@ -506,6 +539,21 @@ export function EquipmentPanel() {
             <h2 className="text-base font-bold text-yellow-100">当前装备</h2>
             <p className="text-xs text-yellow-400/80">Current Equipment</p>
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {saveEquipmentError && (
+            <span className="text-xs text-red-300">{saveEquipmentError}</span>
+          )}
+          {!saveEquipmentError && saveEquipmentMessage && (
+            <span className="text-xs text-emerald-300">{saveEquipmentMessage}</span>
+          )}
+          <button
+            className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSavingEquipment}
+            onClick={handleSaveEquipment}
+          >
+            {isSavingEquipment ? '保存中...' : '保存装备'}
+          </button>
         </div>
       </div>
 

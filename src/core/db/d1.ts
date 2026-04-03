@@ -13,6 +13,10 @@ type D1Database = {
   dump(): Promise<ArrayBuffer>;
 };
 
+type CloudflareEnvLike = {
+  DB?: unknown;
+};
+
 // D1 singleton instance (reused across requests in the same isolate / process)
 let d1DbInstance: ReturnType<typeof drizzleD1> | null = null;
 let d1ContextInitPromise: Promise<void> | null = null;
@@ -58,7 +62,7 @@ function getD1Binding(): D1Database {
   }
 
   try {
-    const cloudflareContextBinding = getCloudflareContext().env?.DB;
+    const cloudflareContextBinding = (getCloudflareContext().env as CloudflareEnvLike | undefined)?.DB;
     if (isD1Database(cloudflareContextBinding)) {
       if (shouldCacheD1Instance()) {
         resolvedD1Binding = cloudflareContextBinding;
@@ -94,9 +98,10 @@ export async function initD1ContextForDev() {
 
   try {
     const context = getCloudflareContext();
-    if (isD1Database(context.env?.DB)) {
+    const contextBinding = (context.env as CloudflareEnvLike | undefined)?.DB;
+    if (isD1Database(contextBinding)) {
       if (shouldCacheD1Instance()) {
-        resolvedD1Binding = context.env.DB;
+        resolvedD1Binding = contextBinding;
       }
       return;
     }
@@ -107,9 +112,10 @@ export async function initD1ContextForDev() {
   if (!d1ContextInitPromise) {
     d1ContextInitPromise = getCloudflareContext({ async: true })
       .then((context) => {
-        if (isD1Database(context.env?.DB)) {
+        const contextBinding = (context.env as CloudflareEnvLike | undefined)?.DB;
+        if (isD1Database(contextBinding)) {
           if (shouldCacheD1Instance()) {
-            resolvedD1Binding = context.env.DB;
+            resolvedD1Binding = contextBinding;
           }
         }
       })

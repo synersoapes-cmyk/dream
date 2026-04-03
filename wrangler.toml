@@ -1,0 +1,31 @@
+name = "dream"
+main = ".open-next/worker.js"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+binding = "ASSETS"
+directory = ".open-next/assets"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "test"
+database_id = "1dff6e14-d299-401e-902b-bfaa4bdaa844"
+migrations_dir = "src/config/db/migrations_d1"
+remote = true
+
+[observability]
+enabled = true
+
+[vars]
+NEXT_PUBLIC_APP_URL = "https://REPLACE_WITH_YOUR_DOMAIN"
+NEXT_PUBLIC_APP_NAME = "Dream"
+NEXT_PUBLIC_THEME = "default"
+NEXT_PUBLIC_APPEARANCE = "system"
+DATABASE_PROVIDER = "d1"
+DATABASE_URL = ""
+DB_SCHEMA_FILE = "./src/config/db/schema.sqlite.ts"
+DB_MIGRATIONS_OUT = "./src/config/db/migrations_d1"
+DB_SINGLETON_ENABLED = "false"
+DB_MAX_CONNECTIONS = "1"
+AUTH_SECRET = "REPLACE_WITH_A_STRONG_SECRET"

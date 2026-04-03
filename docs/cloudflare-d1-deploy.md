@@ -23,8 +23,8 @@
 
 其中：
 
-- `database_name` 可以保留为 `dream` 或改成你的正式库名
-- `database_id` 需要替换成 Cloudflare D1 实际库 ID
+- `database_name` 可以保留为 `dream`，或改成你的正式库名
+- `database_id` 需要替换成 Cloudflare D1 实际数据库 ID
 - `AUTH_SECRET` 需要替换成真实随机值
 
 ## 3. 创建 D1 数据库
@@ -44,7 +44,7 @@ wrangler d1 create dream
 
 ## 4. 生成与应用迁移
 
-如果后续你把 schema 真正写进项目，可以这样执行：
+如果后续你把 schema 正式写进项目，可以这样执行：
 
 本地应用迁移：
 
@@ -58,7 +58,7 @@ pnpm d1:migrate:local
 pnpm d1:migrate:remote
 ```
 
-如果只是先部署现有项目而还没有新增迁移文件，当前 `migrations_d1` 目录会是空目录，这是正常的。
+如果当前 `migrations_d1` 目录还是空的，这是正常情况。
 
 ## 5. 构建与部署
 
@@ -80,17 +80,18 @@ pnpm cf:preview
 
 - 只在 Cloudflare Workers 运行时使用 `DB` binding
 - 不再依赖 `DATABASE_URL`
+- 不再提供本地 SQLite fallback
 
 因此：
 
 - Cloudflare 线上环境使用 D1
-- 非 Cloudflare 运行时不会获得 D1 binding
+- 非 Cloudflare 运行时如果拿不到 `DB` binding，会直接报错
 
-这意味着如果你在纯 Node 本地环境直接把 `DATABASE_PROVIDER=d1` 跑起来，数据库相关逻辑不会像本地 sqlite 那样完整可用。
+这意味着如果你在本地以 `DATABASE_PROVIDER=d1` 运行，就必须确保 Wrangler / Cloudflare context 和 `DB` binding 已经可用。
 
 ## 7. 推荐后续动作
 
-为了让这个项目真正完整跑在 D1 上，下一步最推荐继续做两件事：
+为了让项目完整跑在 D1 上，下一步最推荐继续做两件事：
 
 1. 把业务 schema 正式写进 [src/config/db/schema.sqlite.ts](D:/project/dream/src/config/db/schema.sqlite.ts)
 2. 生成第一批 D1 migration 并执行远程部署

@@ -1,4 +1,6 @@
 ﻿// @ts-nocheck
+"use client";
+
 import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import {

@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { X, Edit2 } from 'lucide-react';

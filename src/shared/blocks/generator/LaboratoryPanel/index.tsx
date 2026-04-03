@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
 import { useGameStore } from '@/features/simulator/store/gameStore';

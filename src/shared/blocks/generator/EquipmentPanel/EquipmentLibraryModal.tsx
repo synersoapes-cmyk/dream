@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Package } from 'lucide-react';

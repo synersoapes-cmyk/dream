@@ -3,11 +3,13 @@ import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 import { createMDX } from 'fumadocs-mdx/next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
-initOpenNextCloudflareForDev({
-  experimental: {
-    remoteBindings: true,
-  },
-});
+if (process.env.NODE_ENV === 'development') {
+  initOpenNextCloudflareForDev({
+    experimental: {
+      remoteBindings: true,
+    },
+  });
+}
 
 const withMDX = createMDX();
 
@@ -19,9 +21,15 @@ const withNextIntl = createNextIntlPlugin({
   requestConfig: './src/core/i18n/request.ts',
 });
 
+const standaloneOutputEnabled =
+  process.env.NEXT_OUTPUT === 'standalone' || process.env.NEXTJS_OUTPUT === 'standalone';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: process.env.VERCEL ? undefined : 'standalone',
+  // OpenNext/Cloudflare does not need Next.js standalone output.
+  // On Windows this mode often fails while creating symlinks in `.next/standalone`.
+  // Keep it opt-in for any future Docker/Node deployment workflow.
+  output: standaloneOutputEnabled ? 'standalone' : undefined,
   reactStrictMode: false,
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   images: {

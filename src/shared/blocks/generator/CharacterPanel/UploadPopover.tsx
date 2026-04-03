@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import React, { useState, useRef, useEffect } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Upload, X, FileText, CheckCircle, AlertCircle, Clock } from 'lucide-react';

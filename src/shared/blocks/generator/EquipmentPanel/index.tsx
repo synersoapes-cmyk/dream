@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import type { Equipment } from '@/features/simulator/store/gameTypes';

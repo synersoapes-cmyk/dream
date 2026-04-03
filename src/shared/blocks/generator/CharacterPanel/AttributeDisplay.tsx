@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client";
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { useState, useRef, useEffect } from 'react';
 

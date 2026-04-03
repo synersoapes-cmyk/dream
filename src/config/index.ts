@@ -18,8 +18,8 @@ export const envConfigs: ConfigMap = {
   locale: process.env.NEXT_PUBLIC_DEFAULT_LOCALE ?? 'en',
   database_url: process.env.DATABASE_URL ?? '',
   database_auth_token: process.env.DATABASE_AUTH_TOKEN ?? '',
-  database_provider: process.env.DATABASE_PROVIDER ?? 'postgresql',
-  db_schema_file: process.env.DB_SCHEMA_FILE ?? './src/config/db/schema.ts',
+  database_provider: process.env.DATABASE_PROVIDER ?? 'd1',
+  db_schema_file: process.env.DB_SCHEMA_FILE ?? './src/config/db/schema.sqlite.ts',
   // PostgreSQL schema name (e.g. 'web'). Default: 'public'
   db_schema: process.env.DB_SCHEMA ?? 'public',
   // Drizzle migrations journal table name (avoid conflicts across projects)
@@ -30,7 +30,7 @@ export const envConfigs: ConfigMap = {
   db_migrations_schema: process.env.DB_MIGRATIONS_SCHEMA ?? 'drizzle',
   // Output folder for drizzle-kit generated migrations
   db_migrations_out:
-    process.env.DB_MIGRATIONS_OUT ?? './src/config/db/migrations',
+    process.env.DB_MIGRATIONS_OUT ?? './src/config/db/migrations_d1',
   db_singleton_enabled: process.env.DB_SINGLETON_ENABLED || 'false',
   db_max_connections: process.env.DB_MAX_CONNECTIONS || '1',
   auth_url: process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || '',

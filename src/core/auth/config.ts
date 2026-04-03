@@ -79,9 +79,9 @@ export async function getAuthOptions(configs: Record<string, string>) {
     ...authOptions,
     // Add database connection only when actually needed (runtime).
     // D1 can also be available in local `next dev` via OpenNext Cloudflare bindings.
-    database: (envConfigs.database_url || envConfigs.database_provider === 'd1')
+    database: envConfigs.database_provider === 'd1'
       ? drizzleAdapter(db(), {
-          provider: getDatabaseProvider(envConfigs.database_provider),
+          provider: getDatabaseProvider(),
           schema: schema,
         })
       : null,
@@ -234,23 +234,12 @@ export async function getSocialProviders(configs: Record<string, string>) {
 }
 
 // convert database provider to better-auth database provider
-export function getDatabaseProvider(
-  provider: string
-): 'sqlite' | 'pg' | 'mysql' {
-  switch (provider) {
-    case 'sqlite':
-      return 'sqlite';
-    case 'turso':
-      return 'sqlite';
-    case 'd1':
-      return 'sqlite';
-    case 'postgresql':
-      return 'pg';
-    case 'mysql':
-      return 'mysql';
-    default:
-      throw new Error(
-        `Unsupported database provider for auth: ${envConfigs.database_provider}`
-      );
+export function getDatabaseProvider(): 'sqlite' {
+  if (envConfigs.database_provider !== 'd1') {
+    throw new Error(
+      `Unsupported database provider for auth: ${envConfigs.database_provider}. This project only supports D1.`
+    );
   }
+
+  return 'sqlite';
 }

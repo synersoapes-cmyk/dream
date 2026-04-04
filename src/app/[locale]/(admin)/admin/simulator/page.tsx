@@ -14,7 +14,7 @@ import {
   listDamageRuleVersions,
 } from '@/shared/models/damage-rules';
 import { listRuleSimulationCases } from '@/shared/models/rule-simulation-cases';
-import { getSimulatorSeedConfig, serializeSimulatorSeedConfig } from '@/shared/models/simulator-seed';
+import { getSimulatorSeedConfig, serializeSimulatorSeedConfig } from '@/shared/models/simulator-template';
 import { Crumb } from '@/shared/types/blocks/common';
 
 export default async function SimulatorAdminPage({

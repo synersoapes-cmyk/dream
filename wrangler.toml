@@ -9,8 +9,8 @@ directory = ".open-next/assets"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "test"
-database_id = "1dff6e14-d299-401e-902b-bfaa4bdaa844"
+database_name = "dream"
+database_id = "8dd34671-db31-43c7-82a1-19320c7ca4ba"
 migrations_dir = "src/config/db/migrations_d1"
 remote = true
 

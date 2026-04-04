@@ -304,6 +304,15 @@ const DEFAULT_SIMULATOR_SEED_CONFIG: SimulatorSeedConfig = {
   equipments: DEFAULT_SIMULATOR_EQUIPMENTS,
 };
 
+export class SimulatorSeedConfigMissingError extends Error {
+  constructor(missingKeys: string[]) {
+    super(
+      `Simulator default config is missing in database: ${missingKeys.join(', ')}`
+    );
+    this.name = 'SimulatorSeedConfigMissingError';
+  }
+}
+
 export function serializeSimulatorSeedConfig(config: SimulatorSeedConfig) {
   return {
     [SIMULATOR_SEED_CONFIG_KEYS.characterMeta]: JSON.stringify(config.characterMeta),
@@ -356,7 +365,7 @@ async function ensureSimulatorSeedDbReady() {
   await initD1ContextForDev();
 }
 
-export async function ensureSimulatorSeedConfig() {
+export async function seedSimulatorSeedConfig() {
   await ensureSimulatorSeedDbReady();
 
   const names = Object.values(SIMULATOR_SEED_CONFIG_KEYS);
@@ -380,22 +389,26 @@ export async function ensureSimulatorSeedConfig() {
   }
 }
 
+async function loadSimulatorSeedConfigRows() {
+  await ensureSimulatorSeedDbReady();
+
+  const names = Object.values(SIMULATOR_SEED_CONFIG_KEYS);
+  const rows = await db()
+    .select({ name: config.name, value: config.value })
+    .from(config)
+    .where(inArray(config.name, names));
+
+  return new Map<string, string | null>(
+    rows.map((row: { name: string; value: string | null }) => [
+      row.name,
+      row.value,
+    ]),
+  );
+}
+
 export async function getSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
   try {
-    await ensureSimulatorSeedConfig();
-
-    const names = Object.values(SIMULATOR_SEED_CONFIG_KEYS);
-    const rows = await db()
-      .select({ name: config.name, value: config.value })
-      .from(config)
-      .where(inArray(config.name, names));
-
-    const valueByName = new Map<string, string | null>(
-      rows.map((row: { name: string; value: string | null }) => [
-        row.name,
-        row.value,
-      ]),
-    );
+    const valueByName = await loadSimulatorSeedConfigRows();
 
     return {
       characterMeta: parseSeedValue(
@@ -427,4 +440,38 @@ export async function getSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
 
     return cloneSeedValue(DEFAULT_SIMULATOR_SEED_CONFIG);
   }
+}
+
+export async function getRequiredSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
+  const valueByName = await loadSimulatorSeedConfigRows();
+  const missingKeys = Object.values(SIMULATOR_SEED_CONFIG_KEYS).filter(
+    (key) => !valueByName.has(key) || !valueByName.get(key)
+  );
+
+  if (missingKeys.length > 0) {
+    throw new SimulatorSeedConfigMissingError(missingKeys);
+  }
+
+  return {
+    characterMeta: parseSeedValue(
+      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.characterMeta),
+      DEFAULT_SIMULATOR_CHARACTER_META,
+    ),
+    profile: parseSeedValue(
+      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.profile),
+      DEFAULT_SIMULATOR_PROFILE,
+    ),
+    skills: parseSeedValue(
+      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.skills),
+      DEFAULT_SIMULATOR_SKILLS,
+    ),
+    cultivations: parseSeedValue(
+      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.cultivations),
+      DEFAULT_SIMULATOR_CULTIVATIONS,
+    ),
+    equipments: parseSeedValue(
+      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.equipments),
+      DEFAULT_SIMULATOR_EQUIPMENTS,
+    ),
+  };
 }

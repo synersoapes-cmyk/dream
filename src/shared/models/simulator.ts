@@ -15,7 +15,7 @@ import {
   snapshotEquipmentSlot,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
-import { getSimulatorSeedConfig } from '@/shared/models/simulator-seed';
+import { getRequiredSimulatorSeedConfig } from '@/shared/models/simulator-template';
 
 export type SimulatorCharacter = typeof gameCharacter.$inferSelect;
 export type SimulatorSnapshot = typeof characterSnapshot.$inferSelect;
@@ -361,7 +361,7 @@ export async function provisionDefaultSimulatorCharacterForUser(params: {
     return getSimulatorCharacterBundle(params.userId, existing.id);
   }
 
-  const seedConfig = await getSimulatorSeedConfig();
+  const seedConfig = await getRequiredSimulatorSeedConfig();
   const characterId = getUuid();
   const snapshotId = getUuid();
   const database = db();

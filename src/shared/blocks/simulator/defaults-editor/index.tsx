@@ -28,7 +28,7 @@ import type {
   SimulatorSeedEquipmentAttr,
   SimulatorSeedProfile,
   SimulatorSeedSkill,
-} from '@/shared/models/simulator-seed';
+} from '@/shared/models/simulator-template';
 
 type EditorProps = {
   canEdit?: boolean;

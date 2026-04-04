@@ -1,8 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import {
-  getSimulatorCharacterBundle,
-  provisionDefaultSimulatorCharacterForUser,
-} from '@/shared/models/simulator';
+import { getSimulatorCharacterBundle } from '@/shared/models/simulator';
 import { getUserInfo } from '@/shared/models/user';
 
 export async function GET(req: Request) {
@@ -15,16 +12,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const characterId = searchParams.get('characterId') || undefined;
 
-    let bundle = await getSimulatorCharacterBundle(user.id, characterId);
-    if (!bundle) {
-      bundle = await provisionDefaultSimulatorCharacterForUser({
-        userId: user.id,
-        userName: user.name,
-      });
-    }
+    const bundle = await getSimulatorCharacterBundle(user.id, characterId);
 
     if (!bundle) {
-      return respErr('simulator character not found');
+      return respErr('simulator character not initialized');
     }
 
     return respData(bundle);

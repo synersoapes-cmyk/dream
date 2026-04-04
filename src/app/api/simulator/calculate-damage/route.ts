@@ -1,8 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import {
-  getSimulatorCharacterBundle,
-  provisionDefaultSimulatorCharacterForUser,
-} from '@/shared/models/simulator';
+import { getSimulatorCharacterBundle } from '@/shared/models/simulator';
 import { calculateDamageWithRules } from '@/shared/services/damage-engine';
 import { getUserInfo } from '@/shared/models/user';
 
@@ -24,16 +21,10 @@ export async function POST(req: Request) {
         ? body.characterId
         : undefined;
 
-    let bundle = await getSimulatorCharacterBundle(user.id, characterId);
-    if (!bundle) {
-      bundle = await provisionDefaultSimulatorCharacterForUser({
-        userId: user.id,
-        userName: user.name,
-      });
-    }
+    const bundle = await getSimulatorCharacterBundle(user.id, characterId);
 
     if (!bundle) {
-      return respErr('simulator character not found');
+      return respErr('simulator character not initialized');
     }
 
     const targets = Array.isArray(body?.targets)

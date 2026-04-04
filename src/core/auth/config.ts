@@ -14,6 +14,7 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { getClientIp } from '@/shared/lib/ip';
 import { grantCreditsForNewUser } from '@/shared/models/credit';
+import { provisionDefaultSimulatorCharacterForUser } from '@/shared/models/simulator';
 import { getEmailService } from '@/shared/services/email';
 import { grantRoleForNewUser } from '@/shared/services/rbac';
 
@@ -131,20 +132,22 @@ export async function getAuthOptions(configs: Record<string, string>) {
             return user;
           },
           after: async (user: any) => {
-            try {
-              if (!user.id) {
-                throw new Error('user id is required');
-              }
-
-              // grant credits for new user
-              await grantCreditsForNewUser(user);
-
-              // grant role for new user
-              await grantRoleForNewUser(user);
-
-            } catch (e) {
-              console.log('post sign-up bootstrap failed', e);
+            if (!user.id) {
+              throw new Error('user id is required');
             }
+
+            // grant credits for new user
+            await grantCreditsForNewUser(user);
+
+            // grant role for new user
+            await grantRoleForNewUser(user);
+
+            // Provision simulator data immediately after sign-up so the
+            // user has a real persisted starting state before first visit.
+            await provisionDefaultSimulatorCharacterForUser({
+              userId: user.id,
+              userName: user.name,
+            });
           },
         },
       },

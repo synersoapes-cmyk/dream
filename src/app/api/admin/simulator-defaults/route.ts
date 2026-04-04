@@ -5,7 +5,7 @@ import { saveConfigs } from '@/shared/models/config';
 import {
   parseSimulatorSeedConfigInput,
   serializeSimulatorSeedConfig,
-} from '@/shared/models/simulator-seed';
+} from '@/shared/models/simulator-template';
 import { PERMISSIONS } from '@/core/rbac';
 
 export async function PATCH(req: Request) {

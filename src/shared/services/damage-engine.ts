@@ -1,5 +1,5 @@
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
+
 import {
   getDamageRuleSet,
   type DamageAttributeConversionRule,
@@ -8,8 +8,13 @@ import {
   type DamageSkillBonusRule,
   type DamageSkillFormulaRule,
 } from '@/shared/models/damage-rules';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import {
+  buildSimulatorCharacterDomain,
+  type SimulatorCharacterDomain,
+  type SimulatorNumericMap,
+} from '@/shared/models/simulator-domain';
 
-type NumericMap = Record<string, number>;
 type JsonObject = Record<string, unknown>;
 
 const DEFAULT_SELF_FORMATION_FACTOR = 1.2;
@@ -76,6 +81,13 @@ export type DamageEngineResult = {
   targets: DamageEngineTargetResult[];
 };
 
+export type DamageEngineRuleExecutionInput = {
+  bundle: SimulatorCharacterBundle;
+  domain: SimulatorCharacterDomain;
+  ruleSet: DamageRuleSet;
+  request: DamageEngineRequest;
+};
+
 function toFiniteNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -86,88 +98,41 @@ function clampTargetCount(value: number | undefined) {
   return Math.min(10, Math.max(1, parsed));
 }
 
-function parseJsonObject(value: string | null | undefined): JsonObject {
-  if (!value) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? (parsed as JsonObject) : {};
-  } catch {
-    return {};
-  }
-}
-
-function buildSourceValueMap(bundle: SimulatorCharacterBundle): NumericMap {
-  const profile = bundle.profile;
-  if (!profile) {
-    return {};
-  }
-
-  const rawBody = parseJsonObject(profile.rawBodyJson);
-
-  return {
-    level: toFiniteNumber(profile.level),
-    physique: toFiniteNumber(profile.physique),
-    magic: toFiniteNumber(profile.magic),
-    strength: toFiniteNumber(profile.strength),
-    endurance: toFiniteNumber(profile.endurance),
-    agility: toFiniteNumber(profile.agility),
-    potentialPoints: toFiniteNumber(profile.potentialPoints),
-    hp: toFiniteNumber(profile.hp),
-    mp: toFiniteNumber(profile.mp),
-    damage: toFiniteNumber(profile.damage),
-    defense: toFiniteNumber(profile.defense),
-    magicDamage: toFiniteNumber(profile.magicDamage),
-    magicDefense: toFiniteNumber(profile.magicDefense),
-    speed: toFiniteNumber(profile.speed),
-    hit: toFiniteNumber(profile.hit),
-    sealHit: toFiniteNumber(profile.sealHit),
-    magicPower: toFiniteNumber(rawBody.magicPower),
-    dodge: toFiniteNumber(rawBody.dodge),
-  };
-}
-
-function buildCurrentEquipmentDrivenStats(bundle: SimulatorCharacterBundle) {
-  const profile = bundle.profile;
-  if (!profile) {
+function buildCurrentEquipmentDrivenStats(domain: SimulatorCharacterDomain) {
+  if (!domain) {
     return null;
   }
 
-  const rawBody = parseJsonObject(profile.rawBodyJson);
   const baseAttributes = {
-    level: toFiniteNumber(profile.level),
-    hp: toFiniteNumber(rawBody.hp, profile.hp),
-    magic: toFiniteNumber(profile.magic),
-    physique: toFiniteNumber(profile.physique),
-    magicPower: toFiniteNumber(rawBody.magicPower),
-    strength: toFiniteNumber(profile.strength),
-    endurance: toFiniteNumber(profile.endurance),
-    agility: toFiniteNumber(profile.agility),
-    faction: profile.school as any,
+    level: domain.profile.level,
+    hp: toFiniteNumber(domain.rawProfile.hp, domain.profile.hp),
+    magic: domain.profile.magic,
+    physique: domain.profile.physique,
+    magicPower: domain.profile.spirit,
+    strength: domain.profile.strength,
+    endurance: domain.profile.endurance,
+    agility: domain.profile.agility,
+    faction: domain.school as any,
   };
 
-  const equipment = bundle.equipments.map((item) => ({
+  const equipment = domain.equipment.map((item) => ({
     id: item.id,
     name: item.name,
     type: item.slot as any,
     mainStat: '',
     baseStats: {},
-    stats: Object.fromEntries(
-      item.attrs.map((attr) => [attr.attrType, toFiniteNumber(attr.attrValue)]),
-    ),
+    stats: item.attributes,
   }));
 
   return computeDerivedStats(baseAttributes, equipment as any, null);
 }
 
 function computeAttributeConversions(
-  sourceValues: NumericMap,
-  rules: DamageAttributeConversionRule[],
+  sourceValues: SimulatorNumericMap,
+  rules: DamageAttributeConversionRule[]
 ) {
-  const valueBag: NumericMap = { ...sourceValues };
-  const totals: NumericMap = {};
+  const valueBag: SimulatorNumericMap = { ...sourceValues };
+  const totals: SimulatorNumericMap = {};
   const contributions = rules.map((rule) => {
     const sourceValue = toFiniteNumber(valueBag[rule.sourceAttr]);
     const contribution = sourceValue * toFiniteNumber(rule.coefficient);
@@ -190,30 +155,17 @@ function computeAttributeConversions(
   };
 }
 
-function sumEquipmentAttributes(bundle: SimulatorCharacterBundle) {
-  const totals: NumericMap = {};
-
-  for (const equipment of bundle.equipments) {
-    for (const attr of equipment.attrs) {
-      totals[attr.attrType] = (totals[attr.attrType] ?? 0) + toFiniteNumber(attr.attrValue);
-    }
-  }
-
-  return totals;
-}
-
-function getCultivationLevel(bundle: SimulatorCharacterBundle, cultivationType: string) {
-  const matched = bundle.cultivations.find(
-    (item) => item.cultivationType === cultivationType,
-  );
-
-  return matched ? toFiniteNumber(matched.level) : 0;
+function getCultivationLevel(
+  domain: SimulatorCharacterDomain,
+  cultivationType: string
+) {
+  return toFiniteNumber(domain.cultivationLevels[cultivationType]);
 }
 
 function resolveLookupValue(
   rule: DamageModifierRule | undefined,
   inputKey: string | number | undefined,
-  fallback: number,
+  fallback: number
 ) {
   if (!rule) {
     return fallback;
@@ -250,12 +202,14 @@ function resolveLookupValue(
 }
 
 function findModifierByDomain(ruleSet: DamageRuleSet, modifierDomain: string) {
-  return ruleSet.modifiers.find((item) => item.modifierDomain === modifierDomain);
+  return ruleSet.modifiers.find(
+    (item) => item.modifierDomain === modifierDomain
+  );
 }
 
 function resolveTransformCardFactor(
   request: DamageEngineRequest,
-  ruleSet: DamageRuleSet,
+  ruleSet: DamageRuleSet
 ) {
   if (typeof request.transformCardFactor === 'number') {
     return request.transformCardFactor;
@@ -268,7 +222,7 @@ function resolveTransformCardFactor(
 function resolveAddendValue(
   requestValue: number | undefined,
   targetValue: number | undefined,
-  fallback = 0,
+  fallback = 0
 ) {
   if (typeof targetValue === 'number') {
     return targetValue;
@@ -283,29 +237,37 @@ function resolveAddendValue(
 
 function findSkill(
   bundle: SimulatorCharacterBundle,
-  request: DamageEngineRequest,
+  request: DamageEngineRequest
 ) {
   if (request.skillCode) {
-    const byCode = bundle.skills.find((item) => item.skillCode === request.skillCode);
+    const byCode = bundle.skills.find(
+      (item) => item.skillCode === request.skillCode
+    );
     if (byCode) {
       return byCode;
     }
   }
 
   if (request.skillName) {
-    const byName = bundle.skills.find((item) => item.skillName === request.skillName);
+    const byName = bundle.skills.find(
+      (item) => item.skillName === request.skillName
+    );
     if (byName) {
       return byName;
     }
   }
 
-  return bundle.skills.find((item) => item.skillCode === 'dragon_roll') ?? bundle.skills[0] ?? null;
+  return (
+    bundle.skills.find((item) => item.skillCode === 'dragon_roll') ??
+    bundle.skills[0] ??
+    null
+  );
 }
 
 function resolveSkillBonus(
   skillCode: string,
   ruleSet: DamageRuleSet,
-  activeBonusRuleCodes: string[],
+  activeBonusRuleCodes: string[]
 ) {
   if (activeBonusRuleCodes.length === 0) {
     return {
@@ -316,7 +278,8 @@ function resolveSkillBonus(
 
   const matchedRules = ruleSet.skillBonuses.filter(
     (item) =>
-      item.skillCode === skillCode && activeBonusRuleCodes.includes(item.ruleCode),
+      item.skillCode === skillCode &&
+      activeBonusRuleCodes.includes(item.ruleCode)
   );
 
   if (matchedRules.length === 0) {
@@ -326,10 +289,15 @@ function resolveSkillBonus(
     };
   }
 
-  const shouldTakeMax = matchedRules.every((item) => item.conflictPolicy === 'take_max');
+  const shouldTakeMax = matchedRules.every(
+    (item) => item.conflictPolicy === 'take_max'
+  );
   const bonusLevel = shouldTakeMax
     ? Math.max(...matchedRules.map((item) => toFiniteNumber(item.bonusValue)))
-    : matchedRules.reduce((sum, item) => sum + toFiniteNumber(item.bonusValue), 0);
+    : matchedRules.reduce(
+        (sum, item) => sum + toFiniteNumber(item.bonusValue),
+        0
+      );
 
   return {
     bonusLevel,
@@ -338,10 +306,15 @@ function resolveSkillBonus(
 }
 
 function findSkillFormula(skillCode: string, ruleSet: DamageRuleSet) {
-  return ruleSet.skillFormulas.find((item) => item.skillCode === skillCode) ?? null;
+  return (
+    ruleSet.skillFormulas.find((item) => item.skillCode === skillCode) ?? null
+  );
 }
 
-function computeQuadraticBaseTerm(rule: DamageSkillFormulaRule, skillLevel: number) {
+function computeQuadraticBaseTerm(
+  rule: DamageSkillFormulaRule,
+  skillLevel: number
+) {
   const baseTerm = rule.baseFormula.baseTerm as JsonObject | undefined;
   const a = toFiniteNumber(baseTerm?.a);
   const b = toFiniteNumber(baseTerm?.b);
@@ -350,40 +323,44 @@ function computeQuadraticBaseTerm(rule: DamageSkillFormulaRule, skillLevel: numb
   return a * skillLevel * skillLevel + b * skillLevel + c;
 }
 
-function buildDefaultTargets(request: DamageEngineRequest): DamageEngineTargetInput[] {
+function buildDefaultTargets(
+  request: DamageEngineRequest,
+  domain: SimulatorCharacterDomain
+): DamageEngineTargetInput[] {
   if (request.targets && request.targets.length > 0) {
     return request.targets;
   }
 
+  const fallbackTarget = domain.battleContext;
+
   return [
     {
-      name: request.targetName || '默认目标',
-      magicDefense: toFiniteNumber(request.targetMagicDefense),
-      magicDefenseCultivation: toFiniteNumber(request.targetMagicDefenseCultivation),
-      shenmuValue: request.shenmuValue,
-      magicResult: request.magicResult,
+      name: request.targetName || fallbackTarget?.targetName || '默认目标',
+      magicDefense: toFiniteNumber(
+        request.targetMagicDefense,
+        fallbackTarget?.targetMagicDefense ?? 0
+      ),
+      magicDefenseCultivation: toFiniteNumber(
+        request.targetMagicDefenseCultivation,
+        fallbackTarget?.targetMagicDefenseCultivation ?? 0
+      ),
+      shenmuValue: request.shenmuValue ?? fallbackTarget?.shenmuValue,
+      magicResult: request.magicResult ?? fallbackTarget?.magicResult,
     },
   ];
 }
 
-export async function calculateDamageWithRules(
-  bundle: SimulatorCharacterBundle,
-  request: DamageEngineRequest,
-): Promise<DamageEngineResult> {
+export function calculateDamageFromRuleSet({
+  bundle,
+  domain,
+  ruleSet,
+  request,
+}: DamageEngineRuleExecutionInput): DamageEngineResult {
   const profile = bundle.profile;
   const character = bundle.character;
 
   if (!profile) {
     throw new Error('character profile not found');
-  }
-
-  const ruleSet = await getDamageRuleSet({
-    versionId: request.ruleVersionId,
-    versionCode: request.ruleVersionCode,
-  });
-
-  if (!ruleSet) {
-    throw new Error('damage rule version not found');
   }
 
   const skill = findSkill(bundle, request);
@@ -396,36 +373,50 @@ export async function calculateDamageWithRules(
     throw new Error(`skill formula not found for ${skill.skillCode}`);
   }
 
-  const sourceValues = buildSourceValueMap(bundle);
-  const derivedStats = computeAttributeConversions(sourceValues, ruleSet.attributeConversions);
-  const equipmentTotals = sumEquipmentAttributes(bundle);
-  const currentEquipmentDrivenStats = buildCurrentEquipmentDrivenStats(bundle);
+  const sourceValues = domain.attributeSources;
+  const derivedStats = computeAttributeConversions(
+    sourceValues,
+    ruleSet.attributeConversions
+  );
+  const equipmentTotals = domain.equipmentAttributeTotals;
+  const currentEquipmentDrivenStats = buildCurrentEquipmentDrivenStats(domain);
   const activeBonusRuleCodes = request.activeBonusRuleCodes ?? [];
-  const skillBonus = resolveSkillBonus(skill.skillCode, ruleSet, activeBonusRuleCodes);
-  const finalSkillLevel = toFiniteNumber(skill.finalLevel || skill.baseLevel) + skillBonus.bonusLevel;
+  const skillBonus = resolveSkillBonus(
+    skill.skillCode,
+    ruleSet,
+    activeBonusRuleCodes
+  );
+  const finalSkillLevel =
+    toFiniteNumber(skill.finalLevel || skill.baseLevel) + skillBonus.bonusLevel;
   const baseTerm = computeQuadraticBaseTerm(skillFormula, finalSkillLevel);
-  const targetCount = clampTargetCount(request.targetCount);
+  const targetCount = clampTargetCount(
+    request.targetCount ?? domain.battleContext?.splitTargetCount
+  );
   const splitFactor = resolveLookupValue(
     findModifierByDomain(ruleSet, 'split_factor'),
     targetCount >= 5 ? '5+' : targetCount,
-    Math.max(0.5, 1 - targetCount * 0.1),
+    Math.max(0.5, 1 - targetCount * 0.1)
   );
   const formationFactor = toFiniteNumber(
     request.formationFactor,
-    DEFAULT_SELF_FORMATION_FACTOR,
+    DEFAULT_SELF_FORMATION_FACTOR
   );
   const formationCounterFactor = resolveLookupValue(
     findModifierByDomain(ruleSet, 'formation_counter'),
-    request.formationCounterState || DEFAULT_FORMATION_COUNTER_STATE,
-    1,
+    request.formationCounterState ||
+      domain.battleContext?.formationCounterState ||
+      DEFAULT_FORMATION_COUNTER_STATE,
+    1
   );
   const elementFactor = resolveLookupValue(
     findModifierByDomain(ruleSet, 'element_relation'),
-    request.elementRelation || '无克/普通',
-    1,
+    request.elementRelation ||
+      domain.battleContext?.elementRelation ||
+      '无克/普通',
+    1
   );
   const transformCardFactor = resolveTransformCardFactor(request, ruleSet);
-  const attackerMagicCultivation = getCultivationLevel(bundle, 'magicAttack');
+  const attackerMagicCultivation = getCultivationLevel(domain, 'magicAttack');
   const equipmentMagicResult = toFiniteNumber(equipmentTotals.magicResult);
   const panelMagicDamageBreakdown = {
     formula: '魔力 * 5 + 灵力 * 1.2 + 等级 * 3 + 装备法伤 + 法宝法伤',
@@ -436,27 +427,32 @@ export async function calculateDamageWithRules(
     treasureMagicDamage: 0,
   };
   const panelMagicDamage =
-    currentEquipmentDrivenStats?.magicDamage && currentEquipmentDrivenStats.magicDamage > 0
+    currentEquipmentDrivenStats?.magicDamage &&
+    currentEquipmentDrivenStats.magicDamage > 0
       ? toFiniteNumber(currentEquipmentDrivenStats.magicDamage)
       : toFiniteNumber(profile.magicDamage) > 0
         ? toFiniteNumber(profile.magicDamage)
-        : toFiniteNumber(derivedStats.totals.magicDamage) + toFiniteNumber(equipmentTotals.magicDamage);
+        : toFiniteNumber(derivedStats.totals.magicDamage) +
+          toFiniteNumber(equipmentTotals.magicDamage);
 
-  const targets = buildDefaultTargets(request).map((target, index) => {
+  const targets = buildDefaultTargets(request, domain).map((target, index) => {
     const targetName = target.name || `目标${index + 1}`;
     const shenmuValue = resolveAddendValue(
       request.shenmuValue,
       target.shenmuValue,
-      0,
+      0
     );
     const magicResult = resolveAddendValue(
       request.magicResult,
       target.magicResult,
-      equipmentMagicResult,
+      equipmentMagicResult
     );
     const targetMagicDefense = toFiniteNumber(target.magicDefense);
-    const targetMagicDefenseCultivation = toFiniteNumber(target.magicDefenseCultivation);
-    const cultivationDiff = attackerMagicCultivation - targetMagicDefenseCultivation;
+    const targetMagicDefenseCultivation = toFiniteNumber(
+      target.magicDefenseCultivation
+    );
+    const cultivationDiff =
+      attackerMagicCultivation - targetMagicDefenseCultivation;
     const combinedFormationFactor = formationFactor * formationCounterFactor;
 
     const rawDamage =
@@ -484,7 +480,7 @@ export async function calculateDamageWithRules(
         ruleVersionCode: ruleSet.version.versionCode,
         characterId: character.id,
         school: profile.school || character.school,
-        roleType: character.roleType,
+        roleType: domain.roleType,
         skillCode: skill.skillCode,
         skillName: skill.skillName,
         formulaKey: skillFormula.formulaKey,
@@ -509,7 +505,8 @@ export async function calculateDamageWithRules(
           result: panelMagicDamage,
         },
         panelMagicDamageSource:
-          currentEquipmentDrivenStats?.magicDamage && currentEquipmentDrivenStats.magicDamage > 0
+          currentEquipmentDrivenStats?.magicDamage &&
+          currentEquipmentDrivenStats.magicDamage > 0
             ? 'current_equipment_state'
             : toFiniteNumber(profile.magicDamage) > 0
               ? 'profile.magicDamage'
@@ -532,8 +529,12 @@ export async function calculateDamageWithRules(
           hp: Number((derivedStats.totals.hp ?? 0).toFixed(2)),
           mp: Number((derivedStats.totals.mp ?? 0).toFixed(2)),
           spirit: Number((derivedStats.totals.spirit ?? 0).toFixed(2)),
-          magicDamage: Number((derivedStats.totals.magicDamage ?? 0).toFixed(2)),
-          magicDefense: Number((derivedStats.totals.magicDefense ?? 0).toFixed(2)),
+          magicDamage: Number(
+            (derivedStats.totals.magicDamage ?? 0).toFixed(2)
+          ),
+          magicDefense: Number(
+            (derivedStats.totals.magicDefense ?? 0).toFixed(2)
+          ),
           speed: Number((derivedStats.totals.speed ?? 0).toFixed(2)),
         },
         attributeContributions: derivedStats.contributions.map((item) => ({
@@ -543,15 +544,25 @@ export async function calculateDamageWithRules(
         equipmentAttributeTotals: equipmentTotals,
         currentEquipmentDrivenStats: currentEquipmentDrivenStats
           ? {
-              hp: Number(toFiniteNumber(currentEquipmentDrivenStats.hp).toFixed(2)),
-              magic: Number(toFiniteNumber(currentEquipmentDrivenStats.magic).toFixed(2)),
+              hp: Number(
+                toFiniteNumber(currentEquipmentDrivenStats.hp).toFixed(2)
+              ),
+              magic: Number(
+                toFiniteNumber(currentEquipmentDrivenStats.magic).toFixed(2)
+              ),
               magicDamage: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.magicDamage).toFixed(2),
+                toFiniteNumber(currentEquipmentDrivenStats.magicDamage).toFixed(
+                  2
+                )
               ),
               magicDefense: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.magicDefense).toFixed(2),
+                toFiniteNumber(
+                  currentEquipmentDrivenStats.magicDefense
+                ).toFixed(2)
               ),
-              speed: Number(toFiniteNumber(currentEquipmentDrivenStats.speed).toFixed(2)),
+              speed: Number(
+                toFiniteNumber(currentEquipmentDrivenStats.speed).toFixed(2)
+              ),
             }
           : null,
       },
@@ -577,11 +588,38 @@ export async function calculateDamageWithRules(
       magicDamage: panelMagicDamage,
       magicDefense: toFiniteNumber(
         currentEquipmentDrivenStats?.magicDefense,
-        profile.magicDefense,
+        profile.magicDefense
       ),
       speed: toFiniteNumber(currentEquipmentDrivenStats?.speed, profile.speed),
       spirit: Number((derivedStats.totals.spirit ?? 0).toFixed(2)),
     },
     targets,
   };
+}
+
+export async function calculateDamageWithRules(
+  bundle: SimulatorCharacterBundle,
+  request: DamageEngineRequest
+): Promise<DamageEngineResult> {
+  const domain = buildSimulatorCharacterDomain(bundle);
+
+  if (!bundle.profile || !domain) {
+    throw new Error('character profile not found');
+  }
+
+  const ruleSet = await getDamageRuleSet({
+    versionId: request.ruleVersionId,
+    versionCode: request.ruleVersionCode,
+  });
+
+  if (!ruleSet) {
+    throw new Error('damage rule version not found');
+  }
+
+  return calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet,
+    request,
+  });
 }

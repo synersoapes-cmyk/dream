@@ -6,15 +6,29 @@ import {
   requirePermission,
 } from '@/core/rbac';
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
+import { SimulatorAdvisorConfigPanel } from '@/shared/blocks/simulator/advisor-config-panel';
 import { SimulatorDefaultsEditor } from '@/shared/blocks/simulator/defaults-editor';
+import { SimulatorLabSessionAdminPanel } from '@/shared/blocks/simulator/lab-session-admin-panel';
+import { SimulatorOcrHealthPanel } from '@/shared/blocks/simulator/ocr-health-panel';
+import { SimulatorPendingReviewPanel } from '@/shared/blocks/simulator/pending-review-panel';
 import { RulePlaygroundPanel } from '@/shared/blocks/simulator/rule-playground';
 import { RuleCenterPanel } from '@/shared/blocks/simulator/rule-center';
+import { SimulatorTargetTemplatePanel } from '@/shared/blocks/simulator/target-template-panel';
+import { SimulatorUserDiagnosticsPanel } from '@/shared/blocks/simulator/user-diagnostics-panel';
 import {
   getDamageRuleVersionDetail,
   listDamageRuleVersions,
 } from '@/shared/models/damage-rules';
 import { listRuleSimulationCases } from '@/shared/models/rule-simulation-cases';
+import {
+  listAdminBattleTargetTemplates,
+  listAdminSimulatorLabSessions,
+  listAdminSimulatorPendingEquipment,
+  listAdminSimulatorUserDiagnostics,
+} from '@/shared/models/simulator';
 import { getSimulatorSeedConfig, serializeSimulatorSeedConfig } from '@/shared/models/simulator-template';
+import { getSimulatorAdvisorAdminConfig } from '@/shared/services/simulator-advisor';
+import { getSimulatorOcrConfigStatus as getSimulatorOcrStatus } from '@/shared/services/simulator-ocr';
 import { Crumb } from '@/shared/types/blocks/common';
 
 export default async function SimulatorAdminPage({
@@ -39,6 +53,21 @@ export default async function SimulatorAdminPage({
   const serializedConfig = serializeSimulatorSeedConfig(seedConfig);
   const ruleVersions = await listDamageRuleVersions();
   const simulationCases = await listRuleSimulationCases();
+  const ocrStatus = await getSimulatorOcrStatus();
+  const advisorConfig = await getSimulatorAdvisorAdminConfig();
+  const pendingReviewItems = await listAdminSimulatorPendingEquipment({
+    status: 'pending',
+    limit: 50,
+  });
+  const labSessions = await listAdminSimulatorLabSessions({
+    limit: 30,
+  });
+  const targetTemplates = await listAdminBattleTargetTemplates({
+    limit: 100,
+  });
+  const userDiagnostics = await listAdminSimulatorUserDiagnostics({
+    limit: 20,
+  });
   const activeVersion =
     ruleVersions.find((item) => item.isActive) ?? ruleVersions[0] ?? null;
   const initialRuleDetail = activeVersion
@@ -66,8 +95,24 @@ export default async function SimulatorAdminPage({
             skills: serializedConfig['simulator.default.skills'],
             cultivations: serializedConfig['simulator.default.cultivations'],
             equipments: serializedConfig['simulator.default.equipments'],
+            battleContext: serializedConfig['simulator.default.battle_context'],
           }}
         />
+        <SimulatorAdvisorConfigPanel
+          canEdit={Boolean(writableUser)}
+          initialConfig={advisorConfig}
+        />
+        <SimulatorOcrHealthPanel status={ocrStatus} />
+        <SimulatorPendingReviewPanel
+          canEdit={Boolean(writableUser)}
+          initialItems={pendingReviewItems}
+        />
+        <SimulatorTargetTemplatePanel
+          canEdit={Boolean(writableUser)}
+          initialItems={targetTemplates}
+        />
+        <SimulatorUserDiagnosticsPanel initialItems={userDiagnostics} />
+        <SimulatorLabSessionAdminPanel initialItems={labSessions} />
         <RuleCenterPanel
           canEdit={Boolean(writableUser)}
           initialVersions={ruleVersions}

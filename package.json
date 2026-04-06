@@ -22,6 +22,7 @@
     "build": "next build",
     "build:fast": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
+    "test:simulator": "node --import tsx --test src/shared/models/simulator-domain.test.ts src/shared/services/damage-engine.test.ts src/shared/services/simulator-ocr.test.ts src/features/simulator/utils/simulatorBundle.test.ts src/features/simulator/utils/simulatorLabSession.test.ts src/features/simulator/utils/simulatorCandidateEquipment.test.ts src/features/simulator/utils/simulatorAdvisorContext.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

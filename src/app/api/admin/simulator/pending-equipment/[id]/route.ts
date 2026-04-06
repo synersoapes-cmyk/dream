@@ -1,0 +1,81 @@
+import { PERMISSIONS } from '@/core/rbac';
+import { respData, respErr } from '@/shared/lib/resp';
+import {
+  deleteAdminSimulatorCandidateEquipment,
+  updateAdminSimulatorPendingEquipmentReview,
+} from '@/shared/models/simulator';
+import { getUserInfo } from '@/shared/models/user';
+import { hasAllPermissions } from '@/shared/services/rbac';
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getUserInfo();
+    if (!user) {
+      return respErr('no auth');
+    }
+
+    const allowed = await hasAllPermissions(user.id, [
+      PERMISSIONS.SETTINGS_READ,
+      PERMISSIONS.SETTINGS_WRITE,
+    ]);
+    if (!allowed) {
+      return respErr('no permission');
+    }
+
+    const { id } = await params;
+    const body = await req.json();
+    const item = await updateAdminSimulatorPendingEquipmentReview({
+      id,
+      status: body?.status || 'pending',
+      equipment:
+        body?.equipment && typeof body.equipment === 'object'
+          ? body.equipment
+          : {},
+      rawText: typeof body?.rawText === 'string' ? body.rawText : undefined,
+    });
+
+    if (!item) {
+      return respErr('pending equipment not found');
+    }
+
+    return respData(item);
+  } catch (error) {
+    console.error('failed to update admin simulator pending equipment:', error);
+    return respErr('failed to update admin simulator pending equipment');
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getUserInfo();
+    if (!user) {
+      return respErr('no auth');
+    }
+
+    const allowed = await hasAllPermissions(user.id, [
+      PERMISSIONS.SETTINGS_READ,
+      PERMISSIONS.SETTINGS_WRITE,
+    ]);
+    if (!allowed) {
+      return respErr('no permission');
+    }
+
+    const { id } = await params;
+    const deleted = await deleteAdminSimulatorCandidateEquipment(id);
+
+    if (!deleted) {
+      return respErr('pending equipment not found');
+    }
+
+    return respData({ success: true });
+  } catch (error) {
+    console.error('failed to delete admin simulator pending equipment:', error);
+    return respErr('failed to delete admin simulator pending equipment');
+  }
+}

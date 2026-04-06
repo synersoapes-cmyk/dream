@@ -22,6 +22,7 @@ import {
 } from '@/shared/components/ui/select';
 import { Textarea } from '@/shared/components/ui/textarea';
 import type {
+  SimulatorSeedBattleContext,
   SimulatorSeedCharacterMeta,
   SimulatorSeedCultivation,
   SimulatorSeedEquipment,
@@ -38,6 +39,7 @@ type EditorProps = {
     skills: string;
     cultivations: string;
     equipments: string;
+    battleContext: string;
   };
 };
 
@@ -111,6 +113,25 @@ const EMPTY_EQUIPMENT: SimulatorSeedEquipment = {
   attrs: [],
 };
 
+const EMPTY_BATTLE_CONTEXT: SimulatorSeedBattleContext = {
+  selfFormation: '天覆阵',
+  selfElement: '水',
+  formationCounterState: '无克/普通',
+  elementRelation: '无克/普通',
+  transformCardFactor: 1,
+  splitTargetCount: 1,
+  shenmuValue: 0,
+  magicResult: 0,
+  targetName: '默认目标',
+  targetLevel: 0,
+  targetHp: 0,
+  targetDefense: 0,
+  targetMagicDefense: 0,
+  targetMagicDefenseCultivation: 0,
+  targetElement: '',
+  targetFormation: '普通阵',
+};
+
 const EQUIPMENT_SLOT_OPTIONS: string[] = [
   'weapon',
   'helmet',
@@ -161,6 +182,29 @@ const PROFILE_NUMBER_FIELDS: Array<{
   { key: 'sealHit', label: '封印命中' },
 ];
 
+const BATTLE_CONTEXT_FIELDS: Array<{
+  key: keyof SimulatorSeedBattleContext;
+  label: string;
+  type?: 'number' | 'text';
+}> = [
+  { key: 'selfFormation', label: '我方阵法' },
+  { key: 'selfElement', label: '我方五行' },
+  { key: 'formationCounterState', label: '阵法克制关系' },
+  { key: 'elementRelation', label: '五行关系' },
+  { key: 'transformCardFactor', label: '变身卡系数', type: 'number' },
+  { key: 'splitTargetCount', label: '分灵目标数', type: 'number' },
+  { key: 'shenmuValue', label: '神木符数值', type: 'number' },
+  { key: 'magicResult', label: '法伤结果', type: 'number' },
+  { key: 'targetName', label: '目标名称' },
+  { key: 'targetLevel', label: '目标等级', type: 'number' },
+  { key: 'targetHp', label: '目标气血', type: 'number' },
+  { key: 'targetDefense', label: '目标防御', type: 'number' },
+  { key: 'targetMagicDefense', label: '目标法防', type: 'number' },
+  { key: 'targetMagicDefenseCultivation', label: '目标法抗修炼', type: 'number' },
+  { key: 'targetElement', label: '目标五行' },
+  { key: 'targetFormation', label: '目标阵法' },
+];
+
 function parseJson<T>(value: string, fallback: T): T {
   try {
     return JSON.parse(value) as T;
@@ -205,6 +249,14 @@ export function SimulatorDefaultsEditor({
     () => parseJson<SimulatorSeedEquipment[]>(initialConfig.equipments, []),
     [initialConfig.equipments],
   );
+  const initialBattleContext = useMemo(
+    () =>
+      parseJson<SimulatorSeedBattleContext>(
+        initialConfig.battleContext,
+        EMPTY_BATTLE_CONTEXT,
+      ),
+    [initialConfig.battleContext],
+  );
 
   const [characterMeta, setCharacterMeta] =
     useState<SimulatorSeedCharacterMeta>(initialCharacterMeta);
@@ -214,6 +266,8 @@ export function SimulatorDefaultsEditor({
     useState<SimulatorSeedCultivation[]>(initialCultivations);
   const [equipments, setEquipments] =
     useState<SimulatorSeedEquipment[]>(initialEquipments);
+  const [battleContext, setBattleContext] =
+    useState<SimulatorSeedBattleContext>(initialBattleContext);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -318,6 +372,20 @@ export function SimulatorDefaultsEditor({
     );
   };
 
+  const updateBattleContext = (
+    key: keyof SimulatorSeedBattleContext,
+    value: string,
+  ) => {
+    setBattleContext((current) => ({
+      ...current,
+      [key]:
+        BATTLE_CONTEXT_FIELDS.find((field) => field.key === key)?.type ===
+        'number'
+          ? toNumber(value)
+          : value,
+    }));
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     setError(null);
@@ -354,7 +422,7 @@ export function SimulatorDefaultsEditor({
         }
       }
 
-      const response = await fetch('/api/admin/simulator-defaults', {
+      const response = await fetch('/api/admin/simulator/defaults', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -365,6 +433,7 @@ export function SimulatorDefaultsEditor({
           skills: JSON.stringify(skills, null, 2),
           cultivations: JSON.stringify(cultivations, null, 2),
           equipments: JSON.stringify(equipments, null, 2),
+          battleContext: JSON.stringify(battleContext, null, 2),
         }),
       });
 
@@ -389,6 +458,12 @@ export function SimulatorDefaultsEditor({
         parseJson<SimulatorSeedEquipment[]>(
           payload.data['simulator.default.equipments'],
           [],
+        ),
+      );
+      setBattleContext(
+        parseJson<SimulatorSeedBattleContext>(
+          payload.data['simulator.default.battle_context'],
+          EMPTY_BATTLE_CONTEXT,
         ),
       );
       setSuccess('默认模板已保存到 D1 config');
@@ -937,6 +1012,31 @@ export function SimulatorDefaultsEditor({
             </Button>
           </div>
         </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>默认战斗参数</CardTitle>
+          <CardDescription>
+            这部分会写入新用户默认快照的 `snapshot_battle_context`，用于首次进入实验室时的战斗环境基线。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={`grid gap-4 md:grid-cols-4 ${editorLockClass}`}>
+          {BATTLE_CONTEXT_FIELDS.map((field) => (
+            <div
+              key={field.key}
+              className={field.key === 'targetName' ? 'space-y-2 md:col-span-2' : 'space-y-2'}
+            >
+              <Label htmlFor={field.key}>{field.label}</Label>
+              <Input
+                id={field.key}
+                type={field.type === 'number' ? 'number' : 'text'}
+                value={String(battleContext[field.key] ?? '')}
+                onChange={(e) => updateBattleContext(field.key, e.target.value)}
+              />
+            </div>
+          ))}
+        </CardContent>
       </Card>
     </div>
   );

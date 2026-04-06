@@ -1,5 +1,8 @@
 import { createInitialEquipmentSets } from '@/features/simulator/store/gameInitialState';
-import { createInitialExperimentSeats, createInitialManualTargets } from '@/features/simulator/store/gameRuntimeSeeds';
+import {
+  createInitialExperimentSeats,
+  createInitialManualTargets,
+} from '@/features/simulator/store/gameRuntimeSeeds';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   AccountData,
@@ -12,6 +15,7 @@ import type {
   Skill,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
+
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 const FALLBACK_FACTION: Faction = '龙宫';
@@ -77,7 +81,9 @@ const cultivationTypeMap: Record<string, keyof Cultivation> = {
   pet_magic_defense: 'petMagicDefense',
 };
 
-function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {
+function parseJsonRecord(
+  value: string | null | undefined
+): Record<string, unknown> {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value);
@@ -88,20 +94,32 @@ function parseJsonRecord(value: string | null | undefined): Record<string, unkno
 }
 
 function toFaction(value: string | null | undefined): Faction {
-  const factions: Faction[] = ['龙宫', '大唐官府', '狮驼岭', '化生寺', '方寸山', '普陀山'];
-  return factions.includes(value as Faction) ? (value as Faction) : FALLBACK_FACTION;
+  const factions: Faction[] = [
+    '龙宫',
+    '大唐官府',
+    '狮驼岭',
+    '化生寺',
+    '方寸山',
+    '普陀山',
+  ];
+  return factions.includes(value as Faction)
+    ? (value as Faction)
+    : FALLBACK_FACTION;
 }
 
 function toEquipmentType(slot: string): Equipment['type'] {
   const normalized = slot.trim().toLowerCase();
   if (slotTypeMap[slot]) return slotTypeMap[slot];
   if (slotTypeMap[normalized]) return slotTypeMap[normalized];
-  if (normalized.startsWith('trinket') || normalized.startsWith('ring')) return 'trinket';
+  if (normalized.startsWith('trinket') || normalized.startsWith('ring'))
+    return 'trinket';
   if (normalized.startsWith('jade')) return 'jade';
   if (normalized.startsWith('weapon')) return 'weapon';
-  if (normalized.startsWith('helmet') || normalized.startsWith('head')) return 'helmet';
+  if (normalized.startsWith('helmet') || normalized.startsWith('head'))
+    return 'helmet';
   if (normalized.startsWith('necklace')) return 'necklace';
-  if (normalized.startsWith('armor') || normalized.startsWith('cloth')) return 'armor';
+  if (normalized.startsWith('armor') || normalized.startsWith('cloth'))
+    return 'armor';
   if (normalized.startsWith('belt')) return 'belt';
   if (normalized.startsWith('shoes')) return 'shoes';
   return 'weapon';
@@ -121,7 +139,9 @@ function toNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function buildAttrMap(bundleEquipment: SimulatorCharacterBundle['equipments'][number]) {
+function buildAttrMap(
+  bundleEquipment: SimulatorCharacterBundle['equipments'][number]
+) {
   const attrMap: Partial<Record<NumericStatKey, number>> = {};
 
   for (const attr of bundleEquipment.attrs) {
@@ -150,14 +170,18 @@ function formatMainStat(attrMap: Partial<CombatStats & BaseAttributes>) {
     magicPower: '灵力',
   };
 
-  const entries = Object.entries(attrMap).filter(([, value]) => typeof value === 'number' && value !== 0);
+  const entries = Object.entries(attrMap).filter(
+    ([, value]) => typeof value === 'number' && value !== 0
+  );
   if (!entries.length) {
     return '暂无属性';
   }
 
   return entries
     .slice(0, 2)
-    .map(([key, value]) => `${labels[key] ?? key} +${Math.round(Number(value))}`)
+    .map(
+      ([key, value]) => `${labels[key] ?? key} +${Math.round(Number(value))}`
+    )
     .join(' ');
 }
 
@@ -208,6 +232,27 @@ function mapCombatStats(bundle: SimulatorCharacterBundle): CombatStats {
   } as CombatStats;
 }
 
+function mapCombatTarget(
+  bundle: SimulatorCharacterBundle
+): GameState['combatTarget'] {
+  const ctx = bundle.battleContext;
+  const template = bundle.battleTargetTemplate;
+
+  return {
+    templateId: template?.id || ctx?.targetTemplateId || undefined,
+    name: ctx?.targetName || template?.name || '默认目标',
+    level: ctx?.targetLevel || template?.level || 0,
+    hp: Math.round(ctx?.targetHp || template?.hp || 0),
+    defense: Math.round(ctx?.targetDefense || template?.defense || 0),
+    magicDefense: Math.round(
+      ctx?.targetMagicDefense || template?.magicDefense || 0
+    ),
+    dungeonName: template?.dungeonName || undefined,
+    element: (ctx?.targetElement || template?.element || undefined) as any,
+    formation: ctx?.targetFormation || template?.formation || undefined,
+  };
+}
+
 function mapCultivation(bundle: SimulatorCharacterBundle): Cultivation {
   const cultivation: Cultivation = {
     physicalAttack: 0,
@@ -246,11 +291,11 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
     const buildMeta = parseJsonRecord(item.build?.specialEffectJson);
     const setMeta = parseJsonRecord(item.build?.setEffectJson);
 
-    const highlights = [
-      ...Object.values(buildMeta),
-      ...Object.values(setMeta),
-    ]
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    const highlights = [...Object.values(buildMeta), ...Object.values(setMeta)]
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.trim().length > 0
+      )
       .slice(0, 3);
 
     return {
@@ -274,13 +319,24 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
   });
 }
 
-export function applySimulatorBundleToStore(bundle: SimulatorCharacterBundle) {
+type ApplySimulatorBundleOptions = {
+  preserveWorkbenchState?: boolean;
+};
+
+export function applySimulatorBundleToStore(
+  bundle: SimulatorCharacterBundle,
+  options: ApplySimulatorBundleOptions = {}
+) {
   const baseAttributes = mapBaseAttributes(bundle);
   const combatStats = mapCombatStats(bundle);
   const equipment = mapEquipments(bundle);
   const equipmentSets = createInitialEquipmentSets(equipment);
   const skills = mapSkills(bundle);
   const cultivation = mapCultivation(bundle);
+  const combatTarget = mapCombatTarget(bundle);
+  const selfFormation = bundle.battleContext?.selfFormation || '天覆阵';
+  const selfElement = (bundle.battleContext?.selfElement || '水') as any;
+  const preserveWorkbenchState = options.preserveWorkbenchState ?? false;
 
   const account: AccountData = {
     id: bundle.character.id,
@@ -307,6 +363,8 @@ export function applySimulatorBundleToStore(bundle: SimulatorCharacterBundle) {
     skills,
     cultivation,
     treasure: null,
+    combatTarget,
+    formation: selfFormation,
     playerSetup: {
       ...state.playerSetup,
       level: baseAttributes.level,
@@ -315,14 +373,20 @@ export function applySimulatorBundleToStore(bundle: SimulatorCharacterBundle) {
       equipment,
       skills,
       cultivation,
+      element: selfElement,
+      formation: selfFormation,
     },
-    experimentSeats: createInitialExperimentSeats(equipment),
-    manualTargets: createInitialManualTargets(),
-    pendingEquipments: [],
-    selectedPendingIds: [],
-    history: [],
-    ocrLogs: [],
-    previewMode: false,
-    previewEquipment: null,
+    experimentSeats: preserveWorkbenchState
+      ? state.experimentSeats
+      : createInitialExperimentSeats(equipment),
+    manualTargets: preserveWorkbenchState
+      ? state.manualTargets
+      : createInitialManualTargets(),
+    pendingEquipments: preserveWorkbenchState ? state.pendingEquipments : [],
+    selectedPendingIds: preserveWorkbenchState ? state.selectedPendingIds : [],
+    history: preserveWorkbenchState ? state.history : [],
+    ocrLogs: preserveWorkbenchState ? state.ocrLogs : [],
+    previewMode: preserveWorkbenchState ? state.previewMode : false,
+    previewEquipment: preserveWorkbenchState ? state.previewEquipment : null,
   }));
 }

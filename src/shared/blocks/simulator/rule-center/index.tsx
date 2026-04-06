@@ -82,7 +82,7 @@ export function RuleCenterPanel({
     setSuccess(null);
 
     try {
-      const response = await fetch(`/api/admin/rule-versions/${versionId}`);
+      const response = await fetch(`/api/admin/simulator/rule-versions/${versionId}`);
       const payload = await response.json();
       if (!response.ok || payload?.code !== 0) {
         throw new Error(payload?.message || '加载规则详情失败');
@@ -105,7 +105,7 @@ export function RuleCenterPanel({
     setSuccess(null);
 
     try {
-      const response = await fetch(`/api/admin/rule-versions/${selectedId}/publish`, {
+      const response = await fetch(`/api/admin/simulator/rule-versions/${selectedId}/publish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,7 +145,7 @@ export function RuleCenterPanel({
     setSuccess(null);
 
     try {
-      const response = await fetch('/api/admin/rule-versions/clone', {
+      const response = await fetch('/api/admin/simulator/rule-versions/clone', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -184,7 +184,7 @@ export function RuleCenterPanel({
       const skillBonuses = JSON.parse(skillBonusDraft);
 
       const response = await fetch(
-        `/api/admin/rule-versions/${selectedId}/editable-sections`,
+        `/api/admin/simulator/rule-versions/${selectedId}/editable-sections`,
         {
           method: 'PATCH',
           headers: {

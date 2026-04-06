@@ -3,7 +3,6 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { IconHistory } from '@tabler/icons-react';
-import moment from 'moment';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { Link, usePathname, useRouter } from '@/core/i18n/navigation';
@@ -15,6 +14,7 @@ import { Card, CardContent } from '@/shared/components/ui/card';
 import { SidebarTrigger } from '@/shared/components/ui/sidebar';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 import { useAppContext } from '@/shared/contexts/app';
+import { formatRelativeTime } from '@/shared/lib/date';
 
 type ChatListItem = {
   id: string;
@@ -31,25 +31,6 @@ type ChatListResponse = {
   limit: number;
   hasMore: boolean;
 };
-
-function formatDate(value: string | Date | null | undefined, locale: string) {
-  if (!value) {
-    return '';
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
 
 export function ChatHistory() {
   const t = useTranslations('ai.chat.history');
@@ -255,7 +236,7 @@ export function ChatHistory() {
                       {chat.title?.trim() || t('untitled')}
                     </Link>
                     <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                      <span>{moment(chat.createdAt).fromNow()}</span>
+                      <span>{formatRelativeTime(chat.createdAt, locale)}</span>
                     </div>
                   </div>
                   <div className="flex flex-col items-start gap-2 text-left sm:items-end sm:text-right">

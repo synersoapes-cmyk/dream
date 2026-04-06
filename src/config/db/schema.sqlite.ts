@@ -128,7 +128,6 @@ export const verification = table(
   ]
 );
 
-
 export const gameCharacter = table(
   'game_character',
   {
@@ -166,7 +165,7 @@ export const characterSnapshot = table(
       .notNull()
       .references(() => gameCharacter.id, { onDelete: 'cascade' }),
     snapshotType: text('snapshot_type').notNull().default('current'),
-        name: text('name').notNull().default('????'),
+    name: text('name').notNull().default('????'),
     versionNo: integer('version_no').notNull().default(1),
     source: text('source').notNull().default('manual'),
     notes: text('notes').notNull().default(''),
@@ -190,32 +189,29 @@ export const characterSnapshot = table(
   ]
 );
 
-export const characterProfile = table(
-  'character_profile',
-  {
-    snapshotId: text('snapshot_id')
-      .primaryKey()
-      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
-    school: text('school').notNull().default('龙宫'),
-    level: integer('level').notNull().default(89),
-    physique: integer('physique').notNull().default(0),
-    magic: integer('magic').notNull().default(0),
-    strength: integer('strength').notNull().default(0),
-    endurance: integer('endurance').notNull().default(0),
-    agility: integer('agility').notNull().default(0),
-    potentialPoints: integer('potential_points').notNull().default(0),
-    hp: real('hp').notNull().default(0),
-    mp: real('mp').notNull().default(0),
-    damage: real('damage').notNull().default(0),
-    defense: real('defense').notNull().default(0),
-    magicDamage: real('magic_damage').notNull().default(0),
-    magicDefense: real('magic_defense').notNull().default(0),
-    speed: real('speed').notNull().default(0),
-    hit: real('hit').notNull().default(0),
-    sealHit: real('seal_hit').notNull().default(0),
-    rawBodyJson: text('raw_body_json').notNull().default('{}'),
-  }
-);
+export const characterProfile = table('character_profile', {
+  snapshotId: text('snapshot_id')
+    .primaryKey()
+    .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+  school: text('school').notNull().default('龙宫'),
+  level: integer('level').notNull().default(89),
+  physique: integer('physique').notNull().default(0),
+  magic: integer('magic').notNull().default(0),
+  strength: integer('strength').notNull().default(0),
+  endurance: integer('endurance').notNull().default(0),
+  agility: integer('agility').notNull().default(0),
+  potentialPoints: integer('potential_points').notNull().default(0),
+  hp: real('hp').notNull().default(0),
+  mp: real('mp').notNull().default(0),
+  damage: real('damage').notNull().default(0),
+  defense: real('defense').notNull().default(0),
+  magicDamage: real('magic_damage').notNull().default(0),
+  magicDefense: real('magic_defense').notNull().default(0),
+  speed: real('speed').notNull().default(0),
+  hit: real('hit').notNull().default(0),
+  sealHit: real('seal_hit').notNull().default(0),
+  rawBodyJson: text('raw_body_json').notNull().default('{}'),
+});
 
 export const characterSkill = table(
   'character_skill',
@@ -271,7 +267,9 @@ export const equipmentItem = table(
     price: integer('price').notNull().default(0),
     source: text('source').notNull().default('manual'),
     status: text('status').notNull().default('equipped'),
-    isLocked: integer('is_locked', { mode: 'boolean' }).notNull().default(false),
+    isLocked: integer('is_locked', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
       .notNull(),
@@ -289,35 +287,29 @@ export const equipmentItem = table(
   ]
 );
 
-export const equipmentBuild = table(
-  'equipment_build',
-  {
-    equipmentId: text('equipment_id')
-      .primaryKey()
-      .references(() => equipmentItem.id, { onDelete: 'cascade' }),
-    holeCount: integer('hole_count').notNull().default(0),
-    gemLevelTotal: integer('gem_level_total').notNull().default(0),
-    refineLevel: integer('refine_level').notNull().default(0),
-    specialEffectJson: text('special_effect_json').notNull().default('{}'),
-    setEffectJson: text('set_effect_json').notNull().default('{}'),
-    notesJson: text('notes_json').notNull().default('{}'),
-  }
-);
+export const equipmentBuild = table('equipment_build', {
+  equipmentId: text('equipment_id')
+    .primaryKey()
+    .references(() => equipmentItem.id, { onDelete: 'cascade' }),
+  holeCount: integer('hole_count').notNull().default(0),
+  gemLevelTotal: integer('gem_level_total').notNull().default(0),
+  refineLevel: integer('refine_level').notNull().default(0),
+  specialEffectJson: text('special_effect_json').notNull().default('{}'),
+  setEffectJson: text('set_effect_json').notNull().default('{}'),
+  notesJson: text('notes_json').notNull().default('{}'),
+});
 
-export const equipmentAttr = table(
-  'equipment_attr',
-  {
-    id: text('id').primaryKey(),
-    equipmentId: text('equipment_id')
-      .notNull()
-      .references(() => equipmentItem.id, { onDelete: 'cascade' }),
-    attrGroup: text('attr_group').notNull().default('extra'),
-    attrType: text('attr_type').notNull(),
-    valueType: text('value_type').notNull().default('flat'),
-    attrValue: real('attr_value').notNull().default(0),
-    displayOrder: integer('display_order').notNull().default(0),
-  }
-);
+export const equipmentAttr = table('equipment_attr', {
+  id: text('id').primaryKey(),
+  equipmentId: text('equipment_id')
+    .notNull()
+    .references(() => equipmentItem.id, { onDelete: 'cascade' }),
+  attrGroup: text('attr_group').notNull().default('extra'),
+  attrType: text('attr_type').notNull(),
+  valueType: text('value_type').notNull().default('flat'),
+  attrValue: real('attr_value').notNull().default(0),
+  displayOrder: integer('display_order').notNull().default(0),
+});
 
 export const snapshotEquipmentSlot = table(
   'snapshot_equipment_slot',
@@ -332,7 +324,55 @@ export const snapshotEquipmentSlot = table(
       .references(() => equipmentItem.id, { onDelete: 'cascade' }),
   },
   (table) => [
-    uniqueIndex('uidx_snapshot_equipment_slot').on(table.snapshotId, table.slot),
+    uniqueIndex('uidx_snapshot_equipment_slot').on(
+      table.snapshotId,
+      table.slot
+    ),
+  ]
+);
+
+export const battleTargetTemplate = table(
+  'battle_target_template',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull().default('system'),
+    name: text('name').notNull(),
+    dungeonName: text('dungeon_name').notNull().default(''),
+    targetType: text('target_type').notNull().default('mob'),
+    school: text('school').notNull().default(''),
+    level: integer('level').notNull().default(0),
+    hp: real('hp').notNull().default(0),
+    defense: real('defense').notNull().default(0),
+    magicDefense: real('magic_defense').notNull().default(0),
+    magicDefenseCultivation: integer('magic_defense_cultivation')
+      .notNull()
+      .default(0),
+    speed: real('speed').notNull().default(0),
+    element: text('element').notNull().default(''),
+    formation: text('formation').notNull().default('普通阵'),
+    notes: text('notes').notNull().default(''),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_battle_target_template_scope_enabled').on(
+      table.scope,
+      table.enabled,
+      table.name
+    ),
+    index('idx_battle_target_template_user_enabled').on(
+      table.userId,
+      table.enabled,
+      table.updatedAt
+    ),
   ]
 );
 
@@ -380,7 +420,9 @@ export const ruleVersion = table(
     versionCode: text('version_code').notNull(),
     versionName: text('version_name').notNull(),
     status: text('status').notNull().default('draft'),
-    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+    isActive: integer('is_active', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     sourceDocUrl: text('source_doc_url').notNull().default(''),
     notes: text('notes').notNull().default(''),
     createdBy: text('created_by').notNull().default('system'),
@@ -574,7 +616,12 @@ export const rulePublishLog = table(
       .default(sqliteNowMs)
       .notNull(),
   },
-  (table) => [index('idx_rule_publish_log_version_created').on(table.versionId, table.createdAt)]
+  (table) => [
+    index('idx_rule_publish_log_version_created').on(
+      table.versionId,
+      table.createdAt
+    ),
+  ]
 );
 
 export const ruleSimulationCase = table(
@@ -582,7 +629,9 @@ export const ruleSimulationCase = table(
   {
     id: text('id').primaryKey(),
     name: text('name').notNull(),
-    versionId: text('version_id').references(() => ruleVersion.id, { onDelete: 'set null' }),
+    versionId: text('version_id').references(() => ruleVersion.id, {
+      onDelete: 'set null',
+    }),
     inputJson: text('input_json').notNull().default('{}'),
     expectedResultJson: text('expected_result_json').notNull().default('{}'),
     notes: text('notes').notNull().default(''),
@@ -597,8 +646,175 @@ export const ruleSimulationCase = table(
       .notNull(),
   },
   (table) => [
-    index('idx_rule_simulation_case_enabled_created').on(table.enabled, table.createdAt),
+    index('idx_rule_simulation_case_enabled_created').on(
+      table.enabled,
+      table.createdAt
+    ),
     index('idx_rule_simulation_case_version').on(table.versionId),
+  ]
+);
+
+export const snapshotBattleContext = table(
+  'snapshot_battle_context',
+  {
+    snapshotId: text('snapshot_id')
+      .primaryKey()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    ruleVersionId: text('rule_version_id').references(() => ruleVersion.id, {
+      onDelete: 'set null',
+    }),
+    selfFormation: text('self_formation').notNull().default('天覆阵'),
+    selfElement: text('self_element').notNull().default('水'),
+    formationCounterState: text('formation_counter_state')
+      .notNull()
+      .default('无克/普通'),
+    elementRelation: text('element_relation').notNull().default('无克/普通'),
+    transformCardFactor: real('transform_card_factor').notNull().default(1),
+    splitTargetCount: integer('split_target_count').notNull().default(1),
+    shenmuValue: real('shenmu_value').notNull().default(0),
+    magicResult: real('magic_result').notNull().default(0),
+    targetTemplateId: text('target_template_id').references(
+      () => battleTargetTemplate.id,
+      {
+        onDelete: 'set null',
+      }
+    ),
+    targetName: text('target_name').notNull().default('默认目标'),
+    targetLevel: integer('target_level').notNull().default(0),
+    targetHp: real('target_hp').notNull().default(0),
+    targetDefense: real('target_defense').notNull().default(0),
+    targetMagicDefense: real('target_magic_defense').notNull().default(0),
+    targetMagicDefenseCultivation: integer('target_magic_defense_cultivation')
+      .notNull()
+      .default(0),
+    targetElement: text('target_element').notNull().default(''),
+    targetFormation: text('target_formation').notNull().default('普通阵'),
+    notesJson: text('notes_json').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_snapshot_battle_context_rule_version').on(table.ruleVersionId),
+    index('idx_snapshot_battle_context_target_template').on(
+      table.targetTemplateId
+    ),
+  ]
+);
+
+export const labSession = table(
+  'lab_session',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    baselineSnapshotId: text('baseline_snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    status: text('status').notNull().default('active'),
+    notes: text('notes').notNull().default(''),
+    createdBy: text('created_by').notNull().default('system'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_lab_session_character_status').on(
+      table.characterId,
+      table.status,
+      table.updatedAt
+    ),
+    index('idx_lab_session_baseline_snapshot').on(table.baselineSnapshotId),
+  ]
+);
+
+export const labSessionEquipment = table(
+  'lab_session_equipment',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => labSession.id, { onDelete: 'cascade' }),
+    seatType: text('seat_type').notNull().default('compare'),
+    slot: text('slot').notNull(),
+    equipmentId: text('equipment_id').references(() => equipmentItem.id, {
+      onDelete: 'set null',
+    }),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    source: text('source').notNull().default('library'),
+    inheritGemstones: integer('inherit_gemstones', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    inheritRuneStones: integer('inherit_rune_stones', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    sort: integer('sort').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_lab_session_equipment_seat_slot').on(
+      table.sessionId,
+      table.seatType,
+      table.slot
+    ),
+    index('idx_lab_session_equipment_session_sort').on(
+      table.sessionId,
+      table.seatType,
+      table.sort
+    ),
+  ]
+);
+
+export const candidateEquipment = table(
+  'candidate_equipment',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('pending'),
+    source: text('source').notNull().default('manual'),
+    equipmentJson: text('equipment_json').notNull().default('{}'),
+    imageKey: text('image_key'),
+    rawText: text('raw_text'),
+    targetSetId: text('target_set_id'),
+    targetEquipmentId: text('target_equipment_id'),
+    targetRuneStoneSetIndex: integer('target_rune_stone_set_index'),
+    sort: integer('sort').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_candidate_equipment_character_status').on(
+      table.characterId,
+      table.status,
+      table.updatedAt
+    ),
+    index('idx_candidate_equipment_character_sort').on(
+      table.characterId,
+      table.sort
+    ),
   ]
 );
 

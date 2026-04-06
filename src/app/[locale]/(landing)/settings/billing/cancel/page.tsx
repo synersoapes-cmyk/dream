@@ -1,8 +1,8 @@
-import moment from 'moment';
 import { getTranslations } from 'next-intl/server';
 
 import { Empty } from '@/shared/blocks/common';
 import { FormCard } from '@/shared/blocks/form';
+import { formatDateValue } from '@/shared/lib/date';
 import {
   findSubscriptionBySubscriptionNo,
   SubscriptionStatus,
@@ -138,13 +138,13 @@ export default async function CancelBillingPage({
       {
         name: 'subscriptionCreatedAt',
         title: t('fields.subscription_created_at'),
-        value: moment(subscription.createdAt).format('YYYY-MM-DD'),
+        value: formatDateValue(subscription.createdAt, 'YYYY-MM-DD'),
         attributes: { disabled: true },
       },
       {
         name: 'currentPeriod',
         title: t('fields.current_period'),
-        value: `${moment(subscription.currentPeriodStart).format('YYYY-MM-DD')} ~ ${moment(subscription.currentPeriodEnd).format('YYYY-MM-DD')}`,
+        value: `${formatDateValue(subscription.currentPeriodStart, 'YYYY-MM-DD')} ~ ${formatDateValue(subscription.currentPeriodEnd, 'YYYY-MM-DD')}`,
         attributes: { disabled: true },
       },
     ],

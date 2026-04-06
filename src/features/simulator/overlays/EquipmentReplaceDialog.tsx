@@ -69,7 +69,9 @@ export function EquipmentReplaceDialog() {
         throw new Error(payload?.message || '替换失败');
       }
 
-      applySimulatorBundleToStore(payload.data);
+      applySimulatorBundleToStore(payload.data, {
+        preserveWorkbenchState: true,
+      });
       addHistorySnapshot('equipment', `更换装备：${newEquip.name}`, []);
       exitPreviewMode();
     } catch (error) {

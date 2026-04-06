@@ -1,5 +1,6 @@
-import moment from 'moment';
 import { useLocale } from 'next-intl';
+
+import { formatDateValue, formatRelativeTime } from '@/shared/lib/date';
 
 export function Time({
   value,
@@ -20,16 +21,13 @@ export function Time({
     return null;
   }
 
-  let locale = useLocale();
-  if (locale === 'zh') {
-    locale = 'zh-cn';
-  }
+  const locale = useLocale();
 
   return (
     <div className={className}>
       {metadata?.format
-        ? moment(value).locale(locale).format(metadata?.format)
-        : moment(value).locale(locale).fromNow()}
+        ? formatDateValue(value, metadata?.format, locale)
+        : formatRelativeTime(value, locale)}
     </div>
   );
 }

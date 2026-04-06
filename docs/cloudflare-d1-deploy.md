@@ -95,3 +95,21 @@ pnpm cf:preview
 
 1. 把业务 schema 正式写进 [src/config/db/schema.sqlite.ts](D:/project/dream/src/config/db/schema.sqlite.ts)
 2. 生成第一批 D1 migration 并执行远程部署
+
+## 8. 模拟器 OCR 所需配置
+
+如果要启用模拟器的“图片上传 -> R2 -> Gemini 识别”链路，除了 D1 之外还需要补齐以下配置：
+
+- `GEMINI_API_KEY`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY`
+- `R2_SECRET_KEY`
+- `R2_BUCKET_NAME`
+
+可选配置：
+
+- `R2_ENDPOINT`
+- `R2_DOMAIN`
+- `R2_UPLOAD_PATH`
+
+当前项目会优先从运行时环境变量或 Cloudflare Worker secrets 读取这些键；如果未配置，模拟器 OCR 接口会直接返回缺失项列表。

@@ -63,12 +63,32 @@ export type SimulatorSeedCharacterMeta = {
   snapshotNotes: string;
 };
 
+export type SimulatorSeedBattleContext = {
+  selfFormation: string;
+  selfElement: string;
+  formationCounterState: string;
+  elementRelation: string;
+  transformCardFactor: number;
+  splitTargetCount: number;
+  shenmuValue: number;
+  magicResult: number;
+  targetName: string;
+  targetLevel: number;
+  targetHp: number;
+  targetDefense: number;
+  targetMagicDefense: number;
+  targetMagicDefenseCultivation: number;
+  targetElement: string;
+  targetFormation: string;
+};
+
 export type SimulatorSeedConfig = {
   characterMeta: SimulatorSeedCharacterMeta;
   profile: SimulatorSeedProfile;
   skills: SimulatorSeedSkill[];
   cultivations: SimulatorSeedCultivation[];
   equipments: SimulatorSeedEquipment[];
+  battleContext: SimulatorSeedBattleContext;
 };
 
 export const SIMULATOR_SEED_CONFIG_KEYS = {
@@ -77,6 +97,7 @@ export const SIMULATOR_SEED_CONFIG_KEYS = {
   skills: 'simulator.default.skills',
   cultivations: 'simulator.default.cultivations',
   equipments: 'simulator.default.equipments',
+  battleContext: 'simulator.default.battle_context',
 } as const;
 
 export const DEFAULT_SIMULATOR_CHARACTER_META: SimulatorSeedCharacterMeta = {
@@ -296,12 +317,32 @@ export const DEFAULT_SIMULATOR_EQUIPMENTS: SimulatorSeedEquipment[] = [
   },
 ];
 
+export const DEFAULT_SIMULATOR_BATTLE_CONTEXT: SimulatorSeedBattleContext = {
+  selfFormation: '天覆阵',
+  selfElement: '水',
+  formationCounterState: '无克/普通',
+  elementRelation: '无克/普通',
+  transformCardFactor: 1,
+  splitTargetCount: 1,
+  shenmuValue: 0,
+  magicResult: 0,
+  targetName: '默认目标',
+  targetLevel: 0,
+  targetHp: 0,
+  targetDefense: 0,
+  targetMagicDefense: 0,
+  targetMagicDefenseCultivation: 0,
+  targetElement: '',
+  targetFormation: '普通阵',
+};
+
 const DEFAULT_SIMULATOR_SEED_CONFIG: SimulatorSeedConfig = {
   characterMeta: DEFAULT_SIMULATOR_CHARACTER_META,
   profile: DEFAULT_SIMULATOR_PROFILE,
   skills: DEFAULT_SIMULATOR_SKILLS,
   cultivations: DEFAULT_SIMULATOR_CULTIVATIONS,
   equipments: DEFAULT_SIMULATOR_EQUIPMENTS,
+  battleContext: DEFAULT_SIMULATOR_BATTLE_CONTEXT,
 };
 
 export class SimulatorSeedConfigMissingError extends Error {
@@ -320,6 +361,7 @@ export function serializeSimulatorSeedConfig(config: SimulatorSeedConfig) {
     [SIMULATOR_SEED_CONFIG_KEYS.skills]: JSON.stringify(config.skills),
     [SIMULATOR_SEED_CONFIG_KEYS.cultivations]: JSON.stringify(config.cultivations),
     [SIMULATOR_SEED_CONFIG_KEYS.equipments]: JSON.stringify(config.equipments),
+    [SIMULATOR_SEED_CONFIG_KEYS.battleContext]: JSON.stringify(config.battleContext),
   };
 }
 
@@ -329,6 +371,7 @@ export function parseSimulatorSeedConfigInput(input: {
   skills: string;
   cultivations: string;
   equipments: string;
+  battleContext: string;
 }): SimulatorSeedConfig {
   return {
     characterMeta: parseSeedValue(
@@ -342,6 +385,10 @@ export function parseSimulatorSeedConfigInput(input: {
       DEFAULT_SIMULATOR_CULTIVATIONS,
     ),
     equipments: parseSeedValue(input.equipments, DEFAULT_SIMULATOR_EQUIPMENTS),
+    battleContext: parseSeedValue(
+      input.battleContext,
+      DEFAULT_SIMULATOR_BATTLE_CONTEXT,
+    ),
   };
 }
 
@@ -431,6 +478,10 @@ export async function getSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
         valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.equipments),
         DEFAULT_SIMULATOR_EQUIPMENTS,
       ),
+      battleContext: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.battleContext),
+        DEFAULT_SIMULATOR_BATTLE_CONTEXT,
+      ),
     };
   } catch (error) {
     console.warn(
@@ -443,35 +494,57 @@ export async function getSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
 }
 
 export async function getRequiredSimulatorSeedConfig(): Promise<SimulatorSeedConfig> {
-  const valueByName = await loadSimulatorSeedConfigRows();
-  const missingKeys = Object.values(SIMULATOR_SEED_CONFIG_KEYS).filter(
-    (key) => !valueByName.has(key) || !valueByName.get(key)
-  );
+  try {
+    let valueByName = await loadSimulatorSeedConfigRows();
+    const missingKeys = Object.values(SIMULATOR_SEED_CONFIG_KEYS).filter(
+      (key) => !valueByName.has(key) || !valueByName.get(key)
+    );
 
-  if (missingKeys.length > 0) {
-    throw new SimulatorSeedConfigMissingError(missingKeys);
+    if (missingKeys.length > 0) {
+      await seedSimulatorSeedConfig();
+      valueByName = await loadSimulatorSeedConfigRows();
+    }
+
+    const stillMissingKeys = Object.values(SIMULATOR_SEED_CONFIG_KEYS).filter(
+      (key) => !valueByName.has(key) || !valueByName.get(key)
+    );
+
+    if (stillMissingKeys.length > 0) {
+      throw new SimulatorSeedConfigMissingError(stillMissingKeys);
+    }
+
+    return {
+      characterMeta: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.characterMeta),
+        DEFAULT_SIMULATOR_CHARACTER_META,
+      ),
+      profile: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.profile),
+        DEFAULT_SIMULATOR_PROFILE,
+      ),
+      skills: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.skills),
+        DEFAULT_SIMULATOR_SKILLS,
+      ),
+      cultivations: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.cultivations),
+        DEFAULT_SIMULATOR_CULTIVATIONS,
+      ),
+      equipments: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.equipments),
+        DEFAULT_SIMULATOR_EQUIPMENTS,
+      ),
+      battleContext: parseSeedValue(
+        valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.battleContext),
+        DEFAULT_SIMULATOR_BATTLE_CONTEXT,
+      ),
+    };
+  } catch (error) {
+    console.warn(
+      'Failed to load required simulator seed config from D1, using built-in defaults:',
+      error,
+    );
+
+    return cloneSeedValue(DEFAULT_SIMULATOR_SEED_CONFIG);
   }
-
-  return {
-    characterMeta: parseSeedValue(
-      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.characterMeta),
-      DEFAULT_SIMULATOR_CHARACTER_META,
-    ),
-    profile: parseSeedValue(
-      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.profile),
-      DEFAULT_SIMULATOR_PROFILE,
-    ),
-    skills: parseSeedValue(
-      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.skills),
-      DEFAULT_SIMULATOR_SKILLS,
-    ),
-    cultivations: parseSeedValue(
-      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.cultivations),
-      DEFAULT_SIMULATOR_CULTIVATIONS,
-    ),
-    equipments: parseSeedValue(
-      valueByName.get(SIMULATOR_SEED_CONFIG_KEYS.equipments),
-      DEFAULT_SIMULATOR_EQUIPMENTS,
-    ),
-  };
 }

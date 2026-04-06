@@ -3,6 +3,7 @@ import { count, desc, eq, inArray } from 'drizzle-orm';
 
 import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
+import { envConfigs } from '@/config';
 import { user } from '@/config/db/schema';
 
 import { Permission, Role } from '../services/rbac';
@@ -87,11 +88,58 @@ export async function getUserCredits(userId: string) {
   return { remainingCredits };
 }
 
-export async function getSignUser() {
-  const auth = await getAuth();
-  const session = await auth.api.getSession({
-    headers: await headers(),
+function normalizeHeaders(source: HeadersInit | Headers) {
+  return source instanceof Headers ? new Headers(source) : new Headers(source);
+}
+
+function getAuthRouteOrigin(requestHeaders: Headers) {
+  const forwardedProto = requestHeaders.get('x-forwarded-proto');
+  const forwardedHost = requestHeaders.get('x-forwarded-host');
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  const host = requestHeaders.get('host');
+  if (host) {
+    const protocol = host.includes('localhost') ? 'http' : 'https';
+    return `${protocol}://${host}`;
+  }
+
+  return envConfigs.auth_url || envConfigs.app_url || 'http://localhost:3000';
+}
+
+async function getSessionViaAuthRoute(requestHeaders: Headers) {
+  const response = await fetch(`${getAuthRouteOrigin(requestHeaders)}/api/auth/get-session`, {
+    headers: requestHeaders,
+    cache: 'no-store',
   });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json();
+}
+
+export async function getSignUser(requestHeaders?: HeadersInit | Headers) {
+  const normalizedHeaders = requestHeaders
+    ? normalizeHeaders(requestHeaders)
+    : normalizeHeaders(await headers());
+
+  const auth = await getAuth();
+  try {
+    const session = await auth.api.getSession({
+      headers: normalizedHeaders,
+    });
+
+    return session?.user;
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[user] auth.api.getSession failed, falling back to auth route', error);
+    }
+  }
+
+  const session = await getSessionViaAuthRoute(normalizedHeaders);
 
   return session?.user;
 }

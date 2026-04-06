@@ -21,6 +21,32 @@ type CloudflareEnvLike = {
 let d1DbInstance: ReturnType<typeof drizzleD1> | null = null;
 let d1ContextInitPromise: Promise<void> | null = null;
 let resolvedD1Binding: D1Database | null = null;
+let wranglerProxyInitPromise: Promise<void> | null = null;
+let wranglerProxyForDev: { dispose?: () => Promise<void> } | null = null;
+
+type WranglerModule = {
+  getPlatformProxy: (options: {
+    configPath: string;
+    envFiles: string[];
+    remoteBindings: boolean;
+  }) => Promise<{
+    env?: CloudflareEnvLike;
+    dispose?: () => Promise<void>;
+  }>;
+};
+
+export async function resetD1DevBindingCache() {
+  d1DbInstance = null;
+  d1ContextInitPromise = null;
+  resolvedD1Binding = null;
+  wranglerProxyInitPromise = null;
+
+  if (wranglerProxyForDev?.dispose) {
+    await wranglerProxyForDev.dispose().catch(() => undefined);
+  }
+
+  wranglerProxyForDev = null;
+}
 
 function shouldCacheD1Instance() {
   if (envConfigs.db_singleton_enabled === 'true') {
@@ -30,11 +56,65 @@ function shouldCacheD1Instance() {
   return isCloudflareWorker && process.env.NODE_ENV === 'production';
 }
 
+function shouldUseWranglerProxyForDev() {
+  return (
+    envConfigs.database_provider === 'd1' &&
+    !isCloudflareWorker &&
+    process.env.NODE_ENV !== 'production'
+  );
+}
+
 function isD1Database(value: unknown): value is D1Database {
   return !!value
     && typeof value === 'object'
     && typeof (value as D1Database).prepare === 'function'
     && typeof (value as D1Database).batch === 'function';
+}
+
+async function initD1BindingFromWranglerForDev() {
+  if (!shouldUseWranglerProxyForDev()) {
+    return;
+  }
+
+  if (resolvedD1Binding) {
+    return;
+  }
+
+  if (!wranglerProxyInitPromise) {
+    wranglerProxyInitPromise = (async () => {
+      const dynamicImport = new Function(
+        'specifier',
+        'return import(specifier);'
+      ) as (specifier: string) => Promise<WranglerModule>;
+      const { getPlatformProxy } = await dynamicImport('wrangler');
+
+      const proxy = await getPlatformProxy({
+        configPath: 'wrangler.toml',
+        envFiles: [],
+        remoteBindings: true,
+      });
+
+      const binding = (proxy.env as CloudflareEnvLike | undefined)?.DB;
+      if (!isD1Database(binding)) {
+        await proxy.dispose?.();
+        throw new Error(
+          'Wrangler platform proxy did not provide a valid D1 binding for `DB`.'
+        );
+      }
+
+      wranglerProxyForDev = proxy;
+      resolvedD1Binding = binding;
+    })().catch(async (error) => {
+      if (wranglerProxyForDev?.dispose) {
+        await wranglerProxyForDev.dispose().catch(() => undefined);
+      }
+      wranglerProxyForDev = null;
+      resolvedD1Binding = null;
+      throw error;
+    });
+  }
+
+  await wranglerProxyInitPromise;
 }
 
 /**
@@ -45,7 +125,7 @@ function isD1Database(value: unknown): value is D1Database {
  * handle the error gracefully (e.g. config.ts already catches it).
  */
 function getD1Binding(): D1Database {
-  if (shouldCacheD1Instance() && resolvedD1Binding) {
+  if (resolvedD1Binding && (shouldCacheD1Instance() || shouldUseWranglerProxyForDev())) {
     return resolvedD1Binding;
   }
 
@@ -83,9 +163,16 @@ export async function initD1ContextForDev() {
     return;
   }
 
-  if (!shouldCacheD1Instance()) {
+  if (!shouldCacheD1Instance() && !shouldUseWranglerProxyForDev()) {
     resolvedD1Binding = null;
     d1DbInstance = null;
+  } else if (!shouldCacheD1Instance()) {
+    d1DbInstance = null;
+  }
+
+  if (shouldUseWranglerProxyForDev()) {
+    await initD1BindingFromWranglerForDev();
+    return;
   }
 
   const globalBinding = (globalThis as { Cloudflare?: { env?: { DB?: unknown } } }).Cloudflare?.env?.DB;
@@ -123,6 +210,10 @@ export async function initD1ContextForDev() {
   }
 
   await d1ContextInitPromise;
+
+  if (!resolvedD1Binding) {
+    await initD1BindingFromWranglerForDev();
+  }
 }
 
 export function getD1Db() {

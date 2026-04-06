@@ -1,13 +1,12 @@
 import { getMDXComponents } from '@/mdx-components';
 import { and, count, desc, eq, like } from 'drizzle-orm';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
-import moment from 'moment';
 
 import { db } from '@/core/db';
-import { logsSource, pagesSource, postsSource } from '@/core/docs/source';
 import { generateTOC } from '@/core/docs/toc';
 import { post } from '@/config/db/schema';
 import { MarkdownContent } from '@/shared/blocks/common/markdown-content';
+import { formatDateValue } from '@/shared/lib/date';
 import {
   Category as BlogCategoryType,
   Post as BlogPostType,
@@ -30,6 +29,10 @@ export enum PostStatus {
   PENDING = 'pending', // pending review by admin
   DRAFT = 'draft', // draft and not visible to the public
   ARCHIVED = 'archived', // archived means deleted
+}
+
+async function loadDocSources() {
+  return import('@/core/docs/source');
 }
 
 export async function addPost(data: NewPost) {
@@ -206,6 +209,7 @@ export async function getLocalPost({
   locale: string;
   postPrefix?: string;
 }): Promise<BlogPostType | null> {
+  const { postsSource } = await loadDocSources();
   const localPost = await postsSource.getPage([slug], locale);
   if (!localPost) {
     return null;
@@ -254,6 +258,7 @@ export async function getLocalPage({
   slug: string;
   locale: string;
 }): Promise<BlogPostType | null> {
+  const { pagesSource } = await loadDocSources();
   const localPage = await pagesSource.getPage([slug], locale);
   if (!localPage) {
     return null;
@@ -462,6 +467,7 @@ export async function getLocalPostsAndCategories({
   type?: PostType;
 }) {
   const localPostsList: BlogPostType[] = [];
+  const { logsSource, postsSource } = await loadDocSources();
 
   // get posts from local files
   let localPosts = postsSource.getPages(locale);
@@ -555,9 +561,11 @@ export function getPostDate({
   created_at: string;
   locale?: string;
 }) {
-  return moment(created_at)
-    .locale(locale || 'en')
-    .format(locale === 'zh' ? 'YYYY/MM/DD' : 'MMM D, YYYY');
+  return formatDateValue(
+    created_at,
+    locale === 'zh' ? 'YYYY/MM/DD' : 'MMM D, YYYY',
+    locale || 'en'
+  );
 }
 
 // Helper function to remove frontmatter from markdown content

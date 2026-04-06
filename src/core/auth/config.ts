@@ -3,6 +3,7 @@ import { oneTap } from 'better-auth/plugins';
 import { getLocale } from 'next-intl/server';
 
 import { db } from '@/core/db';
+import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import * as schema from '@/config/db/schema';
 import { VerifyEmail } from '@/shared/blocks/email/verify-email';
@@ -76,6 +77,10 @@ export async function getAuthOptions(configs: Record<string, string>) {
   const emailVerificationEnabled =
     configs.email_verification_enabled === 'true' && !!configs.resend_api_key;
 
+  if (envConfigs.database_provider === 'd1') {
+    await initD1ContextForDev();
+  }
+
   return {
     ...authOptions,
     // Add database connection only when actually needed (runtime).
@@ -136,18 +141,31 @@ export async function getAuthOptions(configs: Record<string, string>) {
               throw new Error('user id is required');
             }
 
-            // grant credits for new user
-            await grantCreditsForNewUser(user);
+            try {
+              await grantCreditsForNewUser(user);
+            } catch (error) {
+              console.error('[auth] grantCreditsForNewUser failed:', error);
+            }
 
-            // grant role for new user
-            await grantRoleForNewUser(user);
+            try {
+              await grantRoleForNewUser(user);
+            } catch (error) {
+              console.error('[auth] grantRoleForNewUser failed:', error);
+            }
 
-            // Provision simulator data immediately after sign-up so the
-            // user has a real persisted starting state before first visit.
-            await provisionDefaultSimulatorCharacterForUser({
-              userId: user.id,
-              userName: user.name,
-            });
+            try {
+              // Provision simulator data immediately after sign-up so the
+              // user has a real persisted starting state before first visit.
+              await provisionDefaultSimulatorCharacterForUser({
+                userId: user.id,
+                userName: user.name,
+              });
+            } catch (error) {
+              console.error(
+                '[auth] provisionDefaultSimulatorCharacterForUser failed:',
+                error
+              );
+            }
           },
         },
       },

@@ -1,9 +1,9 @@
-import moment from 'moment';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { getThemePage } from '@/core/theme';
 import { envConfigs } from '@/config';
 import { Empty } from '@/shared/blocks/common';
+import { formatDateValue } from '@/shared/lib/date';
 import {
   PostType as DBPostType,
   getPosts,
@@ -113,7 +113,7 @@ export default async function CategoryBlogPage({
     description: post.description || '',
     author_name: post.authorName || '',
     author_image: post.authorImage || '',
-    created_at: moment(post.createdAt).format('MMM D, YYYY') || '',
+    created_at: formatDateValue(post.createdAt, 'MMM D, YYYY', locale),
     image: post.image || '',
     url: `/blog/${post.slug}`,
   }));

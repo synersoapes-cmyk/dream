@@ -19,6 +19,7 @@ export const logs = defineDocs({
 export default defineConfig({
   mdxOptions: {
     rehypeCodeOptions: {
+      langs: ['bash'],
       themes: {
         light: 'github-light',
         dark: 'github-dark',

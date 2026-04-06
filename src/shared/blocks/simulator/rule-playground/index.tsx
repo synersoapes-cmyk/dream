@@ -137,7 +137,7 @@ async function createSimulationCase(payload: {
   expectedResult: Record<string, unknown>;
   notes?: string;
 }) {
-  const response = await fetch('/api/admin/rule-simulation-cases', {
+  const response = await fetch('/api/admin/simulator/rule-simulation-cases', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -154,7 +154,7 @@ async function createSimulationCase(payload: {
 }
 
 async function removeSimulationCase(id: string) {
-  const response = await fetch(`/api/admin/rule-simulation-cases/${id}`, {
+  const response = await fetch(`/api/admin/simulator/rule-simulation-cases/${id}`, {
     method: 'DELETE',
   });
 

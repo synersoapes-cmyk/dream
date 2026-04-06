@@ -1,5 +1,3 @@
-import moment from 'moment';
-
 import { Link } from '@/core/i18n/navigation';
 import {
   Avatar,

@@ -1,10 +1,9 @@
-export type Faction =
-  | '龙宫'
-  | '大唐官府'
-  | '狮驼岭'
-  | '化生寺'
-  | '方寸山'
-  | '普陀山';
+import type {
+  SimulatorElement,
+  SimulatorSchool,
+} from '@/shared/models/simulator-domain';
+
+export type Faction = SimulatorSchool;
 
 export interface BaseAttributes {
   level: number;
@@ -139,7 +138,14 @@ export interface HistorySnapshot {
   id: string;
   timestamp: number;
   name: string;
-  type: 'base' | 'combat' | 'equipment' | 'cultivation' | 'target' | 'formation' | 'auto';
+  type:
+    | 'base'
+    | 'combat'
+    | 'equipment'
+    | 'cultivation'
+    | 'target'
+    | 'formation'
+    | 'auto';
   changes: {
     label: string;
     oldValue: unknown;
@@ -164,6 +170,7 @@ export interface DamageResult {
 }
 
 export interface CombatTarget {
+  templateId?: string;
   name: string;
   level: number;
   hp: number;
@@ -172,14 +179,14 @@ export interface CombatTarget {
   faction?: Faction;
   isBoss?: boolean;
   dungeonName?: string;
-  element?: '金' | '木' | '水' | '火' | '土';
+  element?: SimulatorElement;
   formation?: string;
 }
 
 export interface EnemyTarget {
   id: string;
   name: string;
-  element: '金' | '木' | '水' | '火' | '土';
+  element: SimulatorElement;
   formation: string;
   magicDamage: number;
   spiritualPower: number;
@@ -220,7 +227,7 @@ export interface PlayerSetup {
   equipment: Equipment[];
   skills: Skill[];
   cultivation: Cultivation;
-  element: '金' | '木' | '水' | '火' | '土';
+  element: SimulatorElement;
   formation: string;
 }
 
@@ -258,6 +265,7 @@ export interface PendingEquipment {
   equipment: Equipment;
   timestamp: number;
   imagePreview?: string;
+  rawText?: string;
   targetSetId?: string;
   targetEquipmentId?: string;
   targetRuneStoneSetIndex?: number;
@@ -310,7 +318,11 @@ export interface GameState {
     current: Equipment | null;
     new: Equipment;
   } | null;
-  enterPreviewMode: (current: Equipment | null, newEquip: Equipment, type: Equipment['type']) => void;
+  enterPreviewMode: (
+    current: Equipment | null,
+    newEquip: Equipment,
+    type: Equipment['type']
+  ) => void;
   exitPreviewMode: () => void;
   confirmReplacement: () => void;
   updateEquipment: (equipment: Equipment) => void;
@@ -334,7 +346,7 @@ export interface GameState {
     id: string,
     targetSetId?: string,
     targetEquipmentId?: string,
-    targetRuneStoneSetIndex?: number,
+    targetRuneStoneSetIndex?: number
   ) => void;
   togglePendingSelection: (id: string) => void;
   clearPendingSelections: () => void;
@@ -342,7 +354,11 @@ export interface GameState {
   addExperimentSeat: () => void;
   removeExperimentSeat: (id: string) => void;
   updateExperimentSeatEquipment: (seatId: string, equipment: Equipment) => void;
-  removeExperimentSeatEquipment: (seatId: string, type: string, slot?: number) => void;
+  removeExperimentSeatEquipment: (
+    seatId: string,
+    type: string,
+    slot?: number
+  ) => void;
   updateExperimentSeatName: (seatId: string, name: string) => void;
   syncSampleSeat: () => void;
   updateTreasure: (treasure: Treasure | null) => void;
@@ -351,7 +367,7 @@ export interface GameState {
   addHistorySnapshot: (
     type: HistorySnapshot['type'],
     name: string,
-    changes: HistorySnapshot['changes'],
+    changes: HistorySnapshot['changes']
   ) => void;
   undoToSnapshot: (id: string) => void;
   currentBoss: string;

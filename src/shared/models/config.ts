@@ -1,7 +1,7 @@
 import { revalidateTag, unstable_cache } from 'next/cache';
 
 import { db } from '@/core/db';
-import { initD1ContextForDev } from '@/core/db/d1';
+import { initD1ContextForDev, resetD1DevBindingCache } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import { config } from '@/config/db/schema';
 import {
@@ -16,6 +16,47 @@ export type UpdateConfig = Partial<Omit<NewConfig, 'name'>>;
 export type Configs = Record<string, string>;
 
 export const CACHE_TAG_CONFIGS = 'configs';
+
+function isTransientConfigError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('network connection lost') ||
+    message.includes('failed to parse body as json') ||
+    message.includes('d1_error') ||
+    message.includes('internal_server_error') ||
+    message.includes('failed query:')
+  );
+}
+
+async function withTransientConfigRetry<T>(
+  operation: () => Promise<T>,
+  maxAttempts = 3
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (!isTransientConfigError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      await resetD1DevBindingCache();
+      await new Promise((resolve) => setTimeout(resolve, attempt * 120));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Unknown config query error');
+}
 
 export async function saveConfigs(configs: Record<string, string>) {
   if (envConfigs.database_provider === 'd1') {
@@ -91,7 +132,9 @@ export const getConfigs = unstable_cache(
       return configs;
     }
 
-    const result = await db().select().from(config);
+    const result = (await withTransientConfigRetry(() =>
+      db().select().from(config)
+    )) as Config[];
     if (!result) {
       return configs;
     }

@@ -84,14 +84,16 @@
   - 2 件玉魄
   - 技能
   - 修炼
-  - 战斗参数
+  - 战斗参数，当前落在 `snapshot_battle_context`
+  - 候选装备库，当前落在 `candidate_equipment`
 - `ocr_job` 产生多个 `ocr_draft_item`
 - `ocr_draft_item` 审核通过后可落入：
   - `equipment_item`
   - `ornament_item`
   - `jade_item`
+- `candidate_equipment` 保存实验室左侧候选装备库，覆盖 `pending / confirmed / replaced`
 - `lab_session` 基于某个 `character_snapshot` 创建
-- `lab_session` 可以挂载 1 到多件候选装备进行对比
+- `lab_session_equipment` 记录实验室样本/对比席位挂载的装备
 
 ### 4.2 推荐分层
 
@@ -130,21 +132,21 @@
 
 用途：一套伤害规则的版本主表，支持草稿、发布、生效、回滚。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 规则版本 ID |
-| `rule_domain` | `TEXT` | 规则域，第一期固定 `damage` |
-| `version_code` | `TEXT` | 唯一编码，如 `damage_v1` |
-| `version_name` | `TEXT` | 展示名称 |
-| `status` | `TEXT` | `draft` / `published` / `archived` |
-| `is_active` | `INTEGER` | 是否当前生效 |
-| `source_doc_url` | `TEXT` | 规则来源文档 |
-| `notes` | `TEXT` | 备注 |
-| `created_by` | `TEXT` | 创建人 |
-| `published_by` | `TEXT` | 发布人 |
-| `published_at` | `INTEGER` | 发布时间 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段             | 类型      | 说明                               |
+| ---------------- | --------- | ---------------------------------- |
+| `id`             | `TEXT PK` | 规则版本 ID                        |
+| `rule_domain`    | `TEXT`    | 规则域，第一期固定 `damage`        |
+| `version_code`   | `TEXT`    | 唯一编码，如 `damage_v1`           |
+| `version_name`   | `TEXT`    | 展示名称                           |
+| `status`         | `TEXT`    | `draft` / `published` / `archived` |
+| `is_active`      | `INTEGER` | 是否当前生效                       |
+| `source_doc_url` | `TEXT`    | 规则来源文档                       |
+| `notes`          | `TEXT`    | 备注                               |
+| `created_by`     | `TEXT`    | 创建人                             |
+| `published_by`   | `TEXT`    | 发布人                             |
+| `published_at`   | `INTEGER` | 发布时间                           |
+| `created_at`     | `INTEGER` | 创建时间                           |
+| `updated_at`     | `INTEGER` | 更新时间                           |
 
 索引：
 
@@ -155,21 +157,21 @@
 
 用途：属性转化规则，如体质、魔力、灵力到最终面板属性的线性映射。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `version_id` | `TEXT` | 关联 `rule_version` |
-| `school` | `TEXT` | 门派 |
-| `role_type` | `TEXT` | 角色流派 |
-| `source_attr` | `TEXT` | 来源属性，如 `physique` |
-| `target_attr` | `TEXT` | 目标属性，如 `hp` |
-| `coefficient` | `REAL` | 系数 |
-| `value_type` | `TEXT` | 第一期固定 `linear` |
-| `condition_json` | `TEXT` | 附加条件 |
-| `sort` | `INTEGER` | 排序 |
-| `enabled` | `INTEGER` | 是否启用 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段             | 类型      | 说明                    |
+| ---------------- | --------- | ----------------------- |
+| `id`             | `TEXT PK` | 主键                    |
+| `version_id`     | `TEXT`    | 关联 `rule_version`     |
+| `school`         | `TEXT`    | 门派                    |
+| `role_type`      | `TEXT`    | 角色流派                |
+| `source_attr`    | `TEXT`    | 来源属性，如 `physique` |
+| `target_attr`    | `TEXT`    | 目标属性，如 `hp`       |
+| `coefficient`    | `REAL`    | 系数                    |
+| `value_type`     | `TEXT`    | 第一期固定 `linear`     |
+| `condition_json` | `TEXT`    | 附加条件                |
+| `sort`           | `INTEGER` | 排序                    |
+| `enabled`        | `INTEGER` | 是否启用                |
+| `created_at`     | `INTEGER` | 创建时间                |
+| `updated_at`     | `INTEGER` | 更新时间                |
 
 索引/约束：
 
@@ -180,22 +182,22 @@
 
 用途：技能主公式定义。第一期只存龙卷雨击。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `version_id` | `TEXT` | 关联 `rule_version` |
-| `school` | `TEXT` | 门派 |
-| `role_type` | `TEXT` | 角色流派 |
-| `skill_code` | `TEXT` | 技能编码 |
-| `skill_name` | `TEXT` | 技能名称 |
-| `formula_key` | `TEXT` | 公式模板键 |
-| `base_formula_json` | `TEXT` | 基础项参数 |
-| `extra_formula_json` | `TEXT` | 公式扩展参数 |
-| `condition_json` | `TEXT` | 适用条件 |
-| `sort` | `INTEGER` | 排序 |
-| `enabled` | `INTEGER` | 是否启用 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段                 | 类型      | 说明                |
+| -------------------- | --------- | ------------------- |
+| `id`                 | `TEXT PK` | 主键                |
+| `version_id`         | `TEXT`    | 关联 `rule_version` |
+| `school`             | `TEXT`    | 门派                |
+| `role_type`          | `TEXT`    | 角色流派            |
+| `skill_code`         | `TEXT`    | 技能编码            |
+| `skill_name`         | `TEXT`    | 技能名称            |
+| `formula_key`        | `TEXT`    | 公式模板键          |
+| `base_formula_json`  | `TEXT`    | 基础项参数          |
+| `extra_formula_json` | `TEXT`    | 公式扩展参数        |
+| `condition_json`     | `TEXT`    | 适用条件            |
+| `sort`               | `INTEGER` | 排序                |
+| `enabled`            | `INTEGER` | 是否启用            |
+| `created_at`         | `INTEGER` | 创建时间            |
+| `updated_at`         | `INTEGER` | 更新时间            |
 
 索引/约束：
 
@@ -206,22 +208,22 @@
 
 用途：伤害修正项，如分灵系数、阵法系数、五行系数、神木符、法伤结果。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `version_id` | `TEXT` | 关联 `rule_version` |
-| `modifier_domain` | `TEXT` | 修正域，如 `split_factor` |
-| `modifier_key` | `TEXT` | 修正键 |
-| `modifier_type` | `TEXT` | `multiplier` / `addend` / `lookup` |
-| `source_key` | `TEXT` | 来源键 |
-| `target_key` | `TEXT` | 目标键 |
-| `value` | `REAL` | 直接数值 |
-| `value_json` | `TEXT` | lookup 表或结构化配置 |
-| `condition_json` | `TEXT` | 条件 |
-| `sort` | `INTEGER` | 排序 |
-| `enabled` | `INTEGER` | 是否启用 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段              | 类型      | 说明                               |
+| ----------------- | --------- | ---------------------------------- |
+| `id`              | `TEXT PK` | 主键                               |
+| `version_id`      | `TEXT`    | 关联 `rule_version`                |
+| `modifier_domain` | `TEXT`    | 修正域，如 `split_factor`          |
+| `modifier_key`    | `TEXT`    | 修正键                             |
+| `modifier_type`   | `TEXT`    | `multiplier` / `addend` / `lookup` |
+| `source_key`      | `TEXT`    | 来源键                             |
+| `target_key`      | `TEXT`    | 目标键                             |
+| `value`           | `REAL`    | 直接数值                           |
+| `value_json`      | `TEXT`    | lookup 表或结构化配置              |
+| `condition_json`  | `TEXT`    | 条件                               |
+| `sort`            | `INTEGER` | 排序                               |
+| `enabled`         | `INTEGER` | 是否启用                           |
+| `created_at`      | `INTEGER` | 创建时间                           |
+| `updated_at`      | `INTEGER` | 更新时间                           |
 
 索引：
 
@@ -231,23 +233,23 @@
 
 用途：技能等级加成规则，如九龙诀、呼风唤雨、龙腾。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `version_id` | `TEXT` | 关联 `rule_version` |
-| `bonus_group` | `TEXT` | 规则分组，如 `school_skill_rune` |
-| `rule_code` | `TEXT` | 规则编码 |
-| `skill_code` | `TEXT` | 技能编码 |
-| `skill_name` | `TEXT` | 技能名称 |
-| `bonus_type` | `TEXT` | 第一期固定 `skill_level` |
-| `bonus_value` | `INTEGER` | 加成值 |
-| `condition_json` | `TEXT` | 颜色序列、孔数、部位范围等 |
-| `conflict_policy` | `TEXT` | 冲突策略，如 `take_max` |
-| `limit_policy_json` | `TEXT` | 全局生效限制 |
-| `sort` | `INTEGER` | 排序 |
-| `enabled` | `INTEGER` | 是否启用 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段                | 类型      | 说明                             |
+| ------------------- | --------- | -------------------------------- |
+| `id`                | `TEXT PK` | 主键                             |
+| `version_id`        | `TEXT`    | 关联 `rule_version`              |
+| `bonus_group`       | `TEXT`    | 规则分组，如 `school_skill_rune` |
+| `rule_code`         | `TEXT`    | 规则编码                         |
+| `skill_code`        | `TEXT`    | 技能编码                         |
+| `skill_name`        | `TEXT`    | 技能名称                         |
+| `bonus_type`        | `TEXT`    | 第一期固定 `skill_level`         |
+| `bonus_value`       | `INTEGER` | 加成值                           |
+| `condition_json`    | `TEXT`    | 颜色序列、孔数、部位范围等       |
+| `conflict_policy`   | `TEXT`    | 冲突策略，如 `take_max`          |
+| `limit_policy_json` | `TEXT`    | 全局生效限制                     |
+| `sort`              | `INTEGER` | 排序                             |
+| `enabled`           | `INTEGER` | 是否启用                         |
+| `created_at`        | `INTEGER` | 创建时间                         |
+| `updated_at`        | `INTEGER` | 更新时间                         |
 
 索引：
 
@@ -257,16 +259,16 @@
 
 用途：规则发布、回滚、启停审计。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `version_id` | `TEXT` | 关联 `rule_version` |
-| `action` | `TEXT` | `publish` / `rollback` / `activate` / `deactivate` |
-| `operator_id` | `TEXT` | 操作人 |
-| `before_snapshot_json` | `TEXT` | 操作前快照 |
-| `after_snapshot_json` | `TEXT` | 操作后快照 |
-| `notes` | `TEXT` | 备注 |
-| `created_at` | `INTEGER` | 操作时间 |
+| 字段                   | 类型      | 说明                                               |
+| ---------------------- | --------- | -------------------------------------------------- |
+| `id`                   | `TEXT PK` | 主键                                               |
+| `version_id`           | `TEXT`    | 关联 `rule_version`                                |
+| `action`               | `TEXT`    | `publish` / `rollback` / `activate` / `deactivate` |
+| `operator_id`          | `TEXT`    | 操作人                                             |
+| `before_snapshot_json` | `TEXT`    | 操作前快照                                         |
+| `after_snapshot_json`  | `TEXT`    | 操作后快照                                         |
+| `notes`                | `TEXT`    | 备注                                               |
+| `created_at`           | `INTEGER` | 操作时间                                           |
 
 索引：
 
@@ -287,14 +289,14 @@
 
 用途：系统用户主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 用户 ID |
-| `email` | `TEXT` | 邮箱，可空 |
-| `display_name` | `TEXT` | 显示名 |
-| `status` | `TEXT` | `active` / `disabled` |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段           | 类型      | 说明                  |
+| -------------- | --------- | --------------------- |
+| `id`           | `TEXT PK` | 用户 ID               |
+| `email`        | `TEXT`    | 邮箱，可空            |
+| `display_name` | `TEXT`    | 显示名                |
+| `status`       | `TEXT`    | `active` / `disabled` |
+| `created_at`   | `INTEGER` | 创建时间              |
+| `updated_at`   | `INTEGER` | 更新时间              |
 
 索引：
 
@@ -304,19 +306,19 @@
 
 用途：梦幻角色主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 角色 ID |
-| `user_id` | `TEXT` | 归属用户 |
-| `name` | `TEXT` | 角色名 |
-| `server_name` | `TEXT` | 所在服务器 |
-| `school` | `TEXT` | 门派，如龙宫 |
-| `level` | `INTEGER` | 当前等级 |
-| `race` | `TEXT` | 种族，可选 |
-| `status` | `TEXT` | `active` / `archived` |
-| `current_snapshot_id` | `TEXT` | 当前状态快照 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段                  | 类型      | 说明                  |
+| --------------------- | --------- | --------------------- |
+| `id`                  | `TEXT PK` | 角色 ID               |
+| `user_id`             | `TEXT`    | 归属用户              |
+| `name`                | `TEXT`    | 角色名                |
+| `server_name`         | `TEXT`    | 所在服务器            |
+| `school`              | `TEXT`    | 门派，如龙宫          |
+| `level`               | `INTEGER` | 当前等级              |
+| `race`                | `TEXT`    | 种族，可选            |
+| `status`              | `TEXT`    | `active` / `archived` |
+| `current_snapshot_id` | `TEXT`    | 当前状态快照          |
+| `created_at`          | `INTEGER` | 创建时间              |
+| `updated_at`          | `INTEGER` | 更新时间              |
 
 约束建议：
 
@@ -333,17 +335,17 @@
 
 用途：角色完整状态快照
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 快照 ID |
-| `character_id` | `TEXT` | 角色 ID |
-| `snapshot_type` | `TEXT` | `current` / `manual` / `lab_baseline` / `lab_result` |
-| `name` | `TEXT` | 快照名，如任务套、PK套 |
-| `version_no` | `INTEGER` | 角色内部版本号 |
-| `source` | `TEXT` | `manual` / `ocr` / `lab_apply` |
-| `notes` | `TEXT` | 备注 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段            | 类型      | 说明                                                 |
+| --------------- | --------- | ---------------------------------------------------- |
+| `id`            | `TEXT PK` | 快照 ID                                              |
+| `character_id`  | `TEXT`    | 角色 ID                                              |
+| `snapshot_type` | `TEXT`    | `current` / `manual` / `lab_baseline` / `lab_result` |
+| `name`          | `TEXT`    | 快照名，如任务套、PK套                               |
+| `version_no`    | `INTEGER` | 角色内部版本号                                       |
+| `source`        | `TEXT`    | `manual` / `ocr` / `lab_apply`                       |
+| `notes`         | `TEXT`    | 备注                                                 |
+| `created_at`    | `INTEGER` | 创建时间                                             |
+| `updated_at`    | `INTEGER` | 更新时间                                             |
 
 索引：
 
@@ -354,27 +356,27 @@
 
 用途：角色基础面板信息
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `snapshot_id` | `TEXT PK` | 对应快照 |
-| `school` | `TEXT` | 门派 |
-| `level` | `INTEGER` | 等级 |
-| `physique` | `INTEGER` | 体质加点 |
-| `magic` | `INTEGER` | 魔力加点 |
-| `strength` | `INTEGER` | 力量加点 |
-| `endurance` | `INTEGER` | 耐力加点 |
-| `agility` | `INTEGER` | 敏捷加点 |
-| `potential_points` | `INTEGER` | 潜力点 |
-| `hp` | `REAL` | 气血 |
-| `mp` | `REAL` | 魔法 |
-| `damage` | `REAL` | 伤害 |
-| `defense` | `REAL` | 防御 |
-| `magic_damage` | `REAL` | 法伤 |
-| `magic_defense` | `REAL` | 法防 |
-| `speed` | `REAL` | 速度 |
-| `hit` | `REAL` | 命中 |
-| `seal_hit` | `REAL` | 封印命中，可空 |
-| `raw_body_json` | `TEXT` | 原始结构扩展 |
+| 字段               | 类型      | 说明           |
+| ------------------ | --------- | -------------- |
+| `snapshot_id`      | `TEXT PK` | 对应快照       |
+| `school`           | `TEXT`    | 门派           |
+| `level`            | `INTEGER` | 等级           |
+| `physique`         | `INTEGER` | 体质加点       |
+| `magic`            | `INTEGER` | 魔力加点       |
+| `strength`         | `INTEGER` | 力量加点       |
+| `endurance`        | `INTEGER` | 耐力加点       |
+| `agility`          | `INTEGER` | 敏捷加点       |
+| `potential_points` | `INTEGER` | 潜力点         |
+| `hp`               | `REAL`    | 气血           |
+| `mp`               | `REAL`    | 魔法           |
+| `damage`           | `REAL`    | 伤害           |
+| `defense`          | `REAL`    | 防御           |
+| `magic_damage`     | `REAL`    | 法伤           |
+| `magic_defense`    | `REAL`    | 法防           |
+| `speed`            | `REAL`    | 速度           |
+| `hit`              | `REAL`    | 命中           |
+| `seal_hit`         | `REAL`    | 封印命中，可空 |
+| `raw_body_json`    | `TEXT`    | 原始结构扩展   |
 
 说明：
 
@@ -385,16 +387,16 @@
 
 用途：技能等级
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 对应快照 |
-| `skill_code` | `TEXT` | 技能编码 |
-| `skill_name` | `TEXT` | 技能名 |
-| `base_level` | `INTEGER` | 基础等级 |
-| `extra_level` | `INTEGER` | 额外等级 |
-| `final_level` | `INTEGER` | 最终等级 |
-| `source_detail_json` | `TEXT` | 来源拆解 |
+| 字段                 | 类型      | 说明     |
+| -------------------- | --------- | -------- |
+| `id`                 | `TEXT PK` | 主键     |
+| `snapshot_id`        | `TEXT`    | 对应快照 |
+| `skill_code`         | `TEXT`    | 技能编码 |
+| `skill_name`         | `TEXT`    | 技能名   |
+| `base_level`         | `INTEGER` | 基础等级 |
+| `extra_level`        | `INTEGER` | 额外等级 |
+| `final_level`        | `INTEGER` | 最终等级 |
+| `source_detail_json` | `TEXT`    | 来源拆解 |
 
 约束建议：
 
@@ -404,12 +406,12 @@
 
 用途：修炼信息
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 对应快照 |
-| `cultivation_type` | `TEXT` | 攻修/法修/法抗等 |
-| `level` | `INTEGER` | 修炼等级 |
+| 字段               | 类型      | 说明             |
+| ------------------ | --------- | ---------------- |
+| `id`               | `TEXT PK` | 主键             |
+| `snapshot_id`      | `TEXT`    | 对应快照         |
+| `cultivation_type` | `TEXT`    | 攻修/法修/法抗等 |
+| `level`            | `INTEGER` | 修炼等级         |
 
 约束建议：
 
@@ -421,20 +423,20 @@
 
 用途：正式装备主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 装备 ID |
-| `character_id` | `TEXT` | 归属角色 |
-| `slot` | `TEXT` | `helmet` / `necklace` / `weapon` / `armor` / `belt` / `shoes` |
-| `name` | `TEXT` | 装备名称 |
-| `level` | `INTEGER` | 装备等级 |
-| `quality` | `TEXT` | 品质颜色 |
-| `price` | `INTEGER` | 入库价格，可空 |
-| `source` | `TEXT` | `ocr` / `manual` / `import` |
-| `status` | `TEXT` | `stored` / `equipped` / `archived` |
-| `is_locked` | `INTEGER` | 0/1 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段           | 类型      | 说明                                                          |
+| -------------- | --------- | ------------------------------------------------------------- |
+| `id`           | `TEXT PK` | 装备 ID                                                       |
+| `character_id` | `TEXT`    | 归属角色                                                      |
+| `slot`         | `TEXT`    | `helmet` / `necklace` / `weapon` / `armor` / `belt` / `shoes` |
+| `name`         | `TEXT`    | 装备名称                                                      |
+| `level`        | `INTEGER` | 装备等级                                                      |
+| `quality`      | `TEXT`    | 品质颜色                                                      |
+| `price`        | `INTEGER` | 入库价格，可空                                                |
+| `source`       | `TEXT`    | `ocr` / `manual` / `import`                                   |
+| `status`       | `TEXT`    | `stored` / `equipped` / `archived`                            |
+| `is_locked`    | `INTEGER` | 0/1                                                           |
+| `created_at`   | `INTEGER` | 创建时间                                                      |
+| `updated_at`   | `INTEGER` | 更新时间                                                      |
 
 索引：
 
@@ -445,15 +447,15 @@
 
 用途：装备属性拆分表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `equipment_id` | `TEXT` | 装备 ID |
-| `attr_group` | `TEXT` | `base` / `extra` / `melt` / `refine` |
-| `attr_type` | `TEXT` | 属性类型 |
-| `value_type` | `TEXT` | `flat` / `percent` |
-| `attr_value` | `REAL` | 属性值 |
-| `display_order` | `INTEGER` | 排序 |
+| 字段            | 类型      | 说明                                 |
+| --------------- | --------- | ------------------------------------ |
+| `id`            | `TEXT PK` | 主键                                 |
+| `equipment_id`  | `TEXT`    | 装备 ID                              |
+| `attr_group`    | `TEXT`    | `base` / `extra` / `melt` / `refine` |
+| `attr_type`     | `TEXT`    | 属性类型                             |
+| `value_type`    | `TEXT`    | `flat` / `percent`                   |
+| `attr_value`    | `REAL`    | 属性值                               |
+| `display_order` | `INTEGER` | 排序                                 |
 
 说明：
 
@@ -464,15 +466,15 @@
 
 用途：强化、开孔、镶嵌等构建信息
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `equipment_id` | `TEXT PK` | 装备 ID |
-| `hole_count` | `INTEGER` | 开孔数 |
-| `gem_level_total` | `INTEGER` | 宝石总段数 |
-| `refine_level` | `INTEGER` | 强化等级 |
-| `special_effect_json` | `TEXT` | 特技特效 |
-| `set_effect_json` | `TEXT` | 套装效果 |
-| `notes_json` | `TEXT` | 其他扩展 |
+| 字段                  | 类型      | 说明       |
+| --------------------- | --------- | ---------- |
+| `equipment_id`        | `TEXT PK` | 装备 ID    |
+| `hole_count`          | `INTEGER` | 开孔数     |
+| `gem_level_total`     | `INTEGER` | 宝石总段数 |
+| `refine_level`        | `INTEGER` | 强化等级   |
+| `special_effect_json` | `TEXT`    | 特技特效   |
+| `set_effect_json`     | `TEXT`    | 套装效果   |
+| `notes_json`          | `TEXT`    | 其他扩展   |
 
 ## 5.4 符石、符石组合、星石与星相互合
 
@@ -480,13 +482,13 @@
 
 用途：单件装备上的符石孔位
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `equipment_id` | `TEXT` | 装备 ID |
-| `position_no` | `INTEGER` | 第几孔 |
-| `rune_name` | `TEXT` | 符石名称 |
-| `rune_color` | `TEXT` | 符石颜色 |
+| 字段           | 类型      | 说明     |
+| -------------- | --------- | -------- |
+| `id`           | `TEXT PK` | 主键     |
+| `equipment_id` | `TEXT`    | 装备 ID  |
+| `position_no`  | `INTEGER` | 第几孔   |
+| `rune_name`    | `TEXT`    | 符石名称 |
+| `rune_color`   | `TEXT`    | 符石颜色 |
 
 约束建议：
 
@@ -496,81 +498,81 @@
 
 用途：符石组合规则定义
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 规则 ID |
-| `set_name` | `TEXT` | 如九龙诀、龙腾、招云、腾蛟 |
-| `slot` | `TEXT` | 对应部位 |
-| `first_hole_color` | `TEXT` | 第一孔要求 |
-| `other_holes_json` | `TEXT` | 后续孔颜色条件 |
-| `effect_type` | `TEXT` | 技能加成/套装加成 |
-| `effect_json` | `TEXT` | 规则效果 |
-| `enabled` | `INTEGER` | 0/1 |
+| 字段               | 类型      | 说明                       |
+| ------------------ | --------- | -------------------------- |
+| `id`               | `TEXT PK` | 规则 ID                    |
+| `set_name`         | `TEXT`    | 如九龙诀、龙腾、招云、腾蛟 |
+| `slot`             | `TEXT`    | 对应部位                   |
+| `first_hole_color` | `TEXT`    | 第一孔要求                 |
+| `other_holes_json` | `TEXT`    | 后续孔颜色条件             |
+| `effect_type`      | `TEXT`    | 技能加成/套装加成          |
+| `effect_json`      | `TEXT`    | 规则效果                   |
+| `enabled`          | `INTEGER` | 0/1                        |
 
 ### `equipment_rune_match`
 
 用途：装备当前命中的符石组合
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `equipment_id` | `TEXT` | 装备 ID |
-| `rule_id` | `TEXT` | 规则 ID |
-| `matched` | `INTEGER` | 0/1 |
-| `match_detail_json` | `TEXT` | 命中详情 |
-| `computed_at` | `INTEGER` | 计算时间 |
+| 字段                | 类型      | 说明     |
+| ------------------- | --------- | -------- |
+| `id`                | `TEXT PK` | 主键     |
+| `equipment_id`      | `TEXT`    | 装备 ID  |
+| `rule_id`           | `TEXT`    | 规则 ID  |
+| `matched`           | `INTEGER` | 0/1      |
+| `match_detail_json` | `TEXT`    | 命中详情 |
+| `computed_at`       | `INTEGER` | 计算时间 |
 
 ### `star_stone_item`
 
 用途：星石主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 星石 ID |
-| `equipment_id` | `TEXT` | 所属装备 |
-| `name` | `TEXT` | 星石名 |
-| `star_type` | `TEXT` | 部位型星石 |
-| `color` | `TEXT` | 星石颜色 |
-| `yin_yang_state` | `TEXT` | `yin` / `yang` |
-| `level` | `INTEGER` | 星石等级 |
+| 字段             | 类型      | 说明           |
+| ---------------- | --------- | -------------- |
+| `id`             | `TEXT PK` | 星石 ID        |
+| `equipment_id`   | `TEXT`    | 所属装备       |
+| `name`           | `TEXT`    | 星石名         |
+| `star_type`      | `TEXT`    | 部位型星石     |
+| `color`          | `TEXT`    | 星石颜色       |
+| `yin_yang_state` | `TEXT`    | `yin` / `yang` |
+| `level`          | `INTEGER` | 星石等级       |
 
 ### `star_stone_attr`
 
 用途：星石属性
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `star_stone_id` | `TEXT` | 星石 ID |
-| `attr_type` | `TEXT` | 属性名 |
-| `attr_value` | `REAL` | 属性值 |
+| 字段            | 类型      | 说明    |
+| --------------- | --------- | ------- |
+| `id`            | `TEXT PK` | 主键    |
+| `star_stone_id` | `TEXT`    | 星石 ID |
+| `attr_type`     | `TEXT`    | 属性名  |
+| `attr_value`    | `REAL`    | 属性值  |
 
 ### `star_resonance_rule`
 
 用途：星相互合规则
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 规则 ID |
-| `slot` | `TEXT` | 装备部位 |
-| `combo_name` | `TEXT` | 对应符石组合 |
-| `required_colors_json` | `TEXT` | 所需颜色列表 |
-| `bonus_attr_type` | `TEXT` | 奖励属性 |
-| `bonus_attr_value` | `REAL` | 奖励值 |
-| `enabled` | `INTEGER` | 0/1 |
+| 字段                   | 类型      | 说明         |
+| ---------------------- | --------- | ------------ |
+| `id`                   | `TEXT PK` | 规则 ID      |
+| `slot`                 | `TEXT`    | 装备部位     |
+| `combo_name`           | `TEXT`    | 对应符石组合 |
+| `required_colors_json` | `TEXT`    | 所需颜色列表 |
+| `bonus_attr_type`      | `TEXT`    | 奖励属性     |
+| `bonus_attr_value`     | `REAL`    | 奖励值       |
+| `enabled`              | `INTEGER` | 0/1          |
 
 ### `character_star_resonance`
 
 用途：角色当前星相互合命中状态
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 角色快照 |
-| `slot` | `TEXT` | 部位 |
-| `rule_id` | `TEXT` | 命中规则 |
-| `matched` | `INTEGER` | 0/1 |
-| `bonus_json` | `TEXT` | 奖励详情 |
+| 字段          | 类型      | 说明     |
+| ------------- | --------- | -------- |
+| `id`          | `TEXT PK` | 主键     |
+| `snapshot_id` | `TEXT`    | 角色快照 |
+| `slot`        | `TEXT`    | 部位     |
+| `rule_id`     | `TEXT`    | 命中规则 |
+| `matched`     | `INTEGER` | 0/1      |
+| `bonus_json`  | `TEXT`    | 奖励详情 |
 
 ## 5.5 灵饰
 
@@ -578,45 +580,45 @@
 
 用途：灵饰主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 灵饰 ID |
-| `character_id` | `TEXT` | 归属角色 |
-| `slot` | `TEXT` | `ring` / `earring` / `bracelet` / `amulet` |
-| `name` | `TEXT` | 灵饰名 |
-| `level` | `INTEGER` | 等级 |
-| `quality` | `TEXT` | 品质颜色 |
-| `main_attr_type` | `TEXT` | 主属性类型 |
-| `main_attr_value` | `REAL` | 主属性值 |
-| `status` | `TEXT` | `stored` / `equipped` / `archived` |
-| `source` | `TEXT` | 来源 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段              | 类型      | 说明                                       |
+| ----------------- | --------- | ------------------------------------------ |
+| `id`              | `TEXT PK` | 灵饰 ID                                    |
+| `character_id`    | `TEXT`    | 归属角色                                   |
+| `slot`            | `TEXT`    | `ring` / `earring` / `bracelet` / `amulet` |
+| `name`            | `TEXT`    | 灵饰名                                     |
+| `level`           | `INTEGER` | 等级                                       |
+| `quality`         | `TEXT`    | 品质颜色                                   |
+| `main_attr_type`  | `TEXT`    | 主属性类型                                 |
+| `main_attr_value` | `REAL`    | 主属性值                                   |
+| `status`          | `TEXT`    | `stored` / `equipped` / `archived`         |
+| `source`          | `TEXT`    | 来源                                       |
+| `created_at`      | `INTEGER` | 创建时间                                   |
+| `updated_at`      | `INTEGER` | 更新时间                                   |
 
 ### `ornament_sub_attr`
 
 用途：灵饰附加属性
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `ornament_id` | `TEXT` | 灵饰 ID |
-| `attr_type` | `TEXT` | 属性名 |
-| `attr_value` | `REAL` | 数值 |
-| `display_order` | `INTEGER` | 排序 |
+| 字段            | 类型      | 说明    |
+| --------------- | --------- | ------- |
+| `id`            | `TEXT PK` | 主键    |
+| `ornament_id`   | `TEXT`    | 灵饰 ID |
+| `attr_type`     | `TEXT`    | 属性名  |
+| `attr_value`    | `REAL`    | 数值    |
+| `display_order` | `INTEGER` | 排序    |
 
 ### `ornament_set_effect`
 
 用途：灵饰套装效果
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 角色快照 |
-| `set_name` | `TEXT` | 套装名 |
-| `total_level` | `INTEGER` | 总等级 |
-| `tier` | `INTEGER` | 8/16/24/28/32 档位 |
-| `effect_json` | `TEXT` | 套装效果 |
+| 字段          | 类型      | 说明               |
+| ------------- | --------- | ------------------ |
+| `id`          | `TEXT PK` | 主键               |
+| `snapshot_id` | `TEXT`    | 角色快照           |
+| `set_name`    | `TEXT`    | 套装名             |
+| `total_level` | `INTEGER` | 总等级             |
+| `tier`        | `INTEGER` | 8/16/24/28/32 档位 |
+| `effect_json` | `TEXT`    | 套装效果           |
 
 ## 5.6 玉魄
 
@@ -624,31 +626,31 @@
 
 用途：玉魄主表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 玉魄 ID |
-| `character_id` | `TEXT` | 归属角色 |
-| `slot` | `TEXT` | 对应装备位 |
-| `name` | `TEXT` | 玉魄名称 |
-| `quality` | `TEXT` | 品质 |
-| `fit_level` | `INTEGER` | 契合等级 |
-| `status` | `TEXT` | `stored` / `equipped` / `archived` |
-| `source` | `TEXT` | 来源 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段           | 类型      | 说明                               |
+| -------------- | --------- | ---------------------------------- |
+| `id`           | `TEXT PK` | 玉魄 ID                            |
+| `character_id` | `TEXT`    | 归属角色                           |
+| `slot`         | `TEXT`    | 对应装备位                         |
+| `name`         | `TEXT`    | 玉魄名称                           |
+| `quality`      | `TEXT`    | 品质                               |
+| `fit_level`    | `INTEGER` | 契合等级                           |
+| `status`       | `TEXT`    | `stored` / `equipped` / `archived` |
+| `source`       | `TEXT`    | 来源                               |
+| `created_at`   | `INTEGER` | 创建时间                           |
+| `updated_at`   | `INTEGER` | 更新时间                           |
 
 ### `jade_attr`
 
 用途：玉魄属性
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `jade_id` | `TEXT` | 玉魄 ID |
-| `attr_type` | `TEXT` | 法术伤害、法术暴击等级等 |
-| `value_type` | `TEXT` | `flat` / `percent` |
-| `attr_value` | `REAL` | 属性值 |
-| `display_order` | `INTEGER` | 排序 |
+| 字段            | 类型      | 说明                     |
+| --------------- | --------- | ------------------------ |
+| `id`            | `TEXT PK` | 主键                     |
+| `jade_id`       | `TEXT`    | 玉魄 ID                  |
+| `attr_type`     | `TEXT`    | 法术伤害、法术暴击等级等 |
+| `value_type`    | `TEXT`    | `flat` / `percent`       |
+| `attr_value`    | `REAL`    | 属性值                   |
+| `display_order` | `INTEGER` | 排序                     |
 
 说明：
 
@@ -661,12 +663,12 @@
 
 用途：快照上的常规装备槽位
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 快照 |
-| `slot` | `TEXT` | 部位 |
-| `equipment_id` | `TEXT` | 装备 ID |
+| 字段           | 类型      | 说明    |
+| -------------- | --------- | ------- |
+| `id`           | `TEXT PK` | 主键    |
+| `snapshot_id`  | `TEXT`    | 快照    |
+| `slot`         | `TEXT`    | 部位    |
+| `equipment_id` | `TEXT`    | 装备 ID |
 
 约束建议：
 
@@ -676,23 +678,23 @@
 
 用途：快照上的灵饰槽位
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 快照 |
-| `slot` | `TEXT` | 部位 |
-| `ornament_id` | `TEXT` | 灵饰 ID |
+| 字段          | 类型      | 说明    |
+| ------------- | --------- | ------- |
+| `id`          | `TEXT PK` | 主键    |
+| `snapshot_id` | `TEXT`    | 快照    |
+| `slot`        | `TEXT`    | 部位    |
+| `ornament_id` | `TEXT`    | 灵饰 ID |
 
 ### `snapshot_jade_slot`
 
 用途：快照上的玉魄槽位
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `snapshot_id` | `TEXT` | 快照 |
-| `slot` | `TEXT` | 部位 |
-| `jade_id` | `TEXT` | 玉魄 ID |
+| 字段          | 类型      | 说明    |
+| ------------- | --------- | ------- |
+| `id`          | `TEXT PK` | 主键    |
+| `snapshot_id` | `TEXT`    | 快照    |
+| `slot`        | `TEXT`    | 部位    |
+| `jade_id`     | `TEXT`    | 玉魄 ID |
 
 ## 5.8 OCR 与待确认入库
 
@@ -700,34 +702,34 @@
 
 用途：一次 OCR 任务
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | OCR 任务 ID |
-| `character_id` | `TEXT` | 归属角色 |
-| `scene_type` | `TEXT` | `profile` / `equipment` / `ornament` / `jade` |
-| `image_url` | `TEXT` | 图片地址 |
-| `status` | `TEXT` | `pending` / `success` / `failed` / `reviewing` |
-| `raw_result_json` | `TEXT` | 原始 OCR 结果 |
-| `error_message` | `TEXT` | 失败原因 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段              | 类型      | 说明                                           |
+| ----------------- | --------- | ---------------------------------------------- |
+| `id`              | `TEXT PK` | OCR 任务 ID                                    |
+| `character_id`    | `TEXT`    | 归属角色                                       |
+| `scene_type`      | `TEXT`    | `profile` / `equipment` / `ornament` / `jade`  |
+| `image_url`       | `TEXT`    | 图片地址                                       |
+| `status`          | `TEXT`    | `pending` / `success` / `failed` / `reviewing` |
+| `raw_result_json` | `TEXT`    | 原始 OCR 结果                                  |
+| `error_message`   | `TEXT`    | 失败原因                                       |
+| `created_at`      | `INTEGER` | 创建时间                                       |
+| `updated_at`      | `INTEGER` | 更新时间                                       |
 
 ### `ocr_draft_item`
 
 用途：OCR 识别出的草稿对象
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 草稿 ID |
-| `ocr_job_id` | `TEXT` | OCR 任务 |
-| `character_id` | `TEXT` | 角色 ID |
-| `item_type` | `TEXT` | `equipment` / `ornament` / `jade` / `profile` |
-| `draft_body_json` | `TEXT` | 解析后的结构化草稿 |
-| `confidence_score` | `REAL` | 识别置信度 |
-| `review_status` | `TEXT` | `pending` / `approved` / `rejected` / `edited` |
-| `review_note` | `TEXT` | 审核备注 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段               | 类型      | 说明                                           |
+| ------------------ | --------- | ---------------------------------------------- |
+| `id`               | `TEXT PK` | 草稿 ID                                        |
+| `ocr_job_id`       | `TEXT`    | OCR 任务                                       |
+| `character_id`     | `TEXT`    | 角色 ID                                        |
+| `item_type`        | `TEXT`    | `equipment` / `ornament` / `jade` / `profile`  |
+| `draft_body_json`  | `TEXT`    | 解析后的结构化草稿                             |
+| `confidence_score` | `REAL`    | 识别置信度                                     |
+| `review_status`    | `TEXT`    | `pending` / `approved` / `rejected` / `edited` |
+| `review_note`      | `TEXT`    | 审核备注                                       |
+| `created_at`       | `INTEGER` | 创建时间                                       |
+| `updated_at`       | `INTEGER` | 更新时间                                       |
 
 说明：
 
@@ -738,17 +740,17 @@
 
 用途：正式入库记录
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 入库记录 ID |
-| `character_id` | `TEXT` | 角色 ID |
-| `item_type` | `TEXT` | 资产类型 |
-| `item_ref_id` | `TEXT` | 指向正式资产表 ID |
-| `source_draft_id` | `TEXT` | 来源草稿 |
-| `folder_key` | `TEXT` | 分类键，如按部位入库 |
-| `price` | `INTEGER` | 标价 |
-| `status` | `TEXT` | `active` / `sold` / `discarded` |
-| `created_at` | `INTEGER` | 创建时间 |
+| 字段              | 类型      | 说明                            |
+| ----------------- | --------- | ------------------------------- |
+| `id`              | `TEXT PK` | 入库记录 ID                     |
+| `character_id`    | `TEXT`    | 角色 ID                         |
+| `item_type`       | `TEXT`    | 资产类型                        |
+| `item_ref_id`     | `TEXT`    | 指向正式资产表 ID               |
+| `source_draft_id` | `TEXT`    | 来源草稿                        |
+| `folder_key`      | `TEXT`    | 分类键，如按部位入库            |
+| `price`           | `INTEGER` | 标价                            |
+| `status`          | `TEXT`    | `active` / `sold` / `discarded` |
+| `created_at`      | `INTEGER` | 创建时间                        |
 
 ## 5.9 实验室
 
@@ -756,92 +758,72 @@
 
 用途：一次实验室会话
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 实验会话 ID |
-| `character_id` | `TEXT` | 角色 ID |
-| `baseline_snapshot_id` | `TEXT` | 当前基线快照 |
-| `name` | `TEXT` | 会话名称 |
-| `status` | `TEXT` | `draft` / `computed` / `applied` / `archived` |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段                   | 类型      | 说明                                          |
+| ---------------------- | --------- | --------------------------------------------- |
+| `id`                   | `TEXT PK` | 实验会话 ID                                   |
+| `character_id`         | `TEXT`    | 角色 ID                                       |
+| `baseline_snapshot_id` | `TEXT`    | 当前基线快照                                  |
+| `name`                 | `TEXT`    | 会话名称                                      |
+| `status`               | `TEXT`    | `draft` / `computed` / `applied` / `archived` |
+| `created_at`           | `INTEGER` | 创建时间                                      |
+| `updated_at`           | `INTEGER` | 更新时间                                      |
 
-### `lab_slot_change`
+### `lab_session_equipment`
 
-用途：实验室挂载的变更项
+用途：实验室挂载的样本/对比装备项
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `lab_session_id` | `TEXT` | 会话 ID |
-| `slot_type` | `TEXT` | 部位 |
-| `item_type` | `TEXT` | `equipment` / `ornament` / `jade` |
-| `new_item_id` | `TEXT` | 新挂载物品 |
-| `inherit_gems` | `INTEGER` | 0/1 |
-| `inherit_runes` | `INTEGER` | 0/1 |
-| `inherit_star_stones` | `INTEGER` | 0/1 |
-| `change_note` | `TEXT` | 备注 |
+| 字段                  | 类型      | 说明                              |
+| --------------------- | --------- | --------------------------------- |
+| `id`                  | `TEXT PK` | 主键                              |
+| `session_id`          | `TEXT`    | 会话 ID                           |
+| `seat_type`           | `TEXT`    | `sample` / `compare`              |
+| `slot`                | `TEXT`    | 部位                              |
+| `equipment_id`        | `TEXT`    | 关联正式装备，可为空              |
+| `payload_json`        | `TEXT`    | 临时挂载内容或覆盖字段            |
+| `source`              | `TEXT`    | `library` / `manual` / `snapshot` |
+| `inherit_gemstones`   | `INTEGER` | 0/1                               |
+| `inherit_rune_stones` | `INTEGER` | 0/1                               |
+| `sort`                | `INTEGER` | 排序                              |
+| `created_at`          | `INTEGER` | 创建时间                          |
+| `updated_at`          | `INTEGER` | 更新时间                          |
 
 说明：
 
 - 文档要求支持“模拟老装备的符石/宝石”
 - 所以继承策略需要单独落字段，不能只靠前端临时传参
+- 当前版本先覆盖常规装备链路，灵饰和玉魄后续按同样模式补齐
 
-### `lab_battle_context`
+### `snapshot_battle_context`
 
-用途：实验室战斗参数
+用途：当前快照绑定的战斗参数，也是实验室生成基线时的默认战斗上下文
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `lab_session_id` | `TEXT PK` | 会话 ID |
-| `formation` | `TEXT` | 阵法 |
-| `five_element_relation` | `TEXT` | 五行关系 |
-| `target_template_id` | `TEXT` | 目标模板 |
-| `manual_target_json` | `TEXT` | 手工目标参数 |
-| `extra_flags_json` | `TEXT` | 其他计算开关 |
+| 字段                               | 类型      | 说明               |
+| ---------------------------------- | --------- | ------------------ |
+| `snapshot_id`                      | `TEXT PK` | 快照 ID            |
+| `rule_version_id`                  | `TEXT`    | 规则版本           |
+| `self_formation`                   | `TEXT`    | 我方阵法           |
+| `self_element`                     | `TEXT`    | 我方五行           |
+| `formation_counter_state`          | `TEXT`    | 阵法克制关系       |
+| `element_relation`                 | `TEXT`    | 五行关系           |
+| `transform_card_factor`            | `REAL`    | 变身卡系数         |
+| `split_target_count`               | `INTEGER` | 分灵目标数         |
+| `shenmu_value`                     | `REAL`    | 神木符值           |
+| `magic_result`                     | `REAL`    | 法伤结果           |
+| `target_template_id`               | `TEXT`    | 目标模板           |
+| `target_name`                      | `TEXT`    | 目标名称           |
+| `target_level`                     | `INTEGER` | 目标等级           |
+| `target_hp`                        | `REAL`    | 目标气血           |
+| `target_defense`                   | `REAL`    | 目标防御           |
+| `target_magic_defense`             | `REAL`    | 目标法防           |
+| `target_magic_defense_cultivation` | `INTEGER` | 目标法抗修炼       |
+| `target_element`                   | `TEXT`    | 目标五行           |
+| `target_formation`                 | `TEXT`    | 目标阵法           |
+| `notes_json`                       | `TEXT`    | 其他说明或扩展参数 |
 
-### `lab_result`
+说明：
 
-用途：实验结果主表
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 结果 ID |
-| `lab_session_id` | `TEXT` | 会话 ID |
-| `result_snapshot_id` | `TEXT` | 推演后的角色快照 |
-| `damage_delta` | `REAL` | 伤害差值 |
-| `damage_delta_pct` | `REAL` | 伤害百分比变化 |
-| `score_delta` | `REAL` | 评分变化 |
-| `cost_per_damage` | `REAL` | 性价比指标 |
-| `summary_json` | `TEXT` | 结果摘要 |
-| `created_at` | `INTEGER` | 创建时间 |
-
-### `lab_attr_delta`
-
-用途：实验室属性差值表
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `lab_result_id` | `TEXT` | 结果 ID |
-| `attr_type` | `TEXT` | 属性名 |
-| `old_value` | `REAL` | 原值 |
-| `new_value` | `REAL` | 新值 |
-| `delta_value` | `REAL` | 差值 |
-| `delta_pct` | `REAL` | 百分比差值，可空 |
-
-### `lab_apply_log`
-
-用途：实验结果覆盖当前状态的日志
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `lab_session_id` | `TEXT` | 会话 ID |
-| `from_snapshot_id` | `TEXT` | 旧快照 |
-| `to_snapshot_id` | `TEXT` | 新快照 |
-| `applied_by` | `TEXT` | 操作人 |
-| `created_at` | `INTEGER` | 应用时间 |
+- 当前版本优先把“当前状态”和“伤害计算”需要的战斗参数持久化
+- 更细粒度的实验结果表，如 `lab_result`、`lab_attr_delta`、`lab_apply_log`，后续再补
 
 ## 5.10 战斗目标与规则模板
 
@@ -849,30 +831,43 @@
 
 用途：目标预设
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 模板 ID |
-| `name` | `TEXT` | 模板名称 |
-| `scene_name` | `TEXT` | 场景 |
-| `hp` | `REAL` | 气血 |
-| `defense` | `REAL` | 防御 |
-| `magic_defense` | `REAL` | 法防 |
-| `speed` | `REAL` | 速度 |
-| `five_element` | `TEXT` | 五行 |
-| `body_json` | `TEXT` | 其他扩展字段 |
-| `enabled` | `INTEGER` | 0/1 |
+| 字段                        | 类型      | 说明                                  |
+| --------------------------- | --------- | ------------------------------------- |
+| `id`                        | `TEXT PK` | 模板 ID                               |
+| `user_id`                   | `TEXT`    | 用户 ID，可空，支持系统模板和个人模板 |
+| `scope`                     | `TEXT`    | `system` / `user`                     |
+| `name`                      | `TEXT`    | 模板名称                              |
+| `dungeon_name`              | `TEXT`    | 副本或场景                            |
+| `target_type`               | `TEXT`    | `mob` / `boss` / `manual`             |
+| `school`                    | `TEXT`    | 门派或流派说明                        |
+| `level`                     | `INTEGER` | 等级                                  |
+| `hp`                        | `REAL`    | 气血                                  |
+| `defense`                   | `REAL`    | 防御                                  |
+| `magic_defense`             | `REAL`    | 法防                                  |
+| `magic_defense_cultivation` | `INTEGER` | 法抗修炼                              |
+| `speed`                     | `REAL`    | 速度                                  |
+| `element`                   | `TEXT`    | 五行                                  |
+| `formation`                 | `TEXT`    | 阵法                                  |
+| `notes`                     | `TEXT`    | 备注                                  |
+| `payload_json`              | `TEXT`    | 扩展字段                              |
+| `enabled`                   | `INTEGER` | 是否启用                              |
+| `created_at`                | `INTEGER` | 创建时间                              |
+| `updated_at`                | `INTEGER` | 更新时间                              |
+| `five_element`              | `TEXT`    | 五行                                  |
+| `body_json`                 | `TEXT`    | 其他扩展字段                          |
+| `enabled`                   | `INTEGER` | 0/1                                   |
 
 ### `damage_rule_version`
 
 用途：伤害公式版本管理
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 版本 ID |
-| `rule_name` | `TEXT` | 规则名称 |
-| `version_no` | `INTEGER` | 版本号 |
-| `rule_json` | `TEXT` | 公式描述 |
-| `enabled` | `INTEGER` | 是否启用 |
+| 字段         | 类型      | 说明     |
+| ------------ | --------- | -------- |
+| `id`         | `TEXT PK` | 版本 ID  |
+| `rule_name`  | `TEXT`    | 规则名称 |
+| `version_no` | `INTEGER` | 版本号   |
+| `rule_json`  | `TEXT`    | 公式描述 |
+| `enabled`    | `INTEGER` | 是否启用 |
 | `created_at` | `INTEGER` | 创建时间 |
 
 说明：
@@ -911,14 +906,14 @@
 
 用途：后台账号
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 后台用户 ID |
-| `email` | `TEXT` | 登录邮箱 |
-| `display_name` | `TEXT` | 显示名 |
-| `status` | `TEXT` | `active` / `disabled` |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段           | 类型      | 说明                  |
+| -------------- | --------- | --------------------- |
+| `id`           | `TEXT PK` | 后台用户 ID           |
+| `email`        | `TEXT`    | 登录邮箱              |
+| `display_name` | `TEXT`    | 显示名                |
+| `status`       | `TEXT`    | `active` / `disabled` |
+| `created_at`   | `INTEGER` | 创建时间              |
+| `updated_at`   | `INTEGER` | 更新时间              |
 
 索引：
 
@@ -928,25 +923,25 @@
 
 用途：后台角色定义
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 角色 ID |
-| `role_key` | `TEXT` | `super_admin` / `operator` / `rule_editor` / `viewer` |
-| `role_name` | `TEXT` | 角色名称 |
-| `permissions_json` | `TEXT` | 权限集合 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段               | 类型      | 说明                                                  |
+| ------------------ | --------- | ----------------------------------------------------- |
+| `id`               | `TEXT PK` | 角色 ID                                               |
+| `role_key`         | `TEXT`    | `super_admin` / `operator` / `rule_editor` / `viewer` |
+| `role_name`        | `TEXT`    | 角色名称                                              |
+| `permissions_json` | `TEXT`    | 权限集合                                              |
+| `created_at`       | `INTEGER` | 创建时间                                              |
+| `updated_at`       | `INTEGER` | 更新时间                                              |
 
 ### `admin_user_role`
 
 用途：后台用户角色关系
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `admin_user_id` | `TEXT` | 后台用户 |
-| `admin_role_id` | `TEXT` | 后台角色 |
-| `created_at` | `INTEGER` | 创建时间 |
+| 字段            | 类型      | 说明     |
+| --------------- | --------- | -------- |
+| `id`            | `TEXT PK` | 主键     |
+| `admin_user_id` | `TEXT`    | 后台用户 |
+| `admin_role_id` | `TEXT`    | 后台角色 |
+| `created_at`    | `INTEGER` | 创建时间 |
 
 约束建议：
 
@@ -956,18 +951,18 @@
 
 用途：规则集合主表，表示一组可发布的业务规则
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 规则集 ID |
-| `rule_domain` | `TEXT` | `attribute` / `skill` / `rune_set` / `star_resonance` / `ornament_set` / `jade` / `target_template` / `ocr_dict` |
-| `rule_key` | `TEXT` | 规则唯一键 |
-| `rule_name` | `TEXT` | 规则名称 |
-| `description` | `TEXT` | 规则说明 |
-| `status` | `TEXT` | `draft` / `active` / `archived` |
-| `current_version_id` | `TEXT` | 当前启用版本 |
-| `created_by` | `TEXT` | 创建人 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段                 | 类型      | 说明                                                                                                             |
+| -------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `id`                 | `TEXT PK` | 规则集 ID                                                                                                        |
+| `rule_domain`        | `TEXT`    | `attribute` / `skill` / `rune_set` / `star_resonance` / `ornament_set` / `jade` / `target_template` / `ocr_dict` |
+| `rule_key`           | `TEXT`    | 规则唯一键                                                                                                       |
+| `rule_name`          | `TEXT`    | 规则名称                                                                                                         |
+| `description`        | `TEXT`    | 规则说明                                                                                                         |
+| `status`             | `TEXT`    | `draft` / `active` / `archived`                                                                                  |
+| `current_version_id` | `TEXT`    | 当前启用版本                                                                                                     |
+| `created_by`         | `TEXT`    | 创建人                                                                                                           |
+| `created_at`         | `INTEGER` | 创建时间                                                                                                         |
+| `updated_at`         | `INTEGER` | 更新时间                                                                                                         |
 
 索引：
 
@@ -978,18 +973,18 @@
 
 用途：规则版本表
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 版本 ID |
-| `rule_set_id` | `TEXT` | 规则集 ID |
-| `version_no` | `INTEGER` | 版本号 |
-| `version_label` | `TEXT` | 版本标签 |
-| `status` | `TEXT` | `draft` / `published` / `deprecated` |
-| `content_json` | `TEXT` | 规则完整定义 |
-| `change_summary` | `TEXT` | 变更摘要 |
-| `published_by` | `TEXT` | 发布人 |
-| `published_at` | `INTEGER` | 发布时间 |
-| `created_at` | `INTEGER` | 创建时间 |
+| 字段             | 类型      | 说明                                 |
+| ---------------- | --------- | ------------------------------------ |
+| `id`             | `TEXT PK` | 版本 ID                              |
+| `rule_set_id`    | `TEXT`    | 规则集 ID                            |
+| `version_no`     | `INTEGER` | 版本号                               |
+| `version_label`  | `TEXT`    | 版本标签                             |
+| `status`         | `TEXT`    | `draft` / `published` / `deprecated` |
+| `content_json`   | `TEXT`    | 规则完整定义                         |
+| `change_summary` | `TEXT`    | 变更摘要                             |
+| `published_by`   | `TEXT`    | 发布人                               |
+| `published_at`   | `INTEGER` | 发布时间                             |
+| `created_at`     | `INTEGER` | 创建时间                             |
 
 约束建议：
 
@@ -1005,27 +1000,27 @@
 
 用途：规则发布批次
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 发布批次 ID |
-| `release_name` | `TEXT` | 发布名称 |
-| `status` | `TEXT` | `draft` / `published` / `rolled_back` |
-| `effective_at` | `INTEGER` | 生效时间 |
-| `rolled_back_at` | `INTEGER` | 回滚时间 |
-| `created_by` | `TEXT` | 创建人 |
-| `created_at` | `INTEGER` | 创建时间 |
+| 字段             | 类型      | 说明                                  |
+| ---------------- | --------- | ------------------------------------- |
+| `id`             | `TEXT PK` | 发布批次 ID                           |
+| `release_name`   | `TEXT`    | 发布名称                              |
+| `status`         | `TEXT`    | `draft` / `published` / `rolled_back` |
+| `effective_at`   | `INTEGER` | 生效时间                              |
+| `rolled_back_at` | `INTEGER` | 回滚时间                              |
+| `created_by`     | `TEXT`    | 创建人                                |
+| `created_at`     | `INTEGER` | 创建时间                              |
 
 ### `rule_release_item`
 
 用途：规则发布批次中的版本明细
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `rule_release_id` | `TEXT` | 发布批次 |
-| `rule_version_id` | `TEXT` | 规则版本 |
-| `rule_domain` | `TEXT` | 规则域 |
-| `rule_key` | `TEXT` | 规则键 |
+| 字段              | 类型      | 说明     |
+| ----------------- | --------- | -------- |
+| `id`              | `TEXT PK` | 主键     |
+| `rule_release_id` | `TEXT`    | 发布批次 |
+| `rule_version_id` | `TEXT`    | 规则版本 |
+| `rule_domain`     | `TEXT`    | 规则域   |
+| `rule_key`        | `TEXT`    | 规则键   |
 
 约束建议：
 
@@ -1035,16 +1030,16 @@
 
 用途：线上运行时绑定当前生效规则
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `scene_key` | `TEXT` | 场景键，如 `prod_default` |
-| `rule_domain` | `TEXT` | 规则域 |
-| `rule_key` | `TEXT` | 规则键 |
-| `rule_version_id` | `TEXT` | 当前生效版本 |
-| `effective_at` | `INTEGER` | 生效时间 |
-| `updated_by` | `TEXT` | 操作人 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段              | 类型      | 说明                      |
+| ----------------- | --------- | ------------------------- |
+| `id`              | `TEXT PK` | 主键                      |
+| `scene_key`       | `TEXT`    | 场景键，如 `prod_default` |
+| `rule_domain`     | `TEXT`    | 规则域                    |
+| `rule_key`        | `TEXT`    | 规则键                    |
+| `rule_version_id` | `TEXT`    | 当前生效版本              |
+| `effective_at`    | `INTEGER` | 生效时间                  |
+| `updated_by`      | `TEXT`    | 操作人                    |
+| `updated_at`      | `INTEGER` | 更新时间                  |
 
 约束建议：
 
@@ -1059,17 +1054,17 @@
 
 用途：OCR 纠错词典和映射规则
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 主键 |
-| `dict_type` | `TEXT` | `equipment_name` / `skill_name` / `attr_name` / `set_name` |
-| `raw_text` | `TEXT` | OCR 原文 |
-| `normalized_text` | `TEXT` | 纠正后标准文案 |
-| `priority` | `INTEGER` | 优先级 |
-| `enabled` | `INTEGER` | 0/1 |
-| `created_by` | `TEXT` | 创建人 |
-| `created_at` | `INTEGER` | 创建时间 |
-| `updated_at` | `INTEGER` | 更新时间 |
+| 字段              | 类型      | 说明                                                       |
+| ----------------- | --------- | ---------------------------------------------------------- |
+| `id`              | `TEXT PK` | 主键                                                       |
+| `dict_type`       | `TEXT`    | `equipment_name` / `skill_name` / `attr_name` / `set_name` |
+| `raw_text`        | `TEXT`    | OCR 原文                                                   |
+| `normalized_text` | `TEXT`    | 纠正后标准文案                                             |
+| `priority`        | `INTEGER` | 优先级                                                     |
+| `enabled`         | `INTEGER` | 0/1                                                        |
+| `created_by`      | `TEXT`    | 创建人                                                     |
+| `created_at`      | `INTEGER` | 创建时间                                                   |
+| `updated_at`      | `INTEGER` | 更新时间                                                   |
 
 索引：
 
@@ -1079,17 +1074,17 @@
 
 用途：后台操作审计日志
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `TEXT PK` | 日志 ID |
-| `admin_user_id` | `TEXT` | 操作人 |
-| `action_type` | `TEXT` | `create` / `update` / `delete` / `publish` / `rollback` / `approve` |
-| `target_type` | `TEXT` | 操作对象类型 |
-| `target_id` | `TEXT` | 操作对象 ID |
-| `before_json` | `TEXT` | 修改前快照 |
-| `after_json` | `TEXT` | 修改后快照 |
-| `request_id` | `TEXT` | 请求链路 ID |
-| `created_at` | `INTEGER` | 创建时间 |
+| 字段            | 类型      | 说明                                                                |
+| --------------- | --------- | ------------------------------------------------------------------- |
+| `id`            | `TEXT PK` | 日志 ID                                                             |
+| `admin_user_id` | `TEXT`    | 操作人                                                              |
+| `action_type`   | `TEXT`    | `create` / `update` / `delete` / `publish` / `rollback` / `approve` |
+| `target_type`   | `TEXT`    | 操作对象类型                                                        |
+| `target_id`     | `TEXT`    | 操作对象 ID                                                         |
+| `before_json`   | `TEXT`    | 修改前快照                                                          |
+| `after_json`    | `TEXT`    | 修改后快照                                                          |
+| `request_id`    | `TEXT`    | 请求链路 ID                                                         |
+| `created_at`    | `INTEGER` | 创建时间                                                            |
 
 索引：
 

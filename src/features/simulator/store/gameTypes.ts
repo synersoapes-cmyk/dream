@@ -91,6 +91,7 @@ export interface Equipment {
   specialEffect?: string;
   manufacturer?: string;
   refinementEffect?: string;
+  quality?: string;
 }
 
 export type PreviewEquipment = Omit<Equipment, 'slot'> & {
@@ -327,6 +328,7 @@ export interface GameState {
   confirmReplacement: () => void;
   updateEquipment: (equipment: Equipment) => void;
   removeEquipment: (id: string) => void;
+  selectEquipmentSet: (index: number) => void;
   updateEquipmentSetName: (index: number, name: string) => void;
   calculateStatsDiff: () => {
     attributes: Record<string, number>;

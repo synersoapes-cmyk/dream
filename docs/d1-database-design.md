@@ -157,21 +157,21 @@
 
 用途：属性转化规则，如体质、魔力、灵力到最终面板属性的线性映射。
 
-| 字段             | 类型      | 说明                    |
-| ---------------- | --------- | ----------------------- |
-| `id`             | `TEXT PK` | 主键                    |
-| `version_id`     | `TEXT`    | 关联 `rule_version`     |
-| `school`         | `TEXT`    | 门派                    |
-| `role_type`      | `TEXT`    | 角色流派                |
-| `source_attr`    | `TEXT`    | 来源属性，如 `physique` |
-| `target_attr`    | `TEXT`    | 目标属性，如 `hp`       |
-| `coefficient`    | `REAL`    | 系数                    |
-| `value_type`     | `TEXT`    | 第一期固定 `linear`     |
-| `condition_json` | `TEXT`    | 附加条件                |
-| `sort`           | `INTEGER` | 排序                    |
-| `enabled`        | `INTEGER` | 是否启用                |
-| `created_at`     | `INTEGER` | 创建时间                |
-| `updated_at`     | `INTEGER` | 更新时间                |
+| 字段             | 类型      | 说明                                   |
+| ---------------- | --------- | -------------------------------------- |
+| `id`             | `TEXT PK` | 主键                                   |
+| `version_id`     | `TEXT`    | 关联 `rule_version`                    |
+| `school`         | `TEXT`    | 门派                                   |
+| `role_type`      | `TEXT`    | 角色流派                               |
+| `source_attr`    | `TEXT`    | 来源属性，如 `physique`                |
+| `target_attr`    | `TEXT`    | 目标属性，如 `hp`                      |
+| `coefficient`    | `REAL`    | 系数                                   |
+| `value_type`     | `TEXT`    | 计算方式，如 `linear` / `floor_linear` |
+| `condition_json` | `TEXT`    | 附加条件                               |
+| `sort`           | `INTEGER` | 排序                                   |
+| `enabled`        | `INTEGER` | 是否启用                               |
+| `created_at`     | `INTEGER` | 创建时间                               |
+| `updated_at`     | `INTEGER` | 更新时间                               |
 
 索引/约束：
 
@@ -1099,11 +1099,34 @@
 
 例如龙宫法师当前写死的规则：
 
-- `1点体质 -> 气血 +4.5`
-- `1点体质 -> 灵力 +0.3`
-- `1点体质 -> 速度 +0.1`
-- `1点魔力 -> 魔法上限 +3.5`
-- `1点魔力 -> 灵力 +0.7`
+- `1点基础气血来源(baseHp) -> 气血 +5`
+- `1点体质 -> 气血 +12`
+- `1点耐力 -> 气血 +4`
+- `1点魔力 -> 魔法值 +1.6`
+- `1点灵力 -> 魔法值 +0.25`
+- `1点魔力 -> 面板法伤 +5`
+- `1点灵力 -> 面板法伤 +1.2`
+- `1级 -> 面板法伤 +3`
+- `1点力量 -> 命中 +2`
+- `1级 -> 命中 +6`
+- `1点力量 -> 伤害 +8`
+- `1级 -> 伤害 +6`
+- `1点耐力 -> 防御 +4`
+- `1点体质 -> 防御 +2`
+- `1级 -> 防御 +3`
+- `1点灵力 -> 法防 +0.6`
+- `1点耐力 -> 法防 +2`
+- `1级 -> 法防 +2.6`
+- `1点敏捷 -> 速度 +4`
+- `1级 -> 速度 +2`
+- `1点敏捷 -> 躲避 +2`
+- `躲避` 的等级项按 `floor(level * 0.8)` 计入
+
+说明：
+
+- 上述条目表示当前 `damage_v1` 生效版本已经落到 D1 的服务端规则口径。
+- `baseHp` 为运行时来源属性，读取自 `character_profile.raw_body_json.baseHp`；历史快照缺失该字段时，服务端按当前面板气血、体质、耐力和装备气血反推。
+- `躲避` 的等级项在规则表里通过 `value_type = 'floor_linear'` 表达 `floor(level * 0.8)`，用于和 `gameLogic` 保持一致。
 
 这类规则建议落在：
 

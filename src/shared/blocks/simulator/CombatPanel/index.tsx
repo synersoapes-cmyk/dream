@@ -468,6 +468,8 @@ export function CombatPanel() {
                             {editingTargetId === target.id ? (
                               <div className="flex flex-1 items-center gap-2">
                                 <Input
+                                  id={`manual-target-name-${target.id}`}
+                                  name={`manual-target-name-${target.id}`}
                                   value={editingName}
                                   onChange={(e) =>
                                     setEditingName(e.target.value)

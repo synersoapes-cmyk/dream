@@ -2,9 +2,72 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  mergeRecognizedProfileWithBundle,
+  normalizeRecognizedProfile,
   normalizeRecognizedEquipment,
   validateSimulatorOcrFile,
 } from '@/shared/services/simulator-ocr';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+
+function createBundle(): SimulatorCharacterBundle {
+  return {
+    character: {
+      id: 'char_1',
+      userId: 'user_1',
+      name: '测试龙宫',
+      serverName: '测试服',
+      school: '龙宫',
+      roleType: '法师',
+      level: 109,
+      race: '仙族',
+      status: 'active',
+      currentSnapshotId: 'snapshot_1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    snapshot: {
+      id: 'snapshot_1',
+      characterId: 'char_1',
+      snapshotType: 'current',
+      name: '当前状态',
+      versionNo: 1,
+      source: 'manual',
+      notes: '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    profile: {
+      snapshotId: 'snapshot_1',
+      school: '龙宫',
+      level: 109,
+      physique: 40,
+      magic: 230,
+      strength: 15,
+      endurance: 35,
+      agility: 20,
+      potentialPoints: 0,
+      hp: 4200,
+      mp: 2100,
+      damage: 900,
+      defense: 1100,
+      magicDamage: 1800,
+      magicDefense: 1350,
+      speed: 520,
+      hit: 980,
+      sealHit: 0,
+      rawBodyJson: JSON.stringify({
+        magicPower: 610,
+        dodge: 205,
+      }),
+    },
+    skills: [],
+    cultivations: [],
+    battleContext: null,
+    battleTargetTemplate: null,
+    rules: [],
+    equipments: [],
+  };
+}
 
 test('normalizeRecognizedEquipment coerces recognized payload into simulator equipment shape', () => {
   const equipment = normalizeRecognizedEquipment({
@@ -43,6 +106,83 @@ test('normalizeRecognizedEquipment clamps jade slot to supported range 1-2', () 
 
   assert.equal(equipment.type, 'jade');
   assert.equal(equipment.slot, 2);
+});
+
+test('normalizeRecognizedProfile maps chinese aliases and nested payloads', () => {
+  const profile = normalizeRecognizedProfile({
+    school: 'lg',
+    profile: {
+      等级: '175',
+      体质: '42',
+      魔力: '510',
+      力量: '18',
+      耐力: '36',
+      敏捷: '54',
+    },
+    combatStats: {
+      气血: '5821',
+      魔法: '1920',
+      法伤: '2145',
+      法防: '1288',
+      防御: '945',
+      速度: '612',
+      命中: '1333',
+      躲避: '221',
+      封印命中: '18',
+    },
+    stats: {
+      灵力: '905',
+    },
+  });
+
+  assert.deepEqual(profile, {
+    level: 175,
+    faction: '龙宫',
+    physique: 42,
+    magic: 510,
+    strength: 18,
+    endurance: 36,
+    agility: 54,
+    magicPower: 905,
+    hp: 5821,
+    mp: 1920,
+    defense: 945,
+    magicDamage: 2145,
+    magicDefense: 1288,
+    speed: 612,
+    hit: 1333,
+    dodge: 221,
+    sealHit: 18,
+  });
+});
+
+test('mergeRecognizedProfileWithBundle preserves current values for missing fields', () => {
+  const merged = mergeRecognizedProfileWithBundle(createBundle(), {
+    level: 175,
+    magicDamage: 2145,
+    speed: 612,
+  });
+
+  assert.deepEqual(merged, {
+    level: 175,
+    faction: '龙宫',
+    physique: 40,
+    magic: 230,
+    strength: 15,
+    endurance: 35,
+    agility: 20,
+    magicPower: 610,
+    hp: 4200,
+    mp: 2100,
+    damage: 900,
+    defense: 1100,
+    magicDamage: 2145,
+    magicDefense: 1350,
+    speed: 612,
+    hit: 980,
+    dodge: 205,
+    sealHit: 0,
+  });
 });
 
 test('validateSimulatorOcrFile rejects unsupported mime type and oversized files', () => {

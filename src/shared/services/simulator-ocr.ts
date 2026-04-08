@@ -1,5 +1,6 @@
 import { getUuid } from '@/shared/lib/hash';
 import { getAllConfigs } from '@/shared/models/config';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import { getStorageService } from '@/shared/services/storage';
 
 type SimulatorEquipmentLike = {
@@ -40,6 +41,27 @@ type SimulatorEquipmentLike = {
   equippableRoles?: string;
 };
 
+type SimulatorProfileLike = {
+  level?: number;
+  faction?: string;
+  physique?: number;
+  magic?: number;
+  strength?: number;
+  endurance?: number;
+  agility?: number;
+  magicPower?: number;
+  hp?: number;
+  mp?: number;
+  damage?: number;
+  defense?: number;
+  magicDamage?: number;
+  magicDefense?: number;
+  speed?: number;
+  hit?: number;
+  dodge?: number;
+  sealHit?: number;
+};
+
 const GEMINI_VISION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'] as const;
 const SUPPORTED_TYPES = new Set([
   'weapon',
@@ -67,6 +89,25 @@ const STAT_KEYS = new Set([
   'endurance',
   'agility',
 ]);
+const PROFILE_FACTION_ALIASES: Record<string, string> = {
+  龙宫: '龙宫',
+  lg: '龙宫',
+  大唐官府: '大唐官府',
+  大唐: '大唐官府',
+  dt: '大唐官府',
+  狮驼岭: '狮驼岭',
+  狮驼: '狮驼岭',
+  stl: '狮驼岭',
+  化生寺: '化生寺',
+  化生: '化生寺',
+  hs: '化生寺',
+  方寸山: '方寸山',
+  方寸: '方寸山',
+  fc: '方寸山',
+  普陀山: '普陀山',
+  普陀: '普陀山',
+  pt: '普陀山',
+};
 
 const OCR_ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
@@ -77,9 +118,39 @@ const OCR_ALLOWED_MIME_TYPES = new Set([
 
 const OCR_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-function toFiniteNumber(value: unknown, fallback = 0) {
+function toFiniteNumber(value: unknown, fallback: unknown = 0) {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+
+  const parsedFallback = Number(fallback);
+  return Number.isFinite(parsedFallback) ? parsedFallback : 0;
+}
+
+function toOptionalFiniteNumber(value: unknown) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value
+    .replace(/[,+，\s]/g, '')
+    .replace(/[^\d.-]/g, '');
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function extFromMime(mimeType: string) {
@@ -167,6 +238,172 @@ function normalizeStats(value: unknown) {
       .map(([key, statValue]) => [key, toFiniteNumber(statValue)])
       .filter(([, statValue]) => Number.isFinite(statValue))
   ) as Record<string, number>;
+}
+
+function normalizeFaction(value: unknown) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return PROFILE_FACTION_ALIASES[normalized] ?? normalized;
+}
+
+function getFirstDefinedValue(
+  sources: Array<Record<string, unknown>>,
+  keys: string[]
+) {
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = source[key];
+      if (value !== undefined && value !== null && value !== '') {
+        return value;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export function normalizeRecognizedProfile(
+  value: Record<string, unknown>
+): SimulatorProfileLike {
+  const sources = [
+    value,
+    isRecord(value.profile) ? value.profile : null,
+    isRecord(value.attributes) ? value.attributes : null,
+    isRecord(value.baseAttributes) ? value.baseAttributes : null,
+    isRecord(value.combatStats) ? value.combatStats : null,
+    isRecord(value.stats) ? value.stats : null,
+  ].filter((source): source is Record<string, unknown> => Boolean(source));
+
+  const normalizedProfile: SimulatorProfileLike = {
+    level: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['level', '等级'])
+    ),
+    faction: normalizeFaction(
+      getFirstDefinedValue(sources, ['faction', 'school', '门派', '角色门派'])
+    ),
+    physique: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['physique', '体质'])
+    ),
+    magic: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['magic', '魔力'])
+    ),
+    strength: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['strength', '力量'])
+    ),
+    endurance: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['endurance', '耐力'])
+    ),
+    agility: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['agility', '敏捷'])
+    ),
+    magicPower: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, [
+        'magicPower',
+        'spirit',
+        'spiritualPower',
+        '灵力',
+      ])
+    ),
+    hp: toOptionalFiniteNumber(getFirstDefinedValue(sources, ['hp', '气血'])),
+    mp: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['mp', 'mana', 'magicPoints', '魔法'])
+    ),
+    damage: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['damage', '伤害'])
+    ),
+    defense: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['defense', '防御'])
+    ),
+    magicDamage: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['magicDamage', '法伤', '法术伤害'])
+    ),
+    magicDefense: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['magicDefense', '法防', '法术防御'])
+    ),
+    speed: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['speed', '速度'])
+    ),
+    hit: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['hit', '命中'])
+    ),
+    dodge: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['dodge', '躲避'])
+    ),
+    sealHit: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['sealHit', '封印命中'])
+    ),
+  };
+
+  return Object.fromEntries(
+    Object.entries(normalizedProfile).filter(([, entryValue]) => entryValue !== undefined)
+  ) as SimulatorProfileLike;
+}
+
+function parseProfileRawBody(value: string | null | undefined) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function mergeRecognizedProfileWithBundle(
+  bundle: SimulatorCharacterBundle,
+  recognizedProfile: SimulatorProfileLike
+) {
+  const currentProfile = bundle.profile;
+  const rawProfile = parseProfileRawBody(currentProfile?.rawBodyJson);
+
+  return {
+    level:
+      recognizedProfile.level ??
+      toFiniteNumber(currentProfile?.level, bundle.character.level ?? 0),
+    faction:
+      recognizedProfile.faction ??
+      currentProfile?.school ??
+      bundle.character.school ??
+      '',
+    physique:
+      recognizedProfile.physique ??
+      toFiniteNumber(currentProfile?.physique, rawProfile.physique),
+    magic:
+      recognizedProfile.magic ??
+      toFiniteNumber(currentProfile?.magic, rawProfile.magic),
+    strength:
+      recognizedProfile.strength ??
+      toFiniteNumber(currentProfile?.strength, rawProfile.strength),
+    endurance:
+      recognizedProfile.endurance ??
+      toFiniteNumber(currentProfile?.endurance, rawProfile.endurance),
+    agility:
+      recognizedProfile.agility ??
+      toFiniteNumber(currentProfile?.agility, rawProfile.agility),
+    magicPower:
+      recognizedProfile.magicPower ??
+      toFiniteNumber(rawProfile.magicPower, toFiniteNumber(rawProfile.spiritualPower)),
+    hp: recognizedProfile.hp ?? toFiniteNumber(currentProfile?.hp, toFiniteNumber(rawProfile.hp)),
+    mp: recognizedProfile.mp ?? toFiniteNumber(currentProfile?.mp),
+    damage: recognizedProfile.damage ?? toFiniteNumber(currentProfile?.damage),
+    defense: recognizedProfile.defense ?? toFiniteNumber(currentProfile?.defense),
+    magicDamage:
+      recognizedProfile.magicDamage ?? toFiniteNumber(currentProfile?.magicDamage),
+    magicDefense:
+      recognizedProfile.magicDefense ?? toFiniteNumber(currentProfile?.magicDefense),
+    speed: recognizedProfile.speed ?? toFiniteNumber(currentProfile?.speed),
+    hit: recognizedProfile.hit ?? toFiniteNumber(currentProfile?.hit),
+    dodge: recognizedProfile.dodge ?? toFiniteNumber(rawProfile.dodge),
+    sealHit: recognizedProfile.sealHit ?? toFiniteNumber(currentProfile?.sealHit),
+  };
 }
 
 export function normalizeRecognizedEquipment(
@@ -359,6 +596,18 @@ async function callGeminiEquipmentOcr(params: {
     '如果无法确认就留空，不要编造明显不在图中的字段。',
   ].join('\n');
 
+  return callGeminiStructuredOcr({
+    ...params,
+    prompt,
+  });
+}
+
+async function callGeminiStructuredOcr(params: {
+  apiKey: string;
+  mimeType: string;
+  imageBytes: Uint8Array;
+  prompt: string;
+}) {
   let lastError: Error | null = null;
 
   for (const model of GEMINI_VISION_MODELS) {
@@ -374,7 +623,7 @@ async function callGeminiEquipmentOcr(params: {
             {
               role: 'user',
               parts: [
-                { text: prompt },
+                { text: params.prompt },
                 {
                   inlineData: {
                     mimeType: params.mimeType,
@@ -422,6 +671,27 @@ async function callGeminiEquipmentOcr(params: {
   throw lastError ?? new Error('Gemini 没有返回可解析内容');
 }
 
+async function callGeminiProfileOcr(params: {
+  apiKey: string;
+  mimeType: string;
+  imageBytes: Uint8Array;
+}) {
+  const prompt = [
+    '你正在识别中文游戏《梦幻西游》的人物属性面板截图。',
+    '请只返回一个 JSON 对象，不要输出 markdown，不要解释。',
+    '只提取图片中明确可见的人物基础属性和面板数值；无法确认的字段请返回 null 或留空，不要猜。',
+    '字段仅允许：level, faction, physique, magic, strength, endurance, agility, magicPower, hp, mp, damage, defense, magicDamage, magicDefense, speed, hit, dodge, sealHit。',
+    '其中 faction 使用中文门派名，例如 龙宫、大唐官府、狮驼岭、化生寺、方寸山、普陀山。',
+    'magic 表示基础加点里的“魔力”，mp 表示面板里的“魔法”，magicPower 表示“灵力”。',
+    '如果图片里同时出现多个区域，只以主角色当前属性面板为准。',
+  ].join('\n');
+
+  return callGeminiStructuredOcr({
+    ...params,
+    prompt,
+  });
+}
+
 export async function recognizeSimulatorEquipmentFromImage(file: File) {
   const configs = await getAllConfigs();
   const configStatus = await getSimulatorOcrConfigStatus();
@@ -440,6 +710,28 @@ export async function recognizeSimulatorEquipmentFromImage(file: File) {
     key: uploaded.key,
     url: uploaded.url,
     equipment: normalizeRecognizedEquipment(recognized, uploaded.url),
+    raw: recognized,
+  };
+}
+
+export async function recognizeSimulatorProfileFromImage(file: File) {
+  const configs = await getAllConfigs();
+  const configStatus = await getSimulatorOcrConfigStatus();
+  if (!configStatus.ready) {
+    throw new Error(`识图配置未完成：${configStatus.missing.join(', ')}`);
+  }
+
+  const uploaded = await uploadSimulatorImage(file);
+  const recognized = await callGeminiProfileOcr({
+    apiKey: configs.gemini_api_key,
+    mimeType: file.type,
+    imageBytes: uploaded.buffer,
+  });
+
+  return {
+    key: uploaded.key,
+    url: uploaded.url,
+    profile: normalizeRecognizedProfile(recognized),
     raw: recognized,
   };
 }

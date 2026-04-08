@@ -10,12 +10,14 @@ import type {
   CombatStats,
   Cultivation,
   Equipment,
+  EquipmentSet,
   Faction,
   GameState,
   Skill,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 
+import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 const FALLBACK_FACTION: Faction = '龙宫';
@@ -81,13 +83,17 @@ const cultivationTypeMap: Record<string, keyof Cultivation> = {
   pet_magic_defense: 'petMagicDefense',
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function parseJsonRecord(
   value: string | null | undefined
 ): Record<string, unknown> {
   if (!value) return {};
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    return isRecord(parsed) ? parsed : {};
   } catch {
     return {};
   }
@@ -137,6 +143,68 @@ function toEquipmentSlotNumber(slot: string): number | undefined {
 
 function toNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value.filter(
+    (item): item is string => typeof item === 'string' && item.trim().length > 0
+  );
+
+  return items.length > 0 ? items : undefined;
+}
+
+function toStatRecord(value: unknown): Partial<CombatStats & BaseAttributes> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([, entryValue]) =>
+        typeof entryValue === 'number' && Number.isFinite(entryValue)
+    )
+  ) as Partial<CombatStats & BaseAttributes>;
+}
+
+function toRuneStoneSets(value: unknown): Equipment['runeStoneSets'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sets = value
+    .filter(Array.isArray)
+    .map((set, setIndex) =>
+      set.filter(isRecord).map((runeStone, runeIndex) => ({
+        id:
+          typeof runeStone.id === 'string' && runeStone.id.trim().length > 0
+            ? runeStone.id
+            : `persisted_rune_${setIndex}_${runeIndex}`,
+        name: typeof runeStone.name === 'string' ? runeStone.name : undefined,
+        type: typeof runeStone.type === 'string' ? runeStone.type : 'red',
+        level: toOptionalNumber(runeStone.level),
+        quality:
+          typeof runeStone.quality === 'string' ? runeStone.quality : undefined,
+        description:
+          typeof runeStone.description === 'string'
+            ? runeStone.description
+            : undefined,
+        price: toOptionalNumber(runeStone.price),
+        stats: toStatRecord(runeStone.stats),
+      }))
+    )
+    .filter((set) => set.length > 0);
+
+  return sets.length > 0 ? sets : undefined;
 }
 
 function buildAttrMap(
@@ -202,10 +270,30 @@ function toSkillTargets(skillName: string) {
 
 function mapBaseAttributes(bundle: SimulatorCharacterBundle): BaseAttributes {
   const rawBody = parseJsonRecord(bundle.profile?.rawBodyJson);
+  const equipmentHp = bundle.equipments.reduce((sum, item) => {
+    return (
+      sum +
+      item.attrs.reduce((itemSum, attr) => {
+        if (attr.attrType !== 'hp') {
+          return itemSum;
+        }
+
+        return itemSum + toNumber(attr.attrValue);
+      }, 0)
+    );
+  }, 0);
 
   return {
     level: bundle.profile?.level ?? bundle.character.level ?? 0,
-    hp: Math.round(bundle.profile?.hp ?? toNumber(rawBody.hp)),
+    hp: toNumber(
+      rawBody.baseHp,
+      inferBaseHpSource({
+        panelHp: bundle.profile?.hp ?? toNumber(rawBody.hp),
+        physique: bundle.profile?.physique ?? toNumber(rawBody.physique),
+        endurance: bundle.profile?.endurance ?? toNumber(rawBody.endurance),
+        equipmentHp,
+      })
+    ),
     magic: bundle.profile?.magic ?? toNumber(rawBody.magic),
     physique: bundle.profile?.physique ?? toNumber(rawBody.physique),
     magicPower: toNumber(rawBody.magicPower ?? rawBody.spiritualPower),
@@ -319,6 +407,163 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
   });
 }
 
+function toPersistedEquipment(
+  value: unknown,
+  fallbackId: string
+): Equipment | null {
+  if (!isRecord(value) || typeof value.name !== 'string') {
+    return null;
+  }
+
+  const rawType = typeof value.type === 'string' ? value.type : '';
+  if (!rawType.trim()) {
+    return null;
+  }
+
+  const type = toEquipmentType(rawType);
+  const baseStats = toStatRecord(value.baseStats);
+  const stats = toStatRecord(value.stats);
+
+  return {
+    id:
+      typeof value.id === 'string' && value.id.trim().length > 0
+        ? value.id
+        : fallbackId,
+    name: value.name,
+    type,
+    slot:
+      toOptionalNumber(value.slot) ??
+      (type === 'trinket' || type === 'jade'
+        ? toEquipmentSlotNumber(rawType)
+        : undefined),
+    mainStat:
+      typeof value.mainStat === 'string'
+        ? value.mainStat
+        : formatMainStat(baseStats),
+    extraStat:
+      typeof value.extraStat === 'string' ? value.extraStat : undefined,
+    highlights: toStringArray(value.highlights),
+    baseStats,
+    stats: Object.keys(stats).length > 0 ? stats : baseStats,
+    price: toOptionalNumber(value.price),
+    crossServerFee: toOptionalNumber(value.crossServerFee),
+    imageUrl:
+      typeof value.imageUrl === 'string'
+        ? value.imageUrl
+        : getEquipmentDefaultImage(type),
+    runeStoneSets: toRuneStoneSets(value.runeStoneSets),
+    runeStoneSetsNames: toStringArray(value.runeStoneSetsNames),
+    activeRuneStoneSet: toOptionalNumber(value.activeRuneStoneSet),
+    runeSetEffect:
+      typeof value.runeSetEffect === 'string' ? value.runeSetEffect : undefined,
+    description:
+      typeof value.description === 'string' ? value.description : undefined,
+    equippableRoles:
+      typeof value.equippableRoles === 'string'
+        ? value.equippableRoles
+        : undefined,
+    level: toOptionalNumber(value.level),
+    element: typeof value.element === 'string' ? value.element : undefined,
+    durability: toOptionalNumber(value.durability),
+    forgeLevel: toOptionalNumber(value.forgeLevel),
+    gemstone: typeof value.gemstone === 'string' ? value.gemstone : undefined,
+    luckyHoles:
+      typeof value.luckyHoles === 'string' ? value.luckyHoles : undefined,
+    starPosition:
+      typeof value.starPosition === 'string' ? value.starPosition : undefined,
+    starAlignment:
+      typeof value.starAlignment === 'string' ? value.starAlignment : undefined,
+    factionRequirement:
+      typeof value.factionRequirement === 'string'
+        ? value.factionRequirement
+        : undefined,
+    positionRequirement:
+      typeof value.positionRequirement === 'string'
+        ? value.positionRequirement
+        : undefined,
+    specialEffect:
+      typeof value.specialEffect === 'string' ? value.specialEffect : undefined,
+    manufacturer:
+      typeof value.manufacturer === 'string' ? value.manufacturer : undefined,
+    refinementEffect:
+      typeof value.refinementEffect === 'string'
+        ? value.refinementEffect
+        : undefined,
+    quality: typeof value.quality === 'string' ? value.quality : undefined,
+  };
+}
+
+function createFallbackEquipmentSet(
+  index: number,
+  equipment: Equipment[]
+): EquipmentSet {
+  return {
+    id: `set_${index + 1}`,
+    name: `配置${index + 1}`,
+    items: equipment,
+    isActive: false,
+  };
+}
+
+function parsePersistedEquipmentPlan(
+  notesJson: string | null | undefined,
+  currentEquipment: Equipment[]
+): { equipmentSets: EquipmentSet[]; activeSetIndex: number } | null {
+  const notes = parseJsonRecord(notesJson);
+  const plan = notes.equipmentPlan;
+  if (!isRecord(plan) || !Array.isArray(plan.equipmentSets)) {
+    return null;
+  }
+
+  const activeSetIndex = Number.isInteger(plan.activeSetIndex)
+    ? Math.max(0, Number(plan.activeSetIndex))
+    : 0;
+
+  const equipmentSets: EquipmentSet[] = plan.equipmentSets
+    .filter(isRecord)
+    .map((set, index): EquipmentSet => {
+      const items = Array.isArray(set.items)
+        ? set.items
+            .map((item, itemIndex) =>
+              toPersistedEquipment(item, `persisted_eq_${index}_${itemIndex}`)
+            )
+            .filter((item): item is Equipment => item !== null)
+        : [];
+
+      return {
+        id:
+          typeof set.id === 'string' && set.id.trim().length > 0
+            ? set.id
+            : `set_${index + 1}`,
+        name:
+          typeof set.name === 'string' && set.name.trim().length > 0
+            ? set.name
+            : `配置${index + 1}`,
+        items,
+        isActive: false,
+      };
+    });
+
+  if (equipmentSets.length === 0) {
+    return null;
+  }
+
+  while (equipmentSets.length <= activeSetIndex) {
+    equipmentSets.push(
+      createFallbackEquipmentSet(equipmentSets.length, currentEquipment)
+    );
+  }
+
+  return {
+    activeSetIndex,
+    equipmentSets: equipmentSets.map((set, index) => ({
+      ...set,
+      items: index === activeSetIndex ? currentEquipment : set.items,
+      isActive: index === activeSetIndex,
+    })),
+  };
+}
+
 type ApplySimulatorBundleOptions = {
   preserveWorkbenchState?: boolean;
 };
@@ -330,7 +575,13 @@ export function applySimulatorBundleToStore(
   const baseAttributes = mapBaseAttributes(bundle);
   const combatStats = mapCombatStats(bundle);
   const equipment = mapEquipments(bundle);
-  const equipmentSets = createInitialEquipmentSets(equipment);
+  const persistedPlan = parsePersistedEquipmentPlan(
+    bundle.battleContext?.notesJson,
+    equipment
+  );
+  const equipmentSets =
+    persistedPlan?.equipmentSets ?? createInitialEquipmentSets(equipment);
+  const activeSetIndex = persistedPlan?.activeSetIndex ?? 0;
   const skills = mapSkills(bundle);
   const cultivation = mapCultivation(bundle);
   const combatTarget = mapCombatTarget(bundle);
@@ -345,7 +596,7 @@ export function applySimulatorBundleToStore(
     combatStats,
     equipment,
     equipmentSets,
-    activeSetIndex: 0,
+    activeSetIndex,
     skills,
     cultivation,
     treasure: null,
@@ -359,7 +610,7 @@ export function applySimulatorBundleToStore(
     combatStats,
     equipment,
     equipmentSets,
-    activeSetIndex: 0,
+    activeSetIndex,
     skills,
     cultivation,
     treasure: null,
@@ -378,7 +629,7 @@ export function applySimulatorBundleToStore(
     },
     experimentSeats: preserveWorkbenchState
       ? state.experimentSeats
-      : createInitialExperimentSeats(equipment),
+      : createInitialExperimentSeats(),
     manualTargets: preserveWorkbenchState
       ? state.manualTargets
       : createInitialManualTargets(),

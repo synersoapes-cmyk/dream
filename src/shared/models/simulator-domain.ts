@@ -1,3 +1,4 @@
+import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 type JsonObject = Record<string, unknown>;
@@ -249,6 +250,15 @@ export function buildSimulatorCharacterDomain(
     dodge,
     spirit,
   };
+  const baseHp = toFiniteNumber(
+    rawProfile.baseHp,
+    inferBaseHpSource({
+      panelHp: normalizedProfile.hp,
+      physique: normalizedProfile.physique,
+      endurance: normalizedProfile.endurance,
+      equipmentHp: equipmentAttributeTotals.hp,
+    })
+  );
 
   return {
     characterId: bundle.character.id,
@@ -257,6 +267,7 @@ export function buildSimulatorCharacterDomain(
     profile: normalizedProfile,
     attributeSources: {
       ...normalizedProfile,
+      baseHp,
       magicPower: spirit,
     },
     cultivationLevels,

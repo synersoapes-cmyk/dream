@@ -3,6 +3,14 @@ import { createAuthClient } from 'better-auth/react';
 
 import { envConfigs } from '@/config';
 
+function getClientAuthBaseURL() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return envConfigs.auth_url;
+}
+
 function createGetSessionThrottledFetch({
   minIntervalMs,
 }: {
@@ -81,7 +89,9 @@ const AUTH_GET_SESSION_MIN_INTERVAL_MS =
 
 // create default auth client, without plugins
 export const authClient = createAuthClient({
-  baseURL: envConfigs.auth_url,
+  // Use the current browser origin so local dev works from both
+  // localhost and 127.0.0.1 without cross-origin session fetches.
+  baseURL: getClientAuthBaseURL(),
   fetchOptions: {
     // Avoid amplifying request storms (e.g. during env/db switching in dev).
     // IMPORTANT: auth mutations (sign-in/sign-up) must be non-retriable,
@@ -99,7 +109,7 @@ export const { useSession, signIn, signUp, signOut } = authClient;
 // get auth client with plugins
 export function getAuthClient(configs: Record<string, string>) {
   const authClient = createAuthClient({
-    baseURL: envConfigs.auth_url,
+    baseURL: getClientAuthBaseURL(),
     plugins: getAuthPlugins(configs),
     fetchOptions: {
       // Avoid amplifying request storms (e.g. during env/db switching in dev).

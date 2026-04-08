@@ -1,8 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-
+import test from 'node:test';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
+
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 function createBundle(): SimulatorCharacterBundle {
@@ -134,6 +134,8 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
 
   assert.equal(state.activeAccountId, 'char_1');
   assert.equal(state.baseAttributes.faction, '龙宫');
+  assert.equal(state.baseAttributes.hp, 716);
+  assert.equal(state.combatStats.hp, 4200);
   assert.equal(state.combatTarget.name, '乌鸡国树怪');
   assert.equal(state.combatTarget.formation, '地载阵');
   assert.equal(state.combatTarget.element, '火');
@@ -192,4 +194,95 @@ test('applySimulatorBundleToStore preserves workbench state when requested', () 
   assert.equal(state.pendingEquipments[0]?.equipment.name, '待确认头盔');
   assert.equal(state.experimentSeats[1]?.id, 'comp_keep');
   assert.equal(state.experimentSeats[1]?.equipment[0]?.name, '保留对比装备');
+});
+
+test('applySimulatorBundleToStore restores persisted equipment plans', () => {
+  const bundle = createBundle();
+  bundle.equipments = [
+    {
+      id: 'eq_current_weapon',
+      characterId: 'char_1',
+      slot: 'weapon',
+      name: '当前云端武器',
+      level: 160,
+      quality: '无级别',
+      price: 8888,
+      source: 'manual',
+      status: 'equipped',
+      isLocked: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      build: {
+        equipmentId: 'eq_current_weapon',
+        holeCount: 0,
+        gemLevelTotal: 0,
+        refineLevel: 12,
+        specialEffectJson: '{}',
+        setEffectJson: '{}',
+        notesJson: '{}',
+      },
+      attrs: [
+        {
+          id: 'attr_1',
+          equipmentId: 'eq_current_weapon',
+          attrGroup: 'base',
+          attrType: 'magicDamage',
+          valueType: 'flat',
+          attrValue: 321,
+          displayOrder: 0,
+        },
+      ],
+      snapshotSlot: 'weapon',
+    },
+  ];
+  bundle.battleContext = {
+    ...bundle.battleContext!,
+    notesJson: JSON.stringify({
+      equipmentPlan: {
+        activeSetIndex: 1,
+        equipmentSets: [
+          {
+            id: 'set_1',
+            name: '常规方案',
+            items: [
+              {
+                id: 'eq_plan_1',
+                name: '常规武器',
+                type: 'weapon',
+                mainStat: '法伤 +250',
+                baseStats: { magicDamage: 250 },
+                stats: { magicDamage: 250 },
+              },
+            ],
+          },
+          {
+            id: 'set_2',
+            name: '爆发方案',
+            items: [
+              {
+                id: 'eq_old_active',
+                name: '旧激活武器',
+                type: 'weapon',
+                mainStat: '法伤 +111',
+                baseStats: { magicDamage: 111 },
+                stats: { magicDamage: 111 },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  };
+
+  applySimulatorBundleToStore(bundle);
+
+  const state = useGameStore.getState();
+  assert.equal(state.activeSetIndex, 1);
+  assert.equal(state.equipment.length, 1);
+  assert.equal(state.equipment[0]?.name, '当前云端武器');
+  assert.equal(state.equipmentSets[0]?.name, '常规方案');
+  assert.equal(state.equipmentSets[0]?.items[0]?.name, '常规武器');
+  assert.equal(state.equipmentSets[1]?.name, '爆发方案');
+  assert.equal(state.equipmentSets[1]?.items[0]?.name, '当前云端武器');
+  assert.equal(state.accounts[0]?.activeSetIndex, 1);
 });

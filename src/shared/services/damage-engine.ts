@@ -1,5 +1,3 @@
-import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
-
 import {
   getDamageRuleSet,
   type DamageAttributeConversionRule,
@@ -73,9 +71,13 @@ export type DamageEngineResult = {
   panelStats: {
     hp: number;
     mp: number;
+    hit: number;
+    damage: number;
     magicDamage: number;
+    defense: number;
     magicDefense: number;
     speed: number;
+    dodge: number;
     spirit: number;
   };
   targets: DamageEngineTargetResult[];
@@ -98,33 +100,53 @@ function clampTargetCount(value: number | undefined) {
   return Math.min(10, Math.max(1, parsed));
 }
 
-function buildCurrentEquipmentDrivenStats(domain: SimulatorCharacterDomain) {
-  if (!domain) {
-    return null;
+function roundForBreakdown(value: number, digits = 2) {
+  return Number(value.toFixed(digits));
+}
+
+function buildRuleInputValues(
+  domain: SimulatorCharacterDomain,
+  rules: DamageAttributeConversionRule[]
+) {
+  const sourceAttrs = new Set(rules.map((rule) => rule.sourceAttr));
+  const inputs: SimulatorNumericMap = {};
+
+  for (const sourceAttr of sourceAttrs) {
+    inputs[sourceAttr] = toFiniteNumber(domain.attributeSources[sourceAttr]);
   }
 
-  const baseAttributes = {
-    level: domain.profile.level,
-    hp: toFiniteNumber(domain.rawProfile.hp, domain.profile.hp),
-    magic: domain.profile.magic,
-    physique: domain.profile.physique,
-    magicPower: domain.profile.spirit,
-    strength: domain.profile.strength,
-    endurance: domain.profile.endurance,
-    agility: domain.profile.agility,
-    faction: domain.school as any,
-  };
+  for (const sourceAttr of sourceAttrs) {
+    if (domain.equipmentAttributeTotals[sourceAttr] !== undefined) {
+      inputs[sourceAttr] =
+        (inputs[sourceAttr] ?? 0) +
+        toFiniteNumber(domain.equipmentAttributeTotals[sourceAttr]);
+    }
 
-  const equipment = domain.equipment.map((item) => ({
-    id: item.id,
-    name: item.name,
-    type: item.slot as any,
-    mainStat: '',
-    baseStats: {},
-    stats: item.attributes,
-  }));
+    if (sourceAttr === 'spirit') {
+      inputs[sourceAttr] =
+        (inputs[sourceAttr] ?? 0) +
+        toFiniteNumber(domain.equipmentAttributeTotals.magicPower);
+    }
+  }
 
-  return computeDerivedStats(baseAttributes, equipment as any, null);
+  return inputs;
+}
+
+function resolveRuleDerivedPanelStat(
+  valueBag: SimulatorNumericMap,
+  equipmentTotals: SimulatorNumericMap,
+  statKey: string,
+  fallback?: number
+) {
+  const resolved =
+    toFiniteNumber(valueBag[statKey]) +
+    toFiniteNumber(equipmentTotals[statKey]);
+
+  if (resolved !== 0 || fallback === undefined) {
+    return resolved;
+  }
+
+  return toFiniteNumber(fallback);
 }
 
 function computeAttributeConversions(
@@ -135,7 +157,12 @@ function computeAttributeConversions(
   const totals: SimulatorNumericMap = {};
   const contributions = rules.map((rule) => {
     const sourceValue = toFiniteNumber(valueBag[rule.sourceAttr]);
-    const contribution = sourceValue * toFiniteNumber(rule.coefficient);
+    const coefficient = toFiniteNumber(rule.coefficient);
+    const rawContribution = sourceValue * coefficient;
+    const contribution =
+      rule.valueType === 'floor_linear'
+        ? Math.floor(rawContribution)
+        : rawContribution;
     totals[rule.targetAttr] = (totals[rule.targetAttr] ?? 0) + contribution;
     valueBag[rule.targetAttr] = (valueBag[rule.targetAttr] ?? 0) + contribution;
 
@@ -143,7 +170,7 @@ function computeAttributeConversions(
       sourceAttr: rule.sourceAttr,
       targetAttr: rule.targetAttr,
       sourceValue,
-      coefficient: toFiniteNumber(rule.coefficient),
+      coefficient,
       contribution,
     };
   });
@@ -373,13 +400,15 @@ export function calculateDamageFromRuleSet({
     throw new Error(`skill formula not found for ${skill.skillCode}`);
   }
 
-  const sourceValues = domain.attributeSources;
+  const ruleInputValues = buildRuleInputValues(
+    domain,
+    ruleSet.attributeConversions
+  );
   const derivedStats = computeAttributeConversions(
-    sourceValues,
+    ruleInputValues,
     ruleSet.attributeConversions
   );
   const equipmentTotals = domain.equipmentAttributeTotals;
-  const currentEquipmentDrivenStats = buildCurrentEquipmentDrivenStats(domain);
   const activeBonusRuleCodes = request.activeBonusRuleCodes ?? [];
   const skillBonus = resolveSkillBonus(
     skill.skillCode,
@@ -418,22 +447,106 @@ export function calculateDamageFromRuleSet({
   const transformCardFactor = resolveTransformCardFactor(request, ruleSet);
   const attackerMagicCultivation = getCultivationLevel(domain, 'magicAttack');
   const equipmentMagicResult = toFiniteNumber(equipmentTotals.magicResult);
+  const hasPanelMagicDamageOverride =
+    typeof request.panelMagicDamageOverride === 'number' &&
+    Number.isFinite(request.panelMagicDamageOverride);
+  const spiritBeforeRules = toFiniteNumber(ruleInputValues.spirit);
+  const spiritAfterRules = toFiniteNumber(
+    derivedStats.valueBag.spirit,
+    spiritBeforeRules
+  );
+  const ruleDerivedMagicDamage = toFiniteNumber(
+    derivedStats.valueBag.magicDamage
+  );
+  const equipmentMagicDamageFlat = toFiniteNumber(equipmentTotals.magicDamage);
+  const panelMagicDamageFromRules =
+    ruleDerivedMagicDamage + equipmentMagicDamageFlat;
   const panelMagicDamageBreakdown = {
-    formula: '魔力 * 5 + 灵力 * 1.2 + 等级 * 3 + 装备法伤 + 法宝法伤',
-    magic: toFiniteNumber(profile.magic),
-    magicPower: toFiniteNumber(sourceValues.magicPower),
-    level: toFiniteNumber(profile.level),
-    equipmentMagicDamage: toFiniteNumber(equipmentTotals.magicDamage),
-    treasureMagicDamage: 0,
+    formula: '服务端规则转化法伤 + 装备法伤',
+    school: profile.school || character.school,
+    roleType: domain.roleType,
+    ruleInputValues: Object.fromEntries(
+      Object.entries(ruleInputValues).map(([key, value]) => [
+        key,
+        roundForBreakdown(toFiniteNumber(value), 4),
+      ])
+    ),
+    spiritBeforeRules: roundForBreakdown(spiritBeforeRules, 4),
+    spiritContributions: derivedStats.contributions
+      .filter((item) => item.targetAttr === 'spirit')
+      .map((item) => ({
+        sourceAttr: item.sourceAttr,
+        sourceValue: roundForBreakdown(item.sourceValue, 4),
+        coefficient: roundForBreakdown(item.coefficient, 4),
+        contribution: roundForBreakdown(item.contribution, 4),
+      })),
+    spiritAfterRules: roundForBreakdown(spiritAfterRules, 4),
+    magicDamageContributions: derivedStats.contributions
+      .filter((item) => item.targetAttr === 'magicDamage')
+      .map((item) => ({
+        sourceAttr: item.sourceAttr,
+        sourceValue: roundForBreakdown(item.sourceValue, 4),
+        coefficient: roundForBreakdown(item.coefficient, 4),
+        contribution: roundForBreakdown(item.contribution, 4),
+      })),
+    ruleDerivedMagicDamage: roundForBreakdown(ruleDerivedMagicDamage, 4),
+    equipmentMagicDamageFlat: roundForBreakdown(equipmentMagicDamageFlat, 4),
+    overrideApplied: hasPanelMagicDamageOverride,
+    overrideValue: hasPanelMagicDamageOverride
+      ? roundForBreakdown(toFiniteNumber(request.panelMagicDamageOverride), 4)
+      : null,
   };
-  const panelMagicDamage =
-    currentEquipmentDrivenStats?.magicDamage &&
-    currentEquipmentDrivenStats.magicDamage > 0
-      ? toFiniteNumber(currentEquipmentDrivenStats.magicDamage)
-      : toFiniteNumber(profile.magicDamage) > 0
-        ? toFiniteNumber(profile.magicDamage)
-        : toFiniteNumber(derivedStats.totals.magicDamage) +
-          toFiniteNumber(equipmentTotals.magicDamage);
+  const panelMagicDamage = hasPanelMagicDamageOverride
+    ? toFiniteNumber(request.panelMagicDamageOverride)
+    : panelMagicDamageFromRules;
+  const resolvedHp = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'hp',
+    profile.hp
+  );
+  const resolvedMp = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'mp',
+    profile.mp
+  );
+  const resolvedMagicDefense = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'magicDefense',
+    profile.magicDefense
+  );
+  const resolvedHit = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'hit',
+    profile.hit
+  );
+  const resolvedDamage = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'damage',
+    profile.damage
+  );
+  const resolvedDefense = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'defense',
+    profile.defense
+  );
+  const resolvedSpeed = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'speed',
+    profile.speed
+  );
+  const resolvedDodge = resolveRuleDerivedPanelStat(
+    derivedStats.valueBag,
+    equipmentTotals,
+    'dodge',
+    domain.profile.dodge
+  );
 
   const targets = buildDefaultTargets(request, domain).map((target, index) => {
     const targetName = target.name || `目标${index + 1}`;
@@ -502,15 +615,11 @@ export function calculateDamageFromRuleSet({
         panelMagicDamage,
         panelMagicDamageBreakdown: {
           ...panelMagicDamageBreakdown,
-          result: panelMagicDamage,
+          result: roundForBreakdown(panelMagicDamage, 4),
         },
-        panelMagicDamageSource:
-          currentEquipmentDrivenStats?.magicDamage &&
-          currentEquipmentDrivenStats.magicDamage > 0
-            ? 'current_equipment_state'
-            : toFiniteNumber(profile.magicDamage) > 0
-              ? 'profile.magicDamage'
-              : 'rule_attribute_conversion',
+        panelMagicDamageSource: hasPanelMagicDamageOverride
+          ? 'request.panelMagicDamageOverride'
+          : 'rule_attribute_conversion',
         targetMagicDefense,
         targetMagicDefenseCultivation,
         cultivationDiff,
@@ -529,42 +638,41 @@ export function calculateDamageFromRuleSet({
           hp: Number((derivedStats.totals.hp ?? 0).toFixed(2)),
           mp: Number((derivedStats.totals.mp ?? 0).toFixed(2)),
           spirit: Number((derivedStats.totals.spirit ?? 0).toFixed(2)),
+          hit: Number((derivedStats.totals.hit ?? 0).toFixed(2)),
+          damage: Number((derivedStats.totals.damage ?? 0).toFixed(2)),
           magicDamage: Number(
             (derivedStats.totals.magicDamage ?? 0).toFixed(2)
           ),
+          defense: Number((derivedStats.totals.defense ?? 0).toFixed(2)),
           magicDefense: Number(
             (derivedStats.totals.magicDefense ?? 0).toFixed(2)
           ),
           speed: Number((derivedStats.totals.speed ?? 0).toFixed(2)),
+          dodge: Number((derivedStats.totals.dodge ?? 0).toFixed(2)),
         },
         attributeContributions: derivedStats.contributions.map((item) => ({
           ...item,
           contribution: Number(item.contribution.toFixed(4)),
         })),
+        ruleInputValues: Object.fromEntries(
+          Object.entries(ruleInputValues).map(([key, value]) => [
+            key,
+            roundForBreakdown(toFiniteNumber(value), 4),
+          ])
+        ),
+        ruleResolvedPanelStats: {
+          hp: roundForBreakdown(resolvedHp),
+          mp: roundForBreakdown(resolvedMp),
+          spirit: roundForBreakdown(spiritAfterRules, 4),
+          hit: roundForBreakdown(resolvedHit),
+          damage: roundForBreakdown(resolvedDamage),
+          magicDamage: roundForBreakdown(panelMagicDamage, 4),
+          defense: roundForBreakdown(resolvedDefense),
+          magicDefense: roundForBreakdown(resolvedMagicDefense),
+          speed: roundForBreakdown(resolvedSpeed),
+          dodge: roundForBreakdown(resolvedDodge),
+        },
         equipmentAttributeTotals: equipmentTotals,
-        currentEquipmentDrivenStats: currentEquipmentDrivenStats
-          ? {
-              hp: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.hp).toFixed(2)
-              ),
-              magic: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.magic).toFixed(2)
-              ),
-              magicDamage: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.magicDamage).toFixed(
-                  2
-                )
-              ),
-              magicDefense: Number(
-                toFiniteNumber(
-                  currentEquipmentDrivenStats.magicDefense
-                ).toFixed(2)
-              ),
-              speed: Number(
-                toFiniteNumber(currentEquipmentDrivenStats.speed).toFixed(2)
-              ),
-            }
-          : null,
       },
     };
   });
@@ -583,15 +691,16 @@ export function calculateDamageFromRuleSet({
       bonusLevel: skillBonus.bonusLevel,
     },
     panelStats: {
-      hp: toFiniteNumber(currentEquipmentDrivenStats?.hp, profile.hp),
-      mp: toFiniteNumber(profile.mp),
+      hp: resolvedHp,
+      mp: resolvedMp,
+      hit: resolvedHit,
+      damage: resolvedDamage,
       magicDamage: panelMagicDamage,
-      magicDefense: toFiniteNumber(
-        currentEquipmentDrivenStats?.magicDefense,
-        profile.magicDefense
-      ),
-      speed: toFiniteNumber(currentEquipmentDrivenStats?.speed, profile.speed),
-      spirit: Number((derivedStats.totals.spirit ?? 0).toFixed(2)),
+      defense: resolvedDefense,
+      magicDefense: resolvedMagicDefense,
+      speed: resolvedSpeed,
+      dodge: resolvedDodge,
+      spirit: roundForBreakdown(spiritAfterRules, 4),
     },
     targets,
   };

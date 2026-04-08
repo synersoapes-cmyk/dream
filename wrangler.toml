@@ -10,7 +10,7 @@ directory = ".open-next/assets"
 [[d1_databases]]
 binding = "DB"
 database_name = "dream"
-database_id = "8dd34671-db31-43c7-82a1-19320c7ca4ba"
+database_id = "41c28577-8830-4be0-b581-43d773e7d0e1"
 migrations_dir = "src/config/db/migrations_d1"
 remote = true
 
@@ -18,7 +18,7 @@ remote = true
 enabled = true
 
 [vars]
-NEXT_PUBLIC_APP_URL = "https://REPLACE_WITH_YOUR_DOMAIN"
+NEXT_PUBLIC_APP_URL = "https://dream.xiao64702.workers.dev"
 NEXT_PUBLIC_APP_NAME = "Dream"
 NEXT_PUBLIC_THEME = "default"
 NEXT_PUBLIC_APPEARANCE = "system"
@@ -28,4 +28,4 @@ DB_SCHEMA_FILE = "./src/config/db/schema.sqlite.ts"
 DB_MIGRATIONS_OUT = "./src/config/db/migrations_d1"
 DB_SINGLETON_ENABLED = "false"
 DB_MAX_CONNECTIONS = "1"
-AUTH_SECRET = "REPLACE_WITH_A_STRONG_SECRET"
+AUTH_SECRET = "1edb7188a2da397638add18aefb13522aae69982901c436e89dedbdfb44991c3"

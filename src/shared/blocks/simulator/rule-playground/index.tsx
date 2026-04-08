@@ -154,9 +154,12 @@ async function createSimulationCase(payload: {
 }
 
 async function removeSimulationCase(id: string) {
-  const response = await fetch(`/api/admin/simulator/rule-simulation-cases/${id}`, {
-    method: 'DELETE',
-  });
+  const response = await fetch(
+    `/api/admin/simulator/rule-simulation-cases/${id}`,
+    {
+      method: 'DELETE',
+    }
+  );
 
   const body = await response.json();
   if (!response.ok || body?.code !== 0) {
@@ -170,15 +173,21 @@ export function RulePlaygroundPanel({
   initialCases,
 }: RulePlaygroundPanelProps) {
   const activeVersion = useMemo(
-    () => initialVersions.find((item) => item.isActive) ?? initialVersions[0] ?? null,
-    [initialVersions],
+    () =>
+      initialVersions.find((item) => item.isActive) ??
+      initialVersions[0] ??
+      null,
+    [initialVersions]
   );
 
-  const [selectedVersionId, setSelectedVersionId] = useState(activeVersion?.id || '');
+  const [selectedVersionId, setSelectedVersionId] = useState(
+    activeVersion?.id || ''
+  );
   const [skillCode, setSkillCode] = useState('dragon_roll');
   const [targetCount, setTargetCount] = useState('7');
   const [targetMagicDefense, setTargetMagicDefense] = useState('1200');
-  const [formationCounterState, setFormationCounterState] = useState('无克/普通');
+  const [formationCounterState, setFormationCounterState] =
+    useState('无克/普通');
   const [elementRelation, setElementRelation] = useState('无克/普通');
   const [shenmuValue, setShenmuValue] = useState('0');
   const [magicResult, setMagicResult] = useState('0');
@@ -193,12 +202,16 @@ export function RulePlaygroundPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResult, setSelectedResult] = useState<PlaygroundResult | null>(null);
-  const [activeResult, setActiveResult] = useState<PlaygroundResult | null>(null);
+  const [selectedResult, setSelectedResult] = useState<PlaygroundResult | null>(
+    null
+  );
+  const [activeResult, setActiveResult] = useState<PlaygroundResult | null>(
+    null
+  );
 
   const selectedVersion = useMemo(
     () => initialVersions.find((item) => item.id === selectedVersionId) || null,
-    [initialVersions, selectedVersionId],
+    [initialVersions, selectedVersionId]
   );
 
   const currentInputPayload = useMemo(
@@ -226,7 +239,7 @@ export function RulePlaygroundPanel({
       targetCount,
       targetMagicDefense,
       transformCardFactor,
-    ],
+    ]
   );
 
   const handleRun = async () => {
@@ -267,13 +280,16 @@ export function RulePlaygroundPanel({
     const input = savedCase.input ?? {};
 
     setSelectedVersionId(
-      normalizeString(input.ruleVersionId, savedCase.versionId ?? activeVersion?.id ?? ''),
+      normalizeString(
+        input.ruleVersionId,
+        savedCase.versionId ?? activeVersion?.id ?? ''
+      )
     );
     setSkillCode(normalizeString(input.skillCode, 'dragon_roll'));
     setTargetCount(String(input.targetCount ?? 7));
     setTargetMagicDefense(String(input.targetMagicDefense ?? 1200));
     setFormationCounterState(
-      normalizeString(input.formationCounterState, '无克/普通'),
+      normalizeString(input.formationCounterState, '无克/普通')
     );
     setElementRelation(normalizeString(input.elementRelation, '无克/普通'));
     setShenmuValue(String(input.shenmuValue ?? 0));
@@ -282,7 +298,7 @@ export function RulePlaygroundPanel({
 
     const override = input.panelMagicDamageOverride;
     setPanelMagicDamageOverride(
-      override === undefined || override === null ? '' : String(override),
+      override === undefined || override === null ? '' : String(override)
     );
 
     setSaveCaseName(savedCase.name);
@@ -322,7 +338,9 @@ export function RulePlaygroundPanel({
       setSaveCaseName('');
       setSaveCaseNotes('');
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存试算样例失败');
+      setError(
+        saveError instanceof Error ? saveError.message : '保存试算样例失败'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -340,7 +358,9 @@ export function RulePlaygroundPanel({
       await removeSimulationCase(id);
       setCases((current) => current.filter((item) => item.id !== id));
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除试算样例失败');
+      setError(
+        deleteError instanceof Error ? deleteError.message : '删除试算样例失败'
+      );
     } finally {
       setDeletingCaseId(null);
     }
@@ -349,7 +369,7 @@ export function RulePlaygroundPanel({
   const renderResultCard = (title: string, result: PlaygroundResult | null) => {
     if (!result) {
       return (
-        <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+        <div className="text-muted-foreground rounded-lg border p-4 text-sm">
           暂无结果
         </div>
       );
@@ -362,7 +382,7 @@ export function RulePlaygroundPanel({
       <div className="rounded-lg border p-4">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="font-medium">{title}</div>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+          <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px]">
             {result.ruleVersion.versionCode}
           </span>
         </div>
@@ -373,7 +393,9 @@ export function RulePlaygroundPanel({
           <div>暴击伤害：{target?.critDamage ?? '-'}</div>
           <div>总伤害：{target?.totalDamage ?? '-'}</div>
           <div>分灵系数：{String(breakdown.splitFactor ?? '-')}</div>
-          <div>阵法系数：{String(breakdown.combinedFormationFactor ?? '-')}</div>
+          <div>
+            阵法系数：{String(breakdown.combinedFormationFactor ?? '-')}
+          </div>
           <div>五行系数：{String(breakdown.elementFactor ?? '-')}</div>
           <div>修炼差：{String(breakdown.cultivationDiff ?? '-')}</div>
           <div>神木符：{String(breakdown.shenmuValue ?? '-')}</div>
@@ -397,7 +419,10 @@ export function RulePlaygroundPanel({
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>试算版本</Label>
-                <Select value={selectedVersionId} onValueChange={setSelectedVersionId}>
+                <Select
+                  value={selectedVersionId}
+                  onValueChange={setSelectedVersionId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择版本" />
                   </SelectTrigger>
@@ -412,7 +437,10 @@ export function RulePlaygroundPanel({
               </div>
               <div className="space-y-2">
                 <Label>技能代码</Label>
-                <Input value={skillCode} onChange={(e) => setSkillCode(e.target.value)} />
+                <Input
+                  value={skillCode}
+                  onChange={(e) => setSkillCode(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>目标数量</Label>
@@ -432,7 +460,10 @@ export function RulePlaygroundPanel({
               </div>
               <div className="space-y-2">
                 <Label>阵法克制</Label>
-                <Select value={formationCounterState} onValueChange={setFormationCounterState}>
+                <Select
+                  value={formationCounterState}
+                  onValueChange={setFormationCounterState}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择阵法克制" />
                   </SelectTrigger>
@@ -447,7 +478,10 @@ export function RulePlaygroundPanel({
               </div>
               <div className="space-y-2">
                 <Label>五行关系</Label>
-                <Select value={elementRelation} onValueChange={setElementRelation}>
+                <Select
+                  value={elementRelation}
+                  onValueChange={setElementRelation}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="选择五行关系" />
                   </SelectTrigger>
@@ -490,23 +524,26 @@ export function RulePlaygroundPanel({
                 <Input
                   value={panelMagicDamageOverride}
                   onChange={(e) => setPanelMagicDamageOverride(e.target.value)}
-                  placeholder="留空则使用当前角色面板"
+                  placeholder="留空则使用服务端规则推导"
                   type="number"
                 />
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleRun} disabled={!selectedVersionId || isRunning}>
+              <Button
+                onClick={handleRun}
+                disabled={!selectedVersionId || isRunning}
+              >
                 {isRunning ? '试算中...' : '运行规则试算'}
               </Button>
               {selectedVersion && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-muted-foreground text-sm">
                   当前选中：{selectedVersion.versionCode}
                 </span>
               )}
               {activeVersion && (
-                <span className="text-sm text-muted-foreground">
+                <span className="text-muted-foreground text-sm">
                   当前生效：{activeVersion.versionCode}
                 </span>
               )}
@@ -522,14 +559,14 @@ export function RulePlaygroundPanel({
                   : '当前生效版本结果',
                 activeVersion && activeVersion.id !== selectedVersionId
                   ? activeResult
-                  : selectedResult,
+                  : selectedResult
               )}
             </div>
 
             <div className="space-y-4 rounded-lg border p-4">
               <div>
                 <div className="font-medium">保存回归样例</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="text-muted-foreground text-sm">
                   将当前输入参数和试算结果保存下来，后续改规则时可以直接回放验证。
                 </div>
               </div>
@@ -555,17 +592,20 @@ export function RulePlaygroundPanel({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={handleSaveCase} disabled={!canEdit || isSaving}>
+                <Button
+                  onClick={handleSaveCase}
+                  disabled={!canEdit || isSaving}
+                >
                   {isSaving ? '保存中...' : '保存为试算样例'}
                 </Button>
                 {!canEdit && (
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-muted-foreground text-sm">
                     当前账号只有查看权限，不能保存或删除样例。
                   </span>
                 )}
               </div>
               {selectedResult && (
-                <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+                <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
                   <div>当前保存输入：</div>
                   <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">
                     {prettyJson(currentInputPayload)}
@@ -578,29 +618,34 @@ export function RulePlaygroundPanel({
           <div className="space-y-4 rounded-lg border p-4">
             <div>
               <div className="font-medium">已保存样例</div>
-              <div className="text-sm text-muted-foreground">
+              <div className="text-muted-foreground text-sm">
                 点击“载入”可将样例参数回填到表单，直接重新试算。
               </div>
             </div>
             {cases.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              <div className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
                 还没有保存过样例。
               </div>
             ) : (
               <ScrollArea className="h-[520px] pr-3">
                 <div className="space-y-3">
                   {cases.map((savedCase) => {
-                    const target = (savedCase.expectedResult?.targets as Array<Record<string, unknown>> | undefined)?.[0];
+                    const target = (
+                      savedCase.expectedResult?.targets as
+                        | Array<Record<string, unknown>>
+                        | undefined
+                    )?.[0];
                     const versionLabel =
-                      initialVersions.find((item) => item.id === savedCase.versionId)
-                        ?.versionCode ?? '未绑定版本';
+                      initialVersions.find(
+                        (item) => item.id === savedCase.versionId
+                      )?.versionCode ?? '未绑定版本';
 
                     return (
                       <div key={savedCase.id} className="rounded-lg border p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium">{savedCase.name}</div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-muted-foreground text-xs">
                               绑定版本：{versionLabel}
                             </div>
                           </div>
@@ -617,21 +662,35 @@ export function RulePlaygroundPanel({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              disabled={!canEdit || deletingCaseId === savedCase.id}
+                              disabled={
+                                !canEdit || deletingCaseId === savedCase.id
+                              }
                               onClick={() => handleDeleteCase(savedCase.id)}
                             >
-                              {deletingCaseId === savedCase.id ? '删除中...' : '删除'}
+                              {deletingCaseId === savedCase.id
+                                ? '删除中...'
+                                : '删除'}
                             </Button>
                           </div>
                         </div>
-                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                          <div>技能：{String(savedCase.input.skillCode ?? '-')}</div>
-                          <div>目标数量：{String(savedCase.input.targetCount ?? '-')}</div>
-                          <div>目标法防：{String(savedCase.input.targetMagicDefense ?? '-')}</div>
-                          <div>预期单目标伤害：{String(target?.damage ?? '-')}</div>
+                        <div className="text-muted-foreground mt-3 space-y-1 text-xs">
+                          <div>
+                            技能：{String(savedCase.input.skillCode ?? '-')}
+                          </div>
+                          <div>
+                            目标数量：
+                            {String(savedCase.input.targetCount ?? '-')}
+                          </div>
+                          <div>
+                            目标法防：
+                            {String(savedCase.input.targetMagicDefense ?? '-')}
+                          </div>
+                          <div>
+                            预期单目标伤害：{String(target?.damage ?? '-')}
+                          </div>
                         </div>
                         {savedCase.notes ? (
-                          <div className="mt-3 rounded bg-muted/40 p-2 text-xs text-muted-foreground">
+                          <div className="bg-muted/40 text-muted-foreground mt-3 rounded p-2 text-xs">
                             {savedCase.notes}
                           </div>
                         ) : null}

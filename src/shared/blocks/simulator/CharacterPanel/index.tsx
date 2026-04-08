@@ -2,8 +2,7 @@
 "use client";
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import type { Equipment } from '@/features/simulator/store/gameTypes';
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { EquipmentSlot } from './EquipmentSlot';
 import { AttributeDisplay } from './AttributeDisplay';
 import { CultivationBar } from './CultivationBar';
@@ -22,64 +21,6 @@ const FORMATIONS = [
   '云垂阵'
 ];
 
-// 模拟生成新装备
-function generateMockEquipment(type: Equipment['type']): Equipment {
-  const templates: Record<Equipment['type'], { names: string[]; mainStats: string[]; stats: any }> = {
-    weapon: {
-      names: ['烈焰神杖', '龙啸破天杖', '冰魄灵杖'],
-      mainStats: ['法伤 +380', '法伤 +360', '法伤 +350'],
-      stats: { magicDamage: Math.floor(Math.random() * 100) + 340, hit: Math.floor(Math.random() * 50) + 110, magic: Math.floor(Math.random() * 15) + 20 }
-    },
-    helmet: {
-      names: ['玄冰护盔', '龙魂宝冠', '极寒之冠'],
-      mainStats: ['法防 +150', '法防 +140', '法防 +145'],
-      stats: { magicDefense: Math.floor(Math.random() * 30) + 130, magic: Math.floor(Math.random() * 10) + 15, defense: Math.floor(Math.random() * 20) + 40 }
-    },
-    necklace: {
-      names: ['龙珠项链', '深海明珠', '九天星链'],
-      mainStats: ['法伤 +100', '法伤 +95', '法伤 +90'],
-      stats: { magicDamage: Math.floor(Math.random() * 20) + 85, magic: Math.floor(Math.random() * 8) + 12 }
-    },
-    armor: {
-      names: ['水龙战袍', '极寒护甲', '玄冰战衣'],
-      mainStats: ['法防 +160', '法防 +155', '法防 +150'],
-      stats: { magicDefense: Math.floor(Math.random() * 30) + 140, defense: Math.floor(Math.random() * 30) + 75, physique: Math.floor(Math.random() * 10) + 18 }
-    },
-    belt: {
-      names: ['破军腰带', '疾风之带', '流云宝带'],
-      mainStats: ['速度 +65', '速度 +60', '速度 +58'],
-      stats: { speed: Math.floor(Math.random() * 15) + 55, agility: Math.floor(Math.random() * 8) + 10, defense: Math.floor(Math.random() * 15) + 30 }
-    },
-    shoes: {
-      names: ['御风神靴', '流光飞靴', '凌波微步'],
-      mainStats: ['敏捷 +22', '敏捷 +20', '敏捷 +19'],
-      stats: { agility: Math.floor(Math.random() * 6) + 18, speed: Math.floor(Math.random() * 15) + 45, defense: Math.floor(Math.random() * 15) + 28 }
-    },
-    trinket: {
-      names: ['水晶灵饰', '琉璃之心', '星辰灵佩'],
-      mainStats: ['法伤 +60', '法伤 +55', '法伤 +58'],
-      stats: { magicDamage: Math.floor(Math.random() * 15) + 55, magic: Math.floor(Math.random() * 10) + 12, speed: Math.floor(Math.random() * 10) + 8 }
-    },
-    jade: {
-      names: ['混元玉魄', '九天玄玉', '龙魂玉佩'],
-      mainStats: ['体质 +25', '体质 +23', '体质 +22'],
-      stats: { physique: Math.floor(Math.random() * 5) + 22, defense: Math.floor(Math.random() * 20) + 35, magicDefense: Math.floor(Math.random() * 20) + 30 }
-    }
-  };
-
-  const template = templates[type];
-  const index = Math.floor(Math.random() * template.names.length);
-  
-  return {
-    id: Date.now().toString(),
-    name: template.names[index],
-    type,
-    mainStat: template.mainStats[index],
-    baseStats: template.stats,
-    stats: template.stats
-  };
-}
-
 export function CharacterPanel() {
   const accounts = useGameStore((state) => state.accounts);
   const activeAccountId = useGameStore((state) => state.activeAccountId);
@@ -91,13 +32,9 @@ export function CharacterPanel() {
   const updateCultivation = useGameStore((state) => state.updateCultivation);
   const skills = useGameStore((state) => state.skills);
   const treasure = useGameStore((state) => state.treasure);
-  const addOcrLog = useGameStore((state) => state.addOcrLog);
   const formation = useGameStore((state) => state.formation);
   const setFormation = useGameStore((state) => state.setFormation);
-  const equipment = useGameStore((state) => state.equipment);
-  const enterPreviewMode = useGameStore((state) => state.enterPreviewMode);
   
-  const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'attributes' | 'cultivation'>('attributes');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [saveProfileMessage, setSaveProfileMessage] = useState<string | null>(null);
@@ -105,43 +42,7 @@ export function CharacterPanel() {
   const [isSavingCultivation, setIsSavingCultivation] = useState(false);
   const [saveCultivationMessage, setSaveCultivationMessage] = useState<string | null>(null);
   const [saveCultivationError, setSaveCultivationError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const activeAccount = accounts.find((account) => account.id === activeAccountId) || null;
-  
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setUploading(true);
-    addOcrLog({
-      type: 'character',
-      message: `正在识别截图：${file.name}`,
-      status: 'processing'
-    });
-    
-    setTimeout(() => {
-      addOcrLog({
-        type: 'character',
-        message: '识别成功！已自动填充角色数据',
-        status: 'success'
-      });
-      setUploading(false);
-    }, 2000);
-  };
-  
-  const handleEquipmentUpload = (type: Equipment['type']) => {
-    // 模拟上传新装备并触发预览模式
-    const currentEquipment = equipment.find(e => e.type === type) || null;
-    const newEquipment = generateMockEquipment(type);
-    
-    addOcrLog({
-      type: 'equipment',
-      message: `识别到新装备：${newEquipment.name}`,
-      status: 'success'
-    });
-    
-    enterPreviewMode(currentEquipment, newEquipment, type);
-  };
 
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);

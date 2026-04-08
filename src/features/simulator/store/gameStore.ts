@@ -1,13 +1,26 @@
 import { create } from 'zustand';
+
+import {
+  buildEquipmentSetStatePatch,
+  cloneEquipmentList,
+  ensureEquipmentSets,
+  syncEquipmentSetsWithActiveEquipment,
+} from './equipmentSetState';
+import {
+  createDefaultAccounts,
+  createDefaultPhysicalCultivation,
+  createDefaultPhysicalSkills,
+  createDefaultPhysicalTreasure,
+} from './gameDefaults';
+import { PRESET_EQUIPMENTS } from './gameEquipmentData';
 import {
   createInitialEquipment,
   createInitialEquipmentSets,
   initialBaseAttributes as defaultInitialBaseAttributes,
   initialCombatStats as defaultInitialCombatStats,
 } from './gameInitialState';
-import { getRandomDungeonTargets } from './gameLogic';
-import { PRESET_EQUIPMENTS } from './gameEquipmentData';
 import {
+  createCombatTargetFromManualTarget,
   createInitialExperimentSeats,
   createInitialManualTargets,
   createInitialPendingEquipments,
@@ -20,12 +33,6 @@ import {
   createPendingEquipmentActions,
   createStatActions,
 } from './gameStoreActions';
-import {
-  createDefaultAccounts,
-  createDefaultPhysicalCultivation,
-  createDefaultPhysicalSkills,
-  createDefaultPhysicalTreasure,
-} from './gameDefaults';
 import type {
   BaseAttributes,
   CombatStats,
@@ -39,6 +46,10 @@ const initialBaseAttributes: BaseAttributes = defaultInitialBaseAttributes;
 const initialCombatStats: CombatStats = defaultInitialCombatStats;
 
 const initialEquipment: Equipment[] = createInitialEquipment(PRESET_EQUIPMENTS);
+const initialManualTargets = createInitialManualTargets();
+const initialCombatTarget = createCombatTargetFromManualTarget(
+  initialManualTargets[0]
+);
 
 // Seeded equipment sets used when the simulator boots.
 const initialEquipmentSets: EquipmentSet[] =
@@ -64,15 +75,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
   skills: createDefaultPhysicalSkills(),
   cultivation: createDefaultPhysicalCultivation(),
   treasure: createDefaultPhysicalTreasure(),
-  
+
   // Combat state
-  combatTarget: {
-    name: '测试木桩',
-    level: 175,
-    hp: 100000,
-    defense: 1500,
-    magicDefense: 1200,
-  },
+  combatTarget: initialCombatTarget,
   selectedSkill: null,
   playerSetup: {
     level: initialBaseAttributes.level,
@@ -91,31 +96,35 @@ export const useGameStore = create<GameState>()((set, get) => ({
       petMagicDefense: 20,
     },
     element: '水',
-    formation: '天覆阵'
+    formation: '天覆阵',
   },
-  manualTargets: createInitialManualTargets(),
+  manualTargets: initialManualTargets,
   combatTab: 'manual',
-  selectedDungeonIds: getRandomDungeonTargets(),
+  selectedDungeonIds: [],
   ...createCombatActions(set, get),
   previewMode: false,
   previewEquipment: null,
   enterPreviewMode: (current, newEquip, type) => {
     set({
       previewMode: true,
-      previewEquipment: { current, new: newEquip }
+      previewEquipment: { current, new: newEquip },
     });
   },
   exitPreviewMode: () => {
     set({
       previewMode: false,
-      previewEquipment: null
+      previewEquipment: null,
     });
   },
   confirmReplacement: () => {
     const state = get();
     if (state.previewEquipment?.new) {
       state.updateEquipment(state.previewEquipment.new);
-      state.addHistorySnapshot('equipment', `更换装备：${state.previewEquipment.new.name}`, []);
+      state.addHistorySnapshot(
+        'equipment',
+        `更换装备：${state.previewEquipment.new.name}`,
+        []
+      );
     }
     set({ previewMode: false, previewEquipment: null });
   },
@@ -123,39 +132,98 @@ export const useGameStore = create<GameState>()((set, get) => ({
   // Equipment state
   updateEquipment: (equipment) => {
     set((state) => {
-      const existingIndex = state.equipment.findIndex(e => 
-        e.type === equipment.type && 
-        (equipment.slot === undefined || e.slot === equipment.slot)
+      const existingIndex = state.equipment.findIndex(
+        (e) =>
+          e.type === equipment.type &&
+          (equipment.slot === undefined || e.slot === equipment.slot)
       );
-      
-      let newEquipment = [...state.equipment];
+
+      let newEquipment = cloneEquipmentList(state.equipment);
       if (existingIndex !== -1) {
         newEquipment[existingIndex] = equipment;
       } else {
-        newEquipment = [...state.equipment, equipment];
+        newEquipment = [...newEquipment, equipment];
       }
-      
-      return { equipment: newEquipment };
+
+      const equipmentSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        newEquipment
+      );
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: newEquipment,
+        equipmentSets,
+        activeSetIndex: state.activeSetIndex,
+      });
     });
     get().recalculateCombatStats();
   },
-  
+
   removeEquipment: (id) => {
-    set((state) => ({
-      equipment: state.equipment.filter(e => e.id !== id)
-    }));
+    set((state) => {
+      const equipment = state.equipment.filter((e) => e.id !== id);
+      const equipmentSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        equipment
+      );
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment,
+        equipmentSets,
+        activeSetIndex: state.activeSetIndex,
+      });
+    });
     get().recalculateCombatStats();
   },
-  
+
+  selectEquipmentSet: (index) => {
+    set((state) => {
+      if (index < 0) return state;
+
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const normalizedSets = ensureEquipmentSets(
+        persistedSets,
+        index,
+        state.equipment
+      );
+      const equipment = cloneEquipmentList(normalizedSets[index]?.items ?? []);
+      const equipmentSets = normalizedSets.map((set, setIndex) => ({
+        ...set,
+        isActive: setIndex === index,
+      }));
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment,
+        equipmentSets,
+        activeSetIndex: index,
+      });
+    });
+    get().recalculateCombatStats();
+  },
+
   updateEquipmentSetName: (index, name) => {
     set((state) => {
-      const newSets = [...state.equipmentSets];
-      if (newSets[index]) {
-        newSets[index] = { ...newSets[index], name };
-      } else {
-        newSets[index] = { id: `set_${index}`, name, items: [] };
-      }
-      return { equipmentSets: newSets };
+      const equipmentSets = ensureEquipmentSets(
+        state.equipmentSets,
+        index,
+        state.equipment
+      ).map((set, setIndex) => ({
+        ...set,
+        name: setIndex === index ? name : set.name,
+        isActive: setIndex === state.activeSetIndex,
+      }));
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: state.equipment,
+        equipmentSets,
+        activeSetIndex: state.activeSetIndex,
+      });
     });
   },
 
@@ -163,15 +231,22 @@ export const useGameStore = create<GameState>()((set, get) => ({
     const state = get();
     const current = state.previewEquipment?.current;
     const newEquip = state.previewEquipment?.new;
-    
-    if (!newEquip) return { attributes: {}, damageChange: { physical: 0, magic: 0, skill: 0 } };
-    
+
+    if (!newEquip)
+      return {
+        attributes: {},
+        damageChange: { physical: 0, magic: 0, skill: 0 },
+      };
+
     const attributes: Record<string, number> = {};
     const oldStats = current?.baseStats || {};
     const newStats = newEquip.baseStats || {};
-    
-    const allKeys = new Set([...Object.keys(oldStats), ...Object.keys(newStats)]);
-    allKeys.forEach(key => {
+
+    const allKeys = new Set([
+      ...Object.keys(oldStats),
+      ...Object.keys(newStats),
+    ]);
+    allKeys.forEach((key) => {
       const oldVal = (oldStats as Record<string, number | undefined>)[key] ?? 0;
       const newVal = (newStats as Record<string, number | undefined>)[key] ?? 0;
       if (oldVal !== newVal) {
@@ -188,19 +263,19 @@ export const useGameStore = create<GameState>()((set, get) => ({
       damageChange: {
         physical: physicalDiff * 1.2,
         magic: magicDiff * 1.5,
-        skill: skillDiff
-      }
+        skill: skillDiff,
+      },
     };
   },
-  
+
   // History state
   history: [],
-  
+
   // OCR state
   ocrLogs: [],
   ...createHistoryAndLogActions(set, get),
-  experimentSeats: createInitialExperimentSeats(initialEquipment),
-  
+  experimentSeats: createInitialExperimentSeats(),
+
   ...createExperimentSeatActions(set),
   pendingEquipments: createInitialPendingEquipments(),
   selectedPendingIds: [],

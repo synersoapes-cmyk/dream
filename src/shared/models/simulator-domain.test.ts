@@ -1,8 +1,11 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 
+import {
+  resolveLabSessionEquipmentReferenceId,
+  type SimulatorCharacterBundle,
+} from '@/shared/models/simulator';
 import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 function createBundle(): SimulatorCharacterBundle {
   return {
@@ -176,6 +179,7 @@ test('buildSimulatorCharacterDomain maps profile, battle context, and equipment 
 
   assert.ok(domain);
   assert.equal(domain.school, '龙宫');
+  assert.equal(domain.attributeSources.baseHp, 716);
   assert.equal(domain.profile.spirit, 610);
   assert.equal(domain.profile.dodge, 205);
   assert.equal(domain.cultivationLevels.magicAttack, 23);
@@ -184,4 +188,21 @@ test('buildSimulatorCharacterDomain maps profile, battle context, and equipment 
   assert.equal(domain.battleContext?.selfElement, '水');
   assert.equal(domain.battleContext?.targetName, '乌鸡国树怪');
   assert.equal(domain.skills[0]?.finalLevel, 152);
+});
+
+test('resolveLabSessionEquipmentReferenceId only keeps persisted equipment ids', () => {
+  const persistedEquipmentIds = new Set(['eq_1', 'eq_2']);
+
+  assert.equal(
+    resolveLabSessionEquipmentReferenceId('eq_1', persistedEquipmentIds),
+    'eq_1'
+  );
+  assert.equal(
+    resolveLabSessionEquipmentReferenceId('lib_eq1', persistedEquipmentIds),
+    null
+  );
+  assert.equal(
+    resolveLabSessionEquipmentReferenceId(undefined, persistedEquipmentIds),
+    null
+  );
 });

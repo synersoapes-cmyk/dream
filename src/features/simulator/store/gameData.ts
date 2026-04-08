@@ -1,5 +1,6 @@
 import type { Dungeon } from './gameTypes';
 
+// Local fallback dungeon targets used when cloud templates are unavailable.
 export const DUNGEON_DATABASE: Dungeon[] = [
   {
     id: 'd1',

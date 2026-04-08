@@ -30,6 +30,15 @@ const nextConfig = {
   // On Windows this mode often fails while creating symlinks in `.next/standalone`.
   // Keep it opt-in for any future Docker/Node deployment workflow.
   output: standaloneOutputEnabled ? 'standalone' : undefined,
+  // Bundle next-mdx-remote into the server build so Workers do not need to
+  // resolve it as an external runtime module.
+  transpilePackages: [
+    'next-mdx-remote',
+    '@react-email/components',
+    '@react-email/render',
+    'prettier',
+    'resend',
+  ],
   reactStrictMode: false,
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   images: {

@@ -15,9 +15,7 @@ import { useAppContext } from '@/shared/contexts/app';
 import { EquipmentReplaceDialog } from '@/features/simulator/overlays/EquipmentReplaceDialog';
 import { AiChat } from '@/features/simulator/shell/AiChat';
 import { AccountSwitcher } from '@/features/simulator/shell/AccountSwitcher';
-import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simulatorLabSession';
 
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
 const DEV_BOOTSTRAP_TIMEOUT_MS = 30_000;
@@ -128,44 +126,9 @@ export default function SimulatorApp() {
         }
 
         if (!cancelled && payload?.code === 0 && payload?.data) {
-          const settledController = controller;
           applySimulatorBundleToStore(payload.data);
-          try {
-            const labResponse = await fetch('/api/simulator/current/lab-session', {
-              method: 'GET',
-              cache: 'no-store',
-              signal: settledController?.signal,
-            });
-            if (labResponse.ok) {
-              const labPayload = await labResponse.json();
-              if (labPayload?.code === 0 && labPayload?.data?.session) {
-                applySimulatorLabSessionToStore(labPayload.data);
-              }
-            }
-          } catch (labError) {
-            if (!(labError instanceof Error && labError.name === 'AbortError')) {
-              console.warn('Failed to bootstrap simulator lab session:', labError);
-            }
-          }
-          try {
-            const candidateResponse = await fetch('/api/simulator/current/candidate-equipment', {
-              method: 'GET',
-              cache: 'no-store',
-              signal: settledController?.signal,
-            });
-            if (candidateResponse.ok) {
-              const candidatePayload = await candidateResponse.json();
-              if (candidatePayload?.code === 0 && Array.isArray(candidatePayload?.data)) {
-                applySimulatorCandidateEquipmentToStore(candidatePayload.data);
-              }
-            }
-          } catch (candidateError) {
-            if (!(candidateError instanceof Error && candidateError.name === 'AbortError')) {
-              console.warn('Failed to bootstrap simulator candidate equipment:', candidateError);
-            }
-          }
           setBootstrapError(null);
-          setBootstrapNotice('当前展示的是云端 D1 角色数据');
+          setBootstrapNotice('当前展示的是云端 D1 角色数据，实验室数据会在进入实验室后再加载');
           return;
         }
 

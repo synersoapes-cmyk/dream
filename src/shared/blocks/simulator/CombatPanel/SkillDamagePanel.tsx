@@ -1,17 +1,18 @@
 ﻿// @ts-nocheck
-"use client";
+'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Dungeon } from '@/features/simulator/store/gameTypes';
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
+import { Calculator, ChevronDown, RefreshCw, X, Zap } from 'lucide-react';
+
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/shared/components/ui/tooltip';
-import { Calculator, ChevronDown, RefreshCw, X, Zap } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
 
 const ELEMENT_RELATION_OPTIONS = ['克制', '无克/普通', '被克制'];
 const DEFAULT_SELF_FORMATION_LABEL = '天覆阵';
@@ -33,18 +34,54 @@ const localizeFormulaExpression = (expression: string) =>
 const getPanelMagicDamageTooltipLines = (details: any): string[] => {
   const breakdown = details?.rawBreakdown?.panelMagicDamageBreakdown;
   if (!breakdown) {
-    return ['当前面板法伤来自服务端根据当前装备状态计算。'];
+    return ['当前面板法伤由服务端规则链统一计算。'];
   }
 
-  return [
-    `公式：${breakdown.formula}`,
-    `魔力：${breakdown.magic}`,
-    `灵力：${breakdown.magicPower}`,
-    `等级：${breakdown.level}`,
-    `装备法伤：${breakdown.equipmentMagicDamage}`,
-    `法宝法伤：${breakdown.treasureMagicDamage}`,
-    `结果：${breakdown.result}`,
-  ];
+  const lines = [`口径：${breakdown.formula}`];
+  const spiritContributions = Array.isArray(breakdown.spiritContributions)
+    ? breakdown.spiritContributions
+        .map(
+          (item: any) =>
+            `${item.sourceAttr} x ${item.coefficient} = ${item.contribution}`
+        )
+        .join(' / ')
+    : '';
+  const magicDamageContributions = Array.isArray(
+    breakdown.magicDamageContributions
+  )
+    ? breakdown.magicDamageContributions
+        .map(
+          (item: any) =>
+            `${item.sourceAttr} x ${item.coefficient} = ${item.contribution}`
+        )
+        .join(' / ')
+    : '';
+
+  if (breakdown.overrideApplied) {
+    lines.push(`覆盖值：${breakdown.overrideValue}`);
+  }
+
+  if (breakdown.spiritBeforeRules !== undefined) {
+    lines.push(`初始灵力：${breakdown.spiritBeforeRules}`);
+  }
+  if (spiritContributions) {
+    lines.push(`灵力转化：${spiritContributions}`);
+  }
+  if (breakdown.spiritAfterRules !== undefined) {
+    lines.push(`规则灵力：${breakdown.spiritAfterRules}`);
+  }
+  if (magicDamageContributions) {
+    lines.push(`法伤转化：${magicDamageContributions}`);
+  }
+  if (breakdown.ruleDerivedMagicDamage !== undefined) {
+    lines.push(`规则法伤：${breakdown.ruleDerivedMagicDamage}`);
+  }
+  if (breakdown.equipmentMagicDamageFlat !== undefined) {
+    lines.push(`装备法伤：${breakdown.equipmentMagicDamageFlat}`);
+  }
+  lines.push(`结果：${breakdown.result}`);
+
+  return lines;
 };
 
 const getPanelMagicDamageTooltipText = (details: any) =>
@@ -72,7 +109,7 @@ const mapTargetResult = (target: any, result: any, targetCount: number) => {
   const targetMagicDefense = toNumber(breakdown.targetMagicDefense);
   const combinedFormationFactor = toNumber(
     breakdown.combinedFormationFactor,
-    toNumber(breakdown.formationFactor, 1),
+    toNumber(breakdown.formationFactor, 1)
   );
   const cultivationDiff = toNumber(breakdown.cultivationDiff);
   const magicResult = toNumber(breakdown.magicResult);
@@ -99,11 +136,10 @@ const mapTargetResult = (target: any, result: any, targetCount: number) => {
       elementFactor: elementFactor.toFixed(2),
       finalDamage: toNumber(breakdown.finalDamage, result?.damage),
       critDamage: toNumber(breakdown.critDamage, result?.critDamage),
-      formulaExpression:
-        localizeFormulaExpression(
-          breakdown.formulaExpression ||
-            '(base + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result',
-        ),
+      formulaExpression: localizeFormulaExpression(
+        breakdown.formulaExpression ||
+          '(base + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result'
+      ),
       matchedBonusRules: breakdown.matchedBonusRules || [],
       rawBreakdown: breakdown,
     },
@@ -114,7 +150,6 @@ const mapTargetResult = (target: any, result: any, targetCount: number) => {
 async function requestDamageCalculation(params: {
   skillName?: string;
   targetCount: number;
-  panelMagicDamageOverride: number;
   elementRelation: string;
   shenmuValue: number;
   magicResult: number;
@@ -137,7 +172,6 @@ async function requestDamageCalculation(params: {
     body: JSON.stringify({
       skillName: params.skillName,
       targetCount: params.targetCount,
-      panelMagicDamageOverride: params.panelMagicDamageOverride,
       elementRelation: params.elementRelation,
       shenmuValue: params.shenmuValue,
       magicResult: params.magicResult,
@@ -154,12 +188,14 @@ async function requestDamageCalculation(params: {
     throw new Error(payload?.message || '伤害试算失败');
   }
 
-  const results = Array.isArray(payload?.data?.targets) ? payload.data.targets : [];
+  const results = Array.isArray(payload?.data?.targets)
+    ? payload.data.targets
+    : [];
   return {
     ruleVersion: payload?.data?.ruleVersion || null,
     skill: payload?.data?.skill || null,
     targets: params.targets.map((target, index) =>
-      mapTargetResult(target, results[index], params.targetCount),
+      mapTargetResult(target, results[index], params.targetCount)
     ),
   };
 }
@@ -171,7 +207,6 @@ export function SkillDamagePanel({
   isOpen?: boolean;
   onClose?: () => void;
 }) {
-  const combatStats = useGameStore((state) => state.combatStats);
   const combatTarget = useGameStore((state) => state.combatTarget);
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
@@ -186,13 +221,16 @@ export function SkillDamagePanel({
   const [damageDisplayData, setDamageDisplayData] = useState<any[]>([]);
   const [ruleVersionInfo, setRuleVersionInfo] = useState<any>(null);
 
-  const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>(DUNGEON_DATABASE);
+  const [targetDungeons, setTargetDungeons] =
+    useState<Dungeon[]>(DUNGEON_DATABASE);
   const [selectedDungeonId, setSelectedDungeonId] = useState<string>(
-    DUNGEON_DATABASE[0]?.id || '',
+    DUNGEON_DATABASE[0]?.id || ''
   );
   const [isDungeonSelectOpen, setIsDungeonSelectOpen] = useState(false);
 
-  const [activeSkillId, setActiveSkillId] = useState<string>(skills[0]?.name || '');
+  const [activeSkillId, setActiveSkillId] = useState<string>(
+    skills[0]?.name || ''
+  );
   const [isSkillSelectOpen, setIsSkillSelectOpen] = useState(false);
   const [skillSearchQuery, setSkillSearchQuery] = useState('');
 
@@ -205,12 +243,12 @@ export function SkillDamagePanel({
 
   const activeSkill = useMemo(
     () => skills.find((skill) => skill.name === activeSkillId) || skills[0],
-    [skills, activeSkillId],
+    [skills, activeSkillId]
   );
 
   const selectedDungeon = useMemo(
     () => targetDungeons.find((dungeon) => dungeon.id === selectedDungeonId),
-    [selectedDungeonId, targetDungeons],
+    [selectedDungeonId, targetDungeons]
   );
 
   useEffect(() => {
@@ -223,7 +261,11 @@ export function SkillDamagePanel({
           cache: 'no-store',
         });
         const payload = await response.json();
-        if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+        if (
+          !response.ok ||
+          payload?.code !== 0 ||
+          !Array.isArray(payload?.data)
+        ) {
           return;
         }
 
@@ -273,7 +315,9 @@ export function SkillDamagePanel({
         const decodedDungeon = combatTarget.dungeonName
           ? decodeName(combatTarget.dungeonName)
           : '';
-        targetDisplay = decodedDungeon ? `${decodedDungeon} - ${decodedName}` : decodedName;
+        targetDisplay = decodedDungeon
+          ? `${decodedDungeon} - ${decodedName}`
+          : decodedName;
       } catch {
         targetDisplay = combatTarget.dungeonName
           ? `${combatTarget.dungeonName} - ${combatTarget.name}`
@@ -305,7 +349,6 @@ export function SkillDamagePanel({
         requestDamageCalculation({
           skillName: activeSkill.name,
           targetCount,
-          panelMagicDamageOverride: toNumber(combatStats.magicDamage),
           elementRelation,
           shenmuValue,
           magicResult,
@@ -315,7 +358,6 @@ export function SkillDamagePanel({
         requestDamageCalculation({
           skillName: activeSkill.name,
           targetCount,
-          panelMagicDamageOverride: toNumber(combatStats.magicDamage),
           elementRelation,
           shenmuValue,
           magicResult,
@@ -324,7 +366,9 @@ export function SkillDamagePanel({
         }),
       ]);
 
-      setRuleVersionInfo(manualResults.ruleVersion || dungeonResults.ruleVersion || null);
+      setRuleVersionInfo(
+        manualResults.ruleVersion || dungeonResults.ruleVersion || null
+      );
 
       const nextDisplayData: any[] = [
         {
@@ -345,7 +389,9 @@ export function SkillDamagePanel({
       setDamageDisplayData(nextDisplayData);
     } catch (error) {
       console.error('failed to calculate skill damage panel:', error);
-      setCalculationError(error instanceof Error ? error.message : '伤害试算失败');
+      setCalculationError(
+        error instanceof Error ? error.message : '伤害试算失败'
+      );
       setDamageDisplayData([]);
     } finally {
       setIsCalculating(false);
@@ -364,7 +410,6 @@ export function SkillDamagePanel({
     targetCount,
     selectedDungeonId,
     manualTargets,
-    combatStats.magicDamage,
     elementRelation,
     shenmuValue,
     magicResult,
@@ -378,7 +423,11 @@ export function SkillDamagePanel({
     void loadDamageData();
   };
 
-  const handleSkillClick = (skillData: any, targetData?: any, groupName?: string) => {
+  const handleSkillClick = (
+    skillData: any,
+    targetData?: any,
+    groupName?: string
+  ) => {
     selectSkill(skillData);
     if (targetData && groupName) {
       setModalSkillDetails({
@@ -399,7 +448,7 @@ export function SkillDamagePanel({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
       <div className="relative flex h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
         <div className="z-50 flex items-center justify-between border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-5 py-3.5">
           <div className="flex items-center gap-2.5">
@@ -431,7 +480,7 @@ export function SkillDamagePanel({
                 </div>
 
                 {isSkillSelectOpen && (
-                  <div className="absolute left-0 top-full z-50 mt-2 flex w-48 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
+                  <div className="absolute top-full left-0 z-50 mt-2 flex w-48 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
                     <div className="border-b border-yellow-800/40 p-2">
                       <input
                         type="text"
@@ -445,7 +494,9 @@ export function SkillDamagePanel({
                     <div className="max-h-48 overflow-y-auto p-1.5">
                       {skills
                         .filter((skill) =>
-                          skill.name.toLowerCase().includes(skillSearchQuery.toLowerCase()),
+                          skill.name
+                            .toLowerCase()
+                            .includes(skillSearchQuery.toLowerCase())
                         )
                         .map((skill) => (
                           <div
@@ -462,7 +513,9 @@ export function SkillDamagePanel({
                             }`}
                           >
                             <span>{skill.name}</span>
-                            <span className="text-xs opacity-60">Lv.{skill.level}</span>
+                            <span className="text-xs opacity-60">
+                              Lv.{skill.level}
+                            </span>
                           </div>
                         ))}
                     </div>
@@ -475,7 +528,9 @@ export function SkillDamagePanel({
                   onClick={() => setIsTargetCountOpen(!isTargetCountOpen)}
                   className="flex cursor-pointer items-center gap-2 rounded-lg border border-yellow-800/60 bg-slate-900/80 px-3 py-1.5 transition-colors hover:border-yellow-600/60"
                 >
-                  <span className="text-sm font-medium text-yellow-300">秒{targetCount}</span>
+                  <span className="text-sm font-medium text-yellow-300">
+                    秒{targetCount}
+                  </span>
                   <ChevronDown
                     className={`h-3.5 w-3.5 text-yellow-600/80 transition-transform ${
                       isTargetCountOpen ? 'rotate-180' : ''
@@ -484,7 +539,7 @@ export function SkillDamagePanel({
                 </div>
 
                 {isTargetCountOpen && (
-                  <div className="absolute left-0 top-full z-50 mt-2 flex w-28 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
+                  <div className="absolute top-full left-0 z-50 mt-2 flex w-28 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
                     <div className="max-h-64 overflow-y-auto p-1.5">
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
                         <div
@@ -515,7 +570,9 @@ export function SkillDamagePanel({
               disabled={isCalculating}
               className="flex items-center gap-1.5 rounded-lg border border-yellow-700/50 bg-yellow-900/40 px-3 py-1.5 text-xs font-medium text-yellow-100 transition-colors hover:bg-yellow-800/60 disabled:opacity-50"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isCalculating ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isCalculating ? 'animate-spin' : ''}`}
+              />
               重新计算
             </button>
             {onClose && (
@@ -529,7 +586,7 @@ export function SkillDamagePanel({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-4">
           <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-yellow-900/30 bg-slate-900/35 px-4 py-2 text-xs text-yellow-300/80">
             <span>当前目标：{activeTargetDisplay || '未选择'}</span>
             <span className="flex flex-wrap items-center gap-3">
@@ -575,13 +632,16 @@ export function SkillDamagePanel({
                   {group.type === 'dungeon' && (
                     <div className="relative">
                       <div
-                        onClick={() => setIsDungeonSelectOpen(!isDungeonSelectOpen)}
+                        onClick={() =>
+                          setIsDungeonSelectOpen(!isDungeonSelectOpen)
+                        }
                         className="flex cursor-pointer items-center gap-2 rounded-lg border border-yellow-800/60 bg-slate-900/80 px-3 py-1 text-xs font-medium text-yellow-300 transition-colors hover:border-yellow-600/60"
                       >
                         <span>
                           {decodeName(
-                            targetDungeons.find((dungeon) => dungeon.id === selectedDungeonId)
-                              ?.name || '选择副本',
+                            targetDungeons.find(
+                              (dungeon) => dungeon.id === selectedDungeonId
+                            )?.name || '选择副本'
                           )}
                         </span>
                         <ChevronDown
@@ -592,7 +652,7 @@ export function SkillDamagePanel({
                       </div>
 
                       {isDungeonSelectOpen && (
-                        <div className="absolute right-0 top-full z-50 mt-2 flex max-h-96 w-64 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
+                        <div className="absolute top-full right-0 z-50 mt-2 flex max-h-96 w-64 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
                           <div className="overflow-y-auto p-1.5">
                             {targetDungeons.map((dungeon) => (
                               <div
@@ -608,9 +668,12 @@ export function SkillDamagePanel({
                                 }`}
                               >
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="font-medium">{dungeon.name}</span>
+                                  <span className="font-medium">
+                                    {dungeon.name}
+                                  </span>
                                   <span className="text-[10px] text-yellow-500/60">
-                                    {dungeon.level}级 · {dungeon.targets.length}个怪物
+                                    {dungeon.level}级 · {dungeon.targets.length}
+                                    个怪物
                                   </span>
                                 </div>
                               </div>
@@ -626,7 +689,9 @@ export function SkillDamagePanel({
                   {group.targets.map((target: any, idx: number) => (
                     <button
                       key={idx}
-                      onClick={() => handleSkillClick(activeSkill, target, group.groupName)}
+                      onClick={() =>
+                        handleSkillClick(activeSkill, target, group.groupName)
+                      }
                       className="group relative flex w-full flex-col justify-between gap-3 overflow-hidden rounded-xl border border-slate-700/50 bg-gradient-to-r from-slate-800/60 to-slate-900/40 p-3.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-yellow-600/50 hover:shadow-[0_4px_20px_rgba(234,179,8,0.1)] sm:flex-row sm:items-center"
                     >
                       <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/0 via-yellow-500/5 to-yellow-500/0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
@@ -649,8 +714,10 @@ export function SkillDamagePanel({
 
                       <div className="relative z-10 flex items-stretch gap-3">
                         <div className="flex min-w-[80px] flex-col items-end justify-center rounded-lg border border-slate-800/60 bg-slate-950/40 px-3 py-1.5">
-                          <span className="mb-0.5 text-[10px] text-slate-400">普通伤害</span>
-                          <span className="text-sm font-bold tabular-nums text-yellow-200 transition-colors group-hover:text-yellow-400">
+                          <span className="mb-0.5 text-[10px] text-slate-400">
+                            普通伤害
+                          </span>
+                          <span className="text-sm font-bold text-yellow-200 tabular-nums transition-colors group-hover:text-yellow-400">
                             {target.singleTargetDamage.toLocaleString()}
                           </span>
                         </div>
@@ -658,8 +725,10 @@ export function SkillDamagePanel({
                         <div className="w-px bg-gradient-to-b from-transparent via-slate-700 to-transparent" />
 
                         <div className="flex min-w-[80px] flex-col items-end justify-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 py-1.5">
-                          <span className="mb-0.5 text-[10px] text-red-400/80">暴击伤害</span>
-                          <span className="text-sm font-bold tabular-nums text-red-400 transition-colors group-hover:text-red-300">
+                          <span className="mb-0.5 text-[10px] text-red-400/80">
+                            暴击伤害
+                          </span>
+                          <span className="text-sm font-bold text-red-400 tabular-nums transition-colors group-hover:text-red-300">
                             {target.critDamage.toLocaleString()}
                           </span>
                         </div>
@@ -670,7 +739,7 @@ export function SkillDamagePanel({
                           <span className="mb-0.5 text-[10px] text-yellow-600/80">
                             总伤 (x{targetCount})
                           </span>
-                          <span className="text-base font-black tabular-nums text-yellow-400 drop-shadow-[0_0_8px_rgba(234,179,8,0.3)]">
+                          <span className="text-base font-black text-yellow-400 tabular-nums drop-shadow-[0_0_8px_rgba(234,179,8,0.3)]">
                             {target.totalDamage.toLocaleString()}
                           </span>
                         </div>
@@ -685,15 +754,16 @@ export function SkillDamagePanel({
       </div>
 
       {showModal && modalSkillDetails && modalSkillDetails.details && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <div className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border-2 border-yellow-700/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
             <div className="flex items-center justify-between border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-5 py-4">
               <div className="flex items-center gap-2">
                 <Calculator className="h-5 w-5 text-yellow-400" />
-                <h3 className="text-yellow-100 font-bold">
+                <h3 className="font-bold text-yellow-100">
                   伤害计算公式 - {modalSkillDetails.name}
                   <span className="ml-2 text-xs font-normal text-yellow-500/80">
-                    [{modalSkillDetails.groupName}] {modalSkillDetails.targetName}
+                    [{modalSkillDetails.groupName}]{' '}
+                    {modalSkillDetails.targetName}
                   </span>
                 </h3>
               </div>
@@ -717,7 +787,8 @@ export function SkillDamagePanel({
                   公式: (技能等级² / 145) + (技能等级 * 1.4) + 39.5
                 </div>
                 <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
-                  = ({modalSkillDetails.level}² / 145) + ({modalSkillDetails.level} * 1.4) + 39.5
+                  = ({modalSkillDetails.level}² / 145) + (
+                  {modalSkillDetails.level} * 1.4) + 39.5
                   <br />
                   <span className="mt-1 inline-block font-bold text-yellow-300">
                     = {modalSkillDetails.details.baseItem}
@@ -760,38 +831,60 @@ export function SkillDamagePanel({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          title={getPanelMagicDamageTooltipText(modalSkillDetails.details)}
+                          title={getPanelMagicDamageTooltipText(
+                            modalSkillDetails.details
+                          )}
                           className="inline-flex cursor-help items-center underline decoration-dotted underline-offset-2"
                         >
                           面板法伤: {modalSkillDetails.details.magicDamage}
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs whitespace-pre-line text-left">
-                        {getPanelMagicDamageTooltipText(modalSkillDetails.details)}
+                      <TooltipContent
+                        side="top"
+                        className="max-w-xs text-left whitespace-pre-line"
+                      >
+                        {getPanelMagicDamageTooltipText(
+                          modalSkillDetails.details
+                        )}
                       </TooltipContent>
                     </Tooltip>
                     <span>目标法防: {modalSkillDetails.details.targetDef}</span>
-                    <span>阵法系数: {modalSkillDetails.details.formationRatio}</span>
+                    <span>
+                      阵法系数: {modalSkillDetails.details.formationRatio}
+                    </span>
                     <span>修炼差: {modalSkillDetails.details.cultDiff}</span>
-                    <span>五行系数: {modalSkillDetails.details.elementFactor}</span>
+                    <span>
+                      五行系数: {modalSkillDetails.details.elementFactor}
+                    </span>
                     <span>神木符: {modalSkillDetails.details.shenmuValue}</span>
-                    <span>法伤结果: {modalSkillDetails.details.magicResult}</span>
+                    <span>
+                      法伤结果: {modalSkillDetails.details.magicResult}
+                    </span>
                   </div>
                 </div>
                 <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
-                  = ({modalSkillDetails.details.baseItem} + {modalSkillDetails.details.magicDamage} -{' '}
-                  {modalSkillDetails.details.targetDef}) * {modalSkillDetails.details.formationRatio} *{' '}
-                  {modalSkillDetails.details.elementFactor} * {modalSkillDetails.details.splitRatio} * (1 +{' '}
-                  {modalSkillDetails.details.cultDiff} * 0.02) + {modalSkillDetails.details.cultDiff} * 5 +{' '}
-                  {modalSkillDetails.details.shenmuValue} + {modalSkillDetails.details.magicResult}
+                  = ({modalSkillDetails.details.baseItem} +{' '}
+                  {modalSkillDetails.details.magicDamage} -{' '}
+                  {modalSkillDetails.details.targetDef}) *{' '}
+                  {modalSkillDetails.details.formationRatio} *{' '}
+                  {modalSkillDetails.details.elementFactor} *{' '}
+                  {modalSkillDetails.details.splitRatio} * (1 +{' '}
+                  {modalSkillDetails.details.cultDiff} * 0.02) +{' '}
+                  {modalSkillDetails.details.cultDiff} * 5 +{' '}
+                  {modalSkillDetails.details.shenmuValue} +{' '}
+                  {modalSkillDetails.details.magicResult}
                   <br />
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <div className="rounded border border-yellow-600/40 bg-yellow-900/30 px-4 py-2 font-bold text-yellow-300">
-                      <span className="mb-1 block text-[10px] text-yellow-500/80">普通伤害</span>
+                      <span className="mb-1 block text-[10px] text-yellow-500/80">
+                        普通伤害
+                      </span>
                       {modalSkillDetails.details.finalDamage}
                     </div>
                     <div className="rounded border border-red-600/40 bg-red-900/30 px-4 py-2 font-bold text-red-300">
-                      <span className="mb-1 block text-[10px] text-red-500/80">暴击伤害 (x1.5)</span>
+                      <span className="mb-1 block text-[10px] text-red-500/80">
+                        暴击伤害 (x1.5)
+                      </span>
                       {modalSkillDetails.details.critDamage}
                     </div>
                   </div>
@@ -800,16 +893,20 @@ export function SkillDamagePanel({
 
               {modalSkillDetails.details.matchedBonusRules?.length > 0 && (
                 <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
-                  <div className="mb-2 text-sm font-bold text-yellow-400">命中的技能加成规则</div>
+                  <div className="mb-2 text-sm font-bold text-yellow-400">
+                    命中的技能加成规则
+                  </div>
                   <div className="flex flex-wrap gap-2">
-                    {modalSkillDetails.details.matchedBonusRules.map((rule: any) => (
-                      <span
-                        key={rule.ruleCode}
-                        className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
-                      >
-                        {rule.skillName} +{rule.bonusValue}
-                      </span>
-                    ))}
+                    {modalSkillDetails.details.matchedBonusRules.map(
+                      (rule: any) => (
+                        <span
+                          key={rule.ruleCode}
+                          className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
+                        >
+                          {rule.skillName} +{rule.bonusValue}
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
               )}

@@ -1,4 +1,3 @@
-import { DUNGEON_DATABASE } from './gameData';
 import type { BaseAttributes, CombatStats, Equipment, Treasure } from './gameTypes';
 
 const COMBAT_STAT_KEYS: Array<keyof CombatStats> = [
@@ -111,10 +110,4 @@ export const computeDerivedStats = (
   result.magicPower = baseAttributes.magicPower + (equipmentTotals.magicPower ?? 0);
 
   return result;
-};
-
-export const getRandomDungeonTargets = (count = 3): string[] => {
-  const ids = DUNGEON_DATABASE.flatMap(dungeon => dungeon.targets.map(target => target.id));
-
-  return ids.slice(0, Math.max(1, count));
 };

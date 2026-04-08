@@ -1,4 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
+import { createPerfTimer } from '@/shared/lib/perf';
 import { updateSimulatorBattleContext } from '@/shared/models/simulator';
 import { getUserInfo } from '@/shared/models/user';
 
@@ -8,13 +9,22 @@ function toNumber(value: unknown, fallback = 0) {
 }
 
 export async function PATCH(req: Request) {
+  const timer = createPerfTimer('PATCH /api/simulator/current/battle-context', {
+    slowThresholdMs: 300,
+  });
+  let logMeta: Record<string, unknown> = { status: 'ok' };
+  let forceLog = false;
+
   try {
     const user = await getUserInfo();
+    timer.mark('user');
     if (!user) {
+      logMeta = { status: 'unauthorized' };
       return respErr('no auth, please sign in');
     }
 
     const body = await req.json();
+    timer.mark('body');
     const bundle = await updateSimulatorBattleContext(user.id, {
       selfFormation: String(body?.selfFormation || '天覆阵'),
       selfElement: String(body?.selfElement || '水'),
@@ -42,12 +52,26 @@ export async function PATCH(req: Request) {
     });
 
     if (!bundle) {
+      logMeta = { status: 'missing_character' };
       return respErr('simulator character not found');
     }
 
+    logMeta = {
+      status: 'ok',
+      equipmentCount: bundle.equipments.length,
+      hasTargetTemplate: Boolean(bundle.battleTargetTemplate),
+    };
+    timer.mark('update');
     return respData(bundle);
   } catch (error) {
+    forceLog = true;
+    logMeta = {
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    };
     console.error('failed to save simulator battle context:', error);
     return respErr('failed to save simulator battle context');
+  } finally {
+    timer.finish(logMeta, { force: forceLog });
   }
 }

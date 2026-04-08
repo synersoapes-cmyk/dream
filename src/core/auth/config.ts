@@ -27,11 +27,22 @@ const VERIFICATION_EMAIL_MIN_INTERVAL_MS = 60_000;
 
 // Static auth options - NO database connection
 // This ensures zero database calls during build time
+const devTrustedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:8787',
+  'http://127.0.0.1:8787',
+];
+
+const trustedOrigins = Array.from(
+  new Set([envConfigs.app_url, ...devTrustedOrigins].filter(Boolean))
+);
+
 const authOptions = {
   appName: envConfigs.app_name,
   baseURL: envConfigs.auth_url,
   secret: envConfigs.auth_secret,
-  trustedOrigins: envConfigs.app_url ? [envConfigs.app_url] : [],
+  trustedOrigins,
   user: {
     // Allow persisting custom columns on user table.
     // Without this, better-auth may ignore extra properties during create/update.

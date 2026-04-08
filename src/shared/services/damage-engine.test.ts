@@ -1,9 +1,9 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 
-import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import type { DamageRuleSet } from '@/shared/models/damage-rules';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
 import { calculateDamageFromRuleSet } from '@/shared/services/damage-engine';
 
 function createBundle(): SimulatorCharacterBundle {
@@ -169,7 +169,360 @@ function createRuleSet(): DamageRuleSet {
       createdAt: new Date(),
       updatedAt: new Date(),
     },
-    attributeConversions: [],
+    attributeConversions: [
+      {
+        id: 'attr_rule_1',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'baseHp',
+        targetAttr: 'hp',
+        coefficient: 5,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 10,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_2b',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'physique',
+        targetAttr: 'hp',
+        coefficient: 12,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 20,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_2',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'endurance',
+        targetAttr: 'hp',
+        coefficient: 4,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 30,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_3',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'magic',
+        targetAttr: 'mp',
+        coefficient: 1.6,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 40,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_4',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'spirit',
+        targetAttr: 'mp',
+        coefficient: 0.25,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 50,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_5',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'magic',
+        targetAttr: 'magicDamage',
+        coefficient: 5,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 60,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_6',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'spirit',
+        targetAttr: 'magicDamage',
+        coefficient: 1.2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 70,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_7',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'magicDamage',
+        coefficient: 3,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 80,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_8',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'spirit',
+        targetAttr: 'magicDefense',
+        coefficient: 0.6,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 90,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_9',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'endurance',
+        targetAttr: 'magicDefense',
+        coefficient: 2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 100,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_10',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'magicDefense',
+        coefficient: 2.6,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 110,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_11',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'strength',
+        targetAttr: 'hit',
+        coefficient: 2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 140,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_12',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'hit',
+        coefficient: 6,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 150,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_13',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'strength',
+        targetAttr: 'damage',
+        coefficient: 8,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 160,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_14',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'damage',
+        coefficient: 6,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 170,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_15',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'endurance',
+        targetAttr: 'defense',
+        coefficient: 4,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 180,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_16',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'physique',
+        targetAttr: 'defense',
+        coefficient: 2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 190,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_17',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'defense',
+        coefficient: 3,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 200,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_18',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'agility',
+        targetAttr: 'speed',
+        coefficient: 4,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 120,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_19',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'speed',
+        coefficient: 2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 130,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_20',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'agility',
+        targetAttr: 'dodge',
+        coefficient: 2,
+        valueType: 'linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 210,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'attr_rule_21',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        sourceAttr: 'level',
+        targetAttr: 'dodge',
+        coefficient: 0.8,
+        valueType: 'floor_linear',
+        conditionJson: '{}',
+        condition: {},
+        sort: 220,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ],
     skillFormulas: [
       {
         id: 'formula_1',
@@ -303,7 +656,8 @@ test('calculateDamageFromRuleSet falls back to persisted battle context defaults
   assert.equal(result.targets[0]?.targetName, '默认目标');
   assert.equal(result.targets[0]?.totalDamage, result.targets[0]!.damage * 7);
   assert.equal(
-    (result.targets[0]?.breakdown as Record<string, unknown>).formationCounterFactor,
+    (result.targets[0]?.breakdown as Record<string, unknown>)
+      .formationCounterFactor,
     1.1
   );
   assert.equal(
@@ -315,7 +669,8 @@ test('calculateDamageFromRuleSet falls back to persisted battle context defaults
     42
   );
   assert.equal(
-    (result.targets[0]?.breakdown as Record<string, unknown>).targetMagicDefense,
+    (result.targets[0]?.breakdown as Record<string, unknown>)
+      .targetMagicDefense,
     1250
   );
 });
@@ -349,7 +704,8 @@ test('calculateDamageFromRuleSet prefers explicit request values over persisted 
   assert.equal(result.targets[0]?.targetName, '手动目标');
   assert.equal(result.targets[0]?.totalDamage, result.targets[0]!.damage);
   assert.equal(
-    (result.targets[0]?.breakdown as Record<string, unknown>).formationCounterFactor,
+    (result.targets[0]?.breakdown as Record<string, unknown>)
+      .formationCounterFactor,
     0.75
   );
   assert.equal(
@@ -361,7 +717,77 @@ test('calculateDamageFromRuleSet prefers explicit request values over persisted 
     10
   );
   assert.equal(
-    (result.targets[0]?.breakdown as Record<string, unknown>).targetMagicDefense,
+    (result.targets[0]?.breakdown as Record<string, unknown>)
+      .targetMagicDefense,
     800
   );
+});
+
+test('calculateDamageFromRuleSet derives panel magic damage from attribute rules instead of profile snapshot value', () => {
+  const bundle = createBundle();
+  const domain = buildSimulatorCharacterDomain(bundle);
+
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(breakdown.panelMagicDamage, 2429);
+  assert.equal(breakdown.panelMagicDamageSource, 'rule_attribute_conversion');
+  assert.equal(
+    breakdown.panelMagicDamageBreakdown.ruleDerivedMagicDamage,
+    2209
+  );
+  assert.equal(
+    breakdown.panelMagicDamageBreakdown.equipmentMagicDamageFlat,
+    220
+  );
+  assert.equal(result.panelStats.hp, 4200);
+  assert.equal(result.panelStats.mp, 520.5);
+  assert.equal(result.panelStats.hit, 684);
+  assert.equal(result.panelStats.damage, 774);
+  assert.equal(result.panelStats.defense, 547);
+  assert.ok(Math.abs(result.panelStats.magicDefense - 719.4) < 1e-9);
+  assert.equal(result.panelStats.speed, 298);
+  assert.equal(result.panelStats.dodge, 127);
+  assert.equal(breakdown.ruleResolvedPanelStats.hp, 4200);
+  assert.equal(breakdown.ruleResolvedPanelStats.hit, 684);
+  assert.equal(breakdown.ruleResolvedPanelStats.damage, 774);
+  assert.equal(breakdown.ruleResolvedPanelStats.defense, 547);
+  assert.equal(breakdown.ruleResolvedPanelStats.dodge, 127);
+});
+
+test('calculateDamageFromRuleSet keeps explicit panel magic damage override for rule playground debugging', () => {
+  const bundle = createBundle();
+  const domain = buildSimulatorCharacterDomain(bundle);
+
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      panelMagicDamageOverride: 1500,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(breakdown.panelMagicDamage, 1500);
+  assert.equal(
+    breakdown.panelMagicDamageSource,
+    'request.panelMagicDamageOverride'
+  );
+  assert.equal(breakdown.panelMagicDamageBreakdown.overrideApplied, true);
+  assert.equal(breakdown.panelMagicDamageBreakdown.overrideValue, 1500);
 });

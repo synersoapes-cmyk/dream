@@ -13,6 +13,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
+import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import { getUuid } from '@/shared/lib/hash';
 
@@ -326,6 +327,8 @@ async function initializeRBAC() {
   console.log('🚀 Starting RBAC initialization...\n');
 
   try {
+    await initD1ContextForDev();
+
     const { permission, role, rolePermission, user, userRole } =
       (await loadSchemaTables()) as any;
 

@@ -12,6 +12,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
+import { initD1ContextForDev } from '@/core/db/d1';
 import { envConfigs } from '@/config';
 import { getUuid } from '@/shared/lib/hash';
 
@@ -55,6 +56,8 @@ async function assignRole() {
   }
 
   try {
+    await initD1ContextForDev();
+
     const { user, role, userRole } = (await loadSchemaTables()) as any;
     const sqlEq: any = eq;
     const sqlAnd: any = and;

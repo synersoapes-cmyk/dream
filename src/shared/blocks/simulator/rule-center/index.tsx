@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { formatDateTimeValue } from '@/shared/lib/date';
 import { Button } from '@/shared/components/ui/button';
 import {
   Card,
@@ -23,16 +24,10 @@ type RuleCenterPanelProps = {
 };
 
 function formatDate(value: Date | number | string | null | undefined) {
-  if (!value) {
-    return '-';
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-
-  return date.toLocaleString('zh-CN');
+  return formatDateTimeValue(value, {
+    locale: 'zh-CN',
+    empty: '-',
+  });
 }
 
 function stringifyPretty(value: unknown) {

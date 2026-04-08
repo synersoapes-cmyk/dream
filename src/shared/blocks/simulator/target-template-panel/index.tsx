@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search, Trash2 } from 'lucide-react';
 
+import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -30,14 +31,10 @@ function toNumber(value: string) {
 }
 
 function formatDate(timestamp: number) {
-  if (!timestamp) {
-    return '未记录';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(timestamp));
+  return formatDateTimeValue(timestamp, {
+    locale: 'zh-CN',
+    empty: '未记录',
+  });
 }
 
 function createBlankItem(): EditableItem {

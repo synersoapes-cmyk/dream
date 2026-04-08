@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 
+import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -20,14 +21,10 @@ type Props = {
 };
 
 function formatDate(timestamp: number | null) {
-  if (!timestamp) {
-    return '未记录';
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(timestamp));
+  return formatDateTimeValue(timestamp, {
+    locale: 'zh-CN',
+    empty: '未记录',
+  });
 }
 
 export function SimulatorUserDiagnosticsPanel({ initialItems }: Props) {

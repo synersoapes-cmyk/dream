@@ -9,8 +9,8 @@ import type {
   Equipment,
   PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
-import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
+import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simulatorLabSession';
@@ -265,6 +265,14 @@ function calculateEquipmentTotalStats(equipments: Equipment[]) {
   return { totals, totalPrice };
 }
 
+function getFallbackSeatTotalDamage(seatCombatStats: Record<string, number>) {
+  return (
+    (seatCombatStats.magicDamage || 0) +
+    (seatCombatStats.magicPower || 0) * 0.7 +
+    (seatCombatStats.damage || 0) * 0.25
+  );
+}
+
 // 计算席位的显示名称
 function getSeatDisplayName(seat: any, allSeats: any[]) {
   if (seat.isSample) {
@@ -338,6 +346,7 @@ export function LaboratoryPanel() {
     (state) => state.removeExperimentSeatEquipment
   );
   const combatTarget = useGameStore((state) => state.combatTarget);
+  const combatStats = useGameStore((state) => state.combatStats);
   const selectedDungeonIds = useGameStore((state) => state.selectedDungeonIds);
   const updateCombatTarget = useGameStore((state) => state.updateCombatTarget);
   const manualTargets = useGameStore((state) => state.manualTargets);
@@ -361,7 +370,10 @@ export function LaboratoryPanel() {
   // 初始化技能选择
   useEffect(() => {
     if (skills && skills.length > 0 && !selectedSkillName) {
-      setSelectedSkillName(skills[0].name);
+      setSelectedSkillName(
+        skills.find((skill) => skill.name === '龙卷雨击')?.name ||
+          skills[0].name
+      );
     }
   }, [skills, selectedSkillName]);
 
@@ -403,6 +415,13 @@ export function LaboratoryPanel() {
   const libraryEquipments = libraryList.map((item) => item.equipment);
 
   const { baseAttributes, treasure } = useGameStore();
+  const [labValuationBySeatId, setLabValuationBySeatId] = useState<
+    Record<string, any>
+  >({});
+  const [isLoadingLabValuation, setIsLoadingLabValuation] = useState(false);
+  const [labValuationError, setLabValuationError] = useState<string | null>(
+    null
+  );
 
   // 格式化金额：默认不显示小数，有小数时最多显示2位
   const formatPrice = (price: number | undefined) => {
@@ -665,11 +684,119 @@ export function LaboratoryPanel() {
     }
   };
 
+  const sampleEquipment = useMemo(
+    () => equipmentSets[selectedSampleSetIndex]?.items || currentEquipment,
+    [equipmentSets, selectedSampleSetIndex, currentEquipment]
+  );
+  const compareSeatCount = useMemo(
+    () => experimentSeats.filter((seat) => !seat.isSample).length,
+    [experimentSeats]
+  );
   // 基础样本数据
   const baseSampleStats = useMemo(
-    () => calculateEquipmentTotalStats(currentEquipment),
-    [currentEquipment]
+    () => calculateEquipmentTotalStats(sampleEquipment),
+    [sampleEquipment]
   );
+
+  const labValuationPayload = useMemo(() => {
+    const preferredSkillName =
+      skills?.find((skill) => skill.name === '龙卷雨击')?.name ||
+      skills?.[0]?.name;
+    const skillName = selectedSkillName || preferredSkillName;
+    if (!skillName || experimentSeats.length === 0) {
+      return null;
+    }
+
+    return {
+      baseAttributes,
+      combatStats,
+      treasure,
+      skillName,
+      targetCount: selectedTargetCount,
+      target: {
+        name: combatTarget.name,
+        magicDefense: combatTarget.magicDefense || 0,
+      },
+      seats: experimentSeats.slice(0, 2).map((seat) => {
+        const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
+        const { totalPrice } = calculateEquipmentTotalStats(seatEquip);
+
+        return {
+          seatId: seat.id,
+          seatName: getSeatDisplayName(seat, experimentSeats),
+          isSample: seat.isSample,
+          totalPrice,
+          equipment: seatEquip,
+        };
+      }),
+    };
+  }, [
+    baseAttributes,
+    combatStats,
+    treasure,
+    selectedSkillName,
+    skills,
+    selectedTargetCount,
+    combatTarget,
+    experimentSeats,
+    sampleEquipment,
+  ]);
+
+  useEffect(() => {
+    if (!labValuationPayload) {
+      setLabValuationBySeatId({});
+      setLabValuationError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsLoadingLabValuation(true);
+        setLabValuationError(null);
+        const response = await fetch('/api/simulator/current/lab-valuation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(labValuationPayload),
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+
+        if (
+          !response.ok ||
+          payload?.code !== 0 ||
+          !Array.isArray(payload?.data?.seats)
+        ) {
+          throw new Error(payload?.message || '实验室服务端试算失败');
+        }
+
+        setLabValuationBySeatId(
+          Object.fromEntries(
+            payload.data.seats.map((seat: any) => [seat.seatId, seat])
+          )
+        );
+      } catch (error) {
+        if ((error as Error)?.name === 'AbortError') {
+          return;
+        }
+
+        console.error('failed to calculate laboratory valuation:', error);
+        setLabValuationBySeatId({});
+        setLabValuationError(
+          error instanceof Error ? error.message : '实验室服务端试算失败'
+        );
+      } finally {
+        setIsLoadingLabValuation(false);
+      }
+    }, 180);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [labValuationPayload]);
 
   const [simulatedLibEquip, setSimulatedLibEquip] = useState<any>(null);
 
@@ -731,13 +858,10 @@ export function LaboratoryPanel() {
     });
 
     try {
-      const configResponse = await fetch(
-        '/api/simulator/current/ocr/config',
-        {
-          method: 'GET',
-          cache: 'no-store',
-        }
-      );
+      const configResponse = await fetch('/api/simulator/current/ocr/config', {
+        method: 'GET',
+        cache: 'no-store',
+      });
       const configPayload = await configResponse.json();
       if (
         !configResponse.ok ||
@@ -1433,15 +1557,27 @@ export function LaboratoryPanel() {
                 ? `${combatTarget.dungeonName} - ${combatTarget.name}`
                 : combatTarget.name || '选择目标'}
             </button>
+            {compareSeatCount === 0 && (
+              <button
+                onClick={() => addExperimentSeat()}
+                className="flex items-center gap-1 rounded-lg border border-yellow-600/40 bg-yellow-600/20 px-3 py-1.5 text-sm font-medium text-yellow-100 transition-colors hover:bg-yellow-600/30"
+              >
+                <Plus className="h-4 w-4" />
+                新增对比席位
+              </button>
+            )}
           </div>
         </div>
+        {labValuationError && (
+          <div className="border-t border-yellow-800/20 px-5 py-2 text-xs text-amber-300">
+            服务端试算不可用：{labValuationError}
+          </div>
+        )}
 
         <div className="flex flex-1 gap-4 overflow-hidden p-4">
           {/* 三个模块并排展示 */}
           {experimentSeats.slice(0, 2).map((seat) => {
             // 样本席位使用选中的装备组合，对比席位使用自己的装备
-            const sampleEquipment =
-              equipmentSets[selectedSampleSetIndex]?.items || currentEquipment;
             const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
             const { totals, totalPrice } =
               calculateEquipmentTotalStats(seatEquip);
@@ -1488,6 +1624,9 @@ export function LaboratoryPanel() {
             const combatDiffs: Record<string, number> = {};
             let totalDamageDiff = 0;
             let diffPrice = 0;
+            const seatLabValuation = labValuationBySeatId[seat.id];
+            const isServiceUnavailable =
+              Boolean(labValuationError) && !seatLabValuation;
 
             if (!seat.isSample) {
               // 基础装备属性差异（展示用）
@@ -1517,6 +1656,12 @@ export function LaboratoryPanel() {
                 : combatDiffs.damage || 0;
 
               diffPrice = totalPrice - baseSampleStats.totalPrice;
+
+              if (seatLabValuation?.comparison) {
+                totalDamageDiff =
+                  seatLabValuation.comparison.damageDiff ?? totalDamageDiff;
+                diffPrice = seatLabValuation.comparison.priceDiff ?? diffPrice;
+              }
             }
 
             const displayDiffs = { ...combatDiffs };
@@ -1527,22 +1672,29 @@ export function LaboratoryPanel() {
               }
             });
 
-            let costPerDamageDisplay = '-';
-            if (totalDamageDiff > 0) {
-              if (diffPrice > 0) {
-                costPerDamageDisplay = `¥ ${(diffPrice / totalDamageDiff).toFixed(1)}`;
+            let costPerDamageDisplay =
+              seatLabValuation?.comparison?.costLabel || '-';
+            if (!seatLabValuation?.comparison && !isServiceUnavailable) {
+              if (totalDamageDiff > 0) {
+                if (diffPrice > 0) {
+                  costPerDamageDisplay = `¥ ${(diffPrice / totalDamageDiff).toFixed(1)}`;
+                } else {
+                  costPerDamageDisplay = '收益';
+                }
+              } else if (totalDamageDiff < 0) {
+                if (diffPrice < 0) {
+                  costPerDamageDisplay = `省 ¥ ${Math.abs(diffPrice / totalDamageDiff).toFixed(1)}`;
+                } else {
+                  costPerDamageDisplay = '纯亏';
+                }
               } else {
-                costPerDamageDisplay = '收益'; // 提升了伤害且没多花钱
+                costPerDamageDisplay =
+                  diffPrice > 0
+                    ? '只花钱不提升'
+                    : diffPrice < 0
+                      ? '纯省钱'
+                      : '-';
               }
-            } else if (totalDamageDiff < 0) {
-              if (diffPrice < 0) {
-                costPerDamageDisplay = `省 ¥ ${Math.abs(diffPrice / totalDamageDiff).toFixed(1)}`; // 降低伤害但省钱
-              } else {
-                costPerDamageDisplay = '纯亏'; // 降低伤害且多花钱
-              }
-            } else {
-              costPerDamageDisplay =
-                diffPrice > 0 ? '只花钱不提升' : diffPrice < 0 ? '纯省钱' : '-';
             }
 
             return (
@@ -1849,19 +2001,23 @@ export function LaboratoryPanel() {
                   ) : (
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs font-bold">
-                        <span className="text-yellow-100">核心伤害提升:</span>
-                        <span
-                          className={
-                            totalDamageDiff > 0
-                              ? 'text-green-400'
-                              : totalDamageDiff < 0
-                                ? 'text-red-400'
-                                : 'text-slate-400'
-                          }
-                        >
-                          {totalDamageDiff > 0 ? '+' : ''}
-                          {Math.round(totalDamageDiff)}
-                        </span>
+                        <span className="text-yellow-100">服务端总伤提升:</span>
+                        {isServiceUnavailable ? (
+                          <span className="text-amber-300">不可用</span>
+                        ) : (
+                          <span
+                            className={
+                              totalDamageDiff > 0
+                                ? 'text-green-400'
+                                : totalDamageDiff < 0
+                                  ? 'text-red-400'
+                                  : 'text-slate-400'
+                            }
+                          >
+                            {totalDamageDiff > 0 ? '+' : ''}
+                            {Math.round(totalDamageDiff)}
+                          </span>
+                        )}
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-400">差价成本:</span>
@@ -1875,8 +2031,17 @@ export function LaboratoryPanel() {
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-400">单点伤害成本:</span>
                         <span className="text-yellow-400">
-                          {costPerDamageDisplay}
-                          {costPerDamageDisplay.includes('¥') ? ' / 点' : ''}
+                          {isServiceUnavailable
+                            ? '不可用'
+                            : isLoadingLabValuation &&
+                                !seatLabValuation?.comparison &&
+                                costPerDamageDisplay === '-'
+                              ? '计算中'
+                              : costPerDamageDisplay}
+                          {!isServiceUnavailable &&
+                          costPerDamageDisplay.includes('¥')
+                            ? ' / 点'
+                            : ''}
                         </span>
                       </div>
                     </div>
@@ -1890,9 +2055,6 @@ export function LaboratoryPanel() {
           <div className="flex-1 overflow-auto rounded-xl border border-yellow-800/40 bg-slate-900/60 p-4">
             {(() => {
               // 准备两个席位的对比数据
-              const sampleEquipment =
-                equipmentSets[selectedSampleSetIndex]?.items ||
-                currentEquipment;
               const displaySeats = experimentSeats.slice(0, 2);
 
               const allSeatsData = displaySeats.map((seat) => {
@@ -1906,6 +2068,7 @@ export function LaboratoryPanel() {
                   seatEquip,
                   treasure
                 );
+                const seatLabValuation = labValuationBySeatId[seat.id];
 
                 return {
                   seat,
@@ -1913,6 +2076,7 @@ export function LaboratoryPanel() {
                   totals,
                   totalPrice,
                   seatCombatStats,
+                  seatLabValuation,
                 };
               });
 
@@ -2085,12 +2249,12 @@ export function LaboratoryPanel() {
                                 const runeSetName =
                                   equipment?.runeStoneSetsNames?.[0];
 
-                                const sampleEquipment =
+                                const sampleSlotEquipment =
                                   allSeatsData[0].seatEquip.find(
                                     (eq) => eq.type === type
                                   );
                                 const sampleRuneSetName =
-                                  sampleEquipment?.runeStoneSetsNames?.[0];
+                                  sampleSlotEquipment?.runeStoneSetsNames?.[0];
                                 const isDifferent =
                                   idx !== 0 &&
                                   runeSetName !== sampleRuneSetName;
@@ -2213,33 +2377,27 @@ export function LaboratoryPanel() {
                         {/* 伤害预估 */}
                         <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
                           <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            综合伤害
+                            服务端总伤
                           </td>
                           {allSeatsData.map(
-                            ({ seat, seatCombatStats }, idx) => {
-                              const magicDamage =
-                                seatCombatStats.magicDamage || 0;
-                              const magicPower =
-                                seatCombatStats.magicPower || 0;
-                              const physicalDamage =
-                                seatCombatStats.damage || 0;
+                            (
+                              { seat, seatCombatStats, seatLabValuation },
+                              idx
+                            ) => {
+                              const isServiceUnavailable =
+                                Boolean(labValuationError) && !seatLabValuation;
+                              const fallbackTotalDamage =
+                                getFallbackSeatTotalDamage(seatCombatStats);
+                              const fallbackSampleTotalDamage =
+                                getFallbackSeatTotalDamage(
+                                  allSeatsData[0].seatCombatStats
+                                );
                               const totalDamage =
-                                magicDamage +
-                                magicPower * 0.7 +
-                                physicalDamage * 0.25;
-
-                              const sampleMagicDamage =
-                                allSeatsData[0].seatCombatStats.magicDamage ||
-                                0;
-                              const sampleMagicPower =
-                                allSeatsData[0].seatCombatStats.magicPower || 0;
-                              const samplePhysicalDamage =
-                                allSeatsData[0].seatCombatStats.damage || 0;
+                                seatLabValuation?.totalDamage ??
+                                fallbackTotalDamage;
                               const sampleTotalDamage =
-                                sampleMagicDamage +
-                                sampleMagicPower * 0.7 +
-                                samplePhysicalDamage * 0.25;
-
+                                allSeatsData[0].seatLabValuation?.totalDamage ??
+                                fallbackSampleTotalDamage;
                               const diff =
                                 idx === 0 ? 0 : totalDamage - sampleTotalDamage;
                               const isUnchanged =
@@ -2252,7 +2410,16 @@ export function LaboratoryPanel() {
                                   key={seat.id}
                                   className="p-2.5 text-center text-xs"
                                 >
-                                  {isUnchanged ? (
+                                  {isLoadingLabValuation &&
+                                  !seatLabValuation ? (
+                                    <span className="text-slate-500">
+                                      计算中
+                                    </span>
+                                  ) : isServiceUnavailable ? (
+                                    <span className="text-amber-300">
+                                      不可用
+                                    </span>
+                                  ) : isUnchanged ? (
                                     <span className="text-slate-500">—</span>
                                   ) : (
                                     <div className="flex flex-col items-center gap-0.5">
@@ -2295,9 +2462,12 @@ export function LaboratoryPanel() {
                             总价格
                           </td>
                           {allSeatsData.map(({ seat, totalPrice }, idx) => {
-                            const samplePrice = allSeatsData[0].totalPrice;
                             const diff =
-                              idx === 0 ? 0 : totalPrice - samplePrice;
+                              idx === 0
+                                ? 0
+                                : (allSeatsData[idx].seatLabValuation
+                                    ?.comparison?.priceDiff ??
+                                  totalPrice - allSeatsData[0].totalPrice);
 
                             return (
                               <td
@@ -2326,7 +2496,14 @@ export function LaboratoryPanel() {
                             1点伤害成本
                           </td>
                           {allSeatsData.map(
-                            ({ seat, totalPrice, seatCombatStats }, idx) => {
+                            ({
+                              seat,
+                              totalPrice,
+                              seatCombatStats,
+                              seatLabValuation,
+                            }) => {
+                              const isServiceUnavailable =
+                                Boolean(labValuationError) && !seatLabValuation;
                               if (seat.isSample) {
                                 return (
                                   <td
@@ -2338,46 +2515,56 @@ export function LaboratoryPanel() {
                                 );
                               }
 
-                              const magicDamage =
-                                seatCombatStats.magicDamage || 0;
-                              const magicPower =
-                                seatCombatStats.magicPower || 0;
-                              const physicalDamage =
-                                seatCombatStats.damage || 0;
+                              const fallbackTotalDamage =
+                                getFallbackSeatTotalDamage(seatCombatStats);
+                              const fallbackSampleTotalDamage =
+                                getFallbackSeatTotalDamage(
+                                  allSeatsData[0].seatCombatStats
+                                );
                               const totalDamage =
-                                magicDamage +
-                                magicPower * 0.7 +
-                                physicalDamage * 0.25;
-
-                              const sampleMagicDamage =
-                                allSeatsData[0].seatCombatStats.magicDamage ||
-                                0;
-                              const sampleMagicPower =
-                                allSeatsData[0].seatCombatStats.magicPower || 0;
-                              const samplePhysicalDamage =
-                                allSeatsData[0].seatCombatStats.damage || 0;
+                                seatLabValuation?.totalDamage ??
+                                fallbackTotalDamage;
                               const sampleTotalDamage =
-                                sampleMagicDamage +
-                                sampleMagicPower * 0.7 +
-                                samplePhysicalDamage * 0.25;
-
+                                allSeatsData[0].seatLabValuation?.totalDamage ??
+                                fallbackSampleTotalDamage;
                               const damageDiff =
                                 totalDamage - sampleTotalDamage;
                               const priceDiff =
+                                seatLabValuation?.comparison?.priceDiff ??
                                 totalPrice - allSeatsData[0].totalPrice;
                               const costPerDamage =
-                                damageDiff > 0 ? priceDiff / damageDiff : 0;
+                                seatLabValuation?.comparison?.costPerDamage ??
+                                (damageDiff > 0 ? priceDiff / damageDiff : 0);
+                              const costLabel =
+                                seatLabValuation?.comparison?.costLabel;
+                              const shouldShowNumericCost =
+                                !costLabel || costLabel === '-';
 
                               return (
                                 <td
                                   key={seat.id}
                                   className="p-2.5 text-center text-xs"
                                 >
-                                  {damageDiff <= 0 ? (
+                                  {isLoadingLabValuation &&
+                                  !seatLabValuation ? (
+                                    <span className="text-slate-500">
+                                      计算中
+                                    </span>
+                                  ) : isServiceUnavailable ? (
+                                    <span className="text-amber-300">
+                                      不可用
+                                    </span>
+                                  ) : costLabel && costLabel !== '-' ? (
+                                    <span className="text-[#fff064]">
+                                      {costLabel}
+                                    </span>
+                                  ) : damageDiff <= 0 ? (
                                     <span className="text-slate-500">—</span>
                                   ) : (
                                     <div className="text-[#fff064]">
-                                      ¥{Math.round(costPerDamage)}
+                                      {shouldShowNumericCost
+                                        ? `¥${Math.round(costPerDamage)}`
+                                        : costLabel}
                                     </div>
                                   )}
                                 </td>

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 
+import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -39,6 +40,29 @@ type Props = {
 function toNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatTimestamp(timestamp: number) {
+  return formatDateTimeValue(timestamp, {
+    locale: 'zh-CN',
+    empty: '未记录',
+  });
+}
+
+function getPreviewImageSrc(imagePreview?: string) {
+  if (!imagePreview) {
+    return undefined;
+  }
+
+  if (/^https?:\/\//i.test(imagePreview)) {
+    return `/api/proxy/file?url=${encodeURIComponent(imagePreview)}`;
+  }
+
+  if (imagePreview.startsWith('/')) {
+    return imagePreview;
+  }
+
+  return `/api/proxy/file?key=${encodeURIComponent(imagePreview)}`;
 }
 
 export function SimulatorPendingReviewPanel({
@@ -266,7 +290,7 @@ export function SimulatorPendingReviewPanel({
                   来源：{item.source}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  时间：{new Date(item.timestamp).toLocaleString('zh-CN')}
+                  时间：{formatTimestamp(item.timestamp)}
                 </div>
               </button>
             ))
@@ -411,9 +435,9 @@ export function SimulatorPendingReviewPanel({
               <div className="space-y-2">
                 <Label>原图预览</Label>
                 <div className="overflow-hidden rounded-lg border bg-muted/20">
-                  {selectedItem.imagePreview ? (
+                  {getPreviewImageSrc(selectedItem.imagePreview) ? (
                     <img
-                      src={selectedItem.imagePreview}
+                      src={getPreviewImageSrc(selectedItem.imagePreview)}
                       alt={String(selectedItem.equipment.name || 'pending-equipment')}
                       className="h-auto w-full object-cover"
                     />

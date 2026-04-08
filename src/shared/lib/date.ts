@@ -1,4 +1,5 @@
 const DEFAULT_LOCALE = 'en';
+const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
 
 function pad(value: number) {
   return value.toString().padStart(2, '0');
@@ -61,6 +62,34 @@ export function formatDateValue(
         minute: '2-digit',
       }).format(date);
   }
+}
+
+export function formatDateTimeValue(
+  value: string | number | Date | null | undefined,
+  {
+    locale,
+    timeZone = DEFAULT_TIME_ZONE,
+    empty = '',
+    dateStyle = 'medium',
+    timeStyle = 'short',
+  }: {
+    locale?: string | null;
+    timeZone?: string;
+    empty?: string;
+    dateStyle?: 'full' | 'long' | 'medium' | 'short';
+    timeStyle?: 'full' | 'long' | 'medium' | 'short';
+  } = {}
+) {
+  const date = toDate(value);
+  if (!date) {
+    return empty;
+  }
+
+  return new Intl.DateTimeFormat(normalizeDateLocale(locale), {
+    dateStyle,
+    timeStyle,
+    timeZone,
+  }).format(date);
 }
 
 export function formatRelativeTime(

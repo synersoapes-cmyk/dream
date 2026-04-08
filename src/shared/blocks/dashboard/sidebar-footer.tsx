@@ -16,9 +16,17 @@ export function SidebarFooter({ footer }: { footer: SidebarFooterType }) {
     <>
       {open ? (
         <div className="mx-auto flex w-full items-center justify-start gap-x-4 border-t px-4 py-3">
-          {footer.nav?.items?.map((item: NavItem, idx: number) => (
-            <div className="hover:text-primary cursor-pointer" key={idx}>
-              <Link href={item.url || ''} target={item.target || '_self'}>
+          {footer.nav?.items?.map((item: NavItem, idx: number) => {
+            const label = item.title || item.name || item.text || item.url || '链接';
+
+            return (
+              <div className="hover:text-primary cursor-pointer" key={idx}>
+                <Link
+                  href={item.url || ''}
+                  target={item.target || '_self'}
+                  aria-label={label}
+                  title={label}
+                >
                 {item.icon && (
                   <SmartIcon
                     name={item.icon as string}
@@ -26,9 +34,10 @@ export function SidebarFooter({ footer }: { footer: SidebarFooterType }) {
                     size={20}
                   />
                 )}
-              </Link>
-            </div>
-          ))}
+                </Link>
+              </div>
+            );
+          })}
 
           <div className="flex-1"></div>
 

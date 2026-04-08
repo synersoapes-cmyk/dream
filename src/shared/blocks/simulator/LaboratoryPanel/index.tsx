@@ -1,9 +1,7 @@
-// @ts-nocheck
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
-import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   Equipment,
@@ -17,7 +15,6 @@ import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simu
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
 import {
   ChevronRight,
-  Edit2,
   Minus,
   Package,
   Plus,
@@ -30,257 +27,60 @@ import {
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { usePopper } from 'react-popper';
 import { toast } from 'sonner';
 
 import { UploadPopover } from '@/shared/blocks/simulator/CharacterPanel/UploadPopover';
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
-import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
+import { formatDateTimeValue } from '@/shared/lib/date';
+import {
+  getDefaultSimulatorSecondaryCategory,
+  getSimulatorSlotDefinitions,
+  getSimulatorSlotLabel,
+  matchesSimulatorSlotDefinition,
+  SIMULATOR_CATEGORY_CONFIG,
+} from '@/shared/lib/simulator-slot-config';
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+import type { LabValuationSeatResult } from '@/shared/services/lab-valuation';
 
+import {
+  AVAILABLE_GEMSTONES,
+  AVAILABLE_RUNE_SETS,
+  AVAILABLE_RUNES,
+  AVAILABLE_STAR_ALIGNMENTS,
+  AVAILABLE_STAR_POSITIONS,
+  calculateEquipmentTotalStats,
+  getSeatDisplayName,
+} from './laboratory-utils';
+import { LaboratoryComparisonTable } from './LaboratoryComparisonTable';
+import { LaboratoryEquipmentDetailModal } from './LaboratoryEquipmentDetailModal';
+import { LaboratorySeatCard } from './LaboratorySeatCard';
 import { LibraryEquipmentCard } from './LibraryEquipmentCard';
 import { PendingEquipmentCard } from './PendingEquipmentCard';
 import { PendingEquipmentDetailModal } from './PendingEquipmentDetailModal';
 
-// 简化的属性中文映射
-const statNames: Record<string, string> = {
-  hp: '气血',
-  magic: '魔法',
-  hit: '命中',
-  damage: '伤害',
-  magicDamage: '法伤',
-  defense: '防御',
-  magicDefense: '法防',
-  speed: '速度',
-  dodge: '躲避',
-  physique: '体质',
-  magicPower: '魔力',
-  strength: '力量',
-  endurance: '耐力',
-  agility: '敏捷',
+type EquipmentRollbackSnapshot = {
+  id: string;
+  name: string;
+  source: string;
+  notes: string;
+  createdAt: number | string | null;
 };
 
-function toDisplayText(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0
-    ? value.trim()
-    : null;
-}
-
-function getUniqueDisplayTexts(values: Array<unknown>) {
-  return Array.from(
-    new Set(values.map(toDisplayText).filter(Boolean))
-  ) as string[];
-}
-
-function getEquipmentEffectTexts(
-  equipments: Equipment[],
-  options: {
-    predicate?: (equipment: Equipment) => boolean;
-    includeRuneSetName?: boolean;
-    includeRuneSetEffect?: boolean;
-    includeSetName?: boolean;
-    includeSpecialEffect?: boolean;
-    includeRefinementEffect?: boolean;
-    includeExtraStat?: boolean;
-    includeHighlights?: boolean;
+function isEquipmentRollbackSnapshot(
+  value: unknown
+): value is EquipmentRollbackSnapshot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
   }
-) {
-  return getUniqueDisplayTexts(
-    equipments.flatMap((equipment) => {
-      if (options.predicate && !options.predicate(equipment)) {
-        return [];
-      }
 
-      const values: Array<unknown> = [];
+  const snapshot = value as Record<string, unknown>;
 
-      if (options.includeRuneSetName) {
-        values.push(...getEquipmentRuneStoneSetInfo([equipment]));
-      }
-      if (options.includeRuneSetEffect) {
-        values.push(equipment.runeSetEffect);
-      }
-      if (options.includeSetName) {
-        values.push(equipment.setName);
-      }
-      if (options.includeSpecialEffect) {
-        values.push(equipment.specialEffect);
-      }
-      if (options.includeRefinementEffect) {
-        values.push(equipment.refinementEffect);
-      }
-      if (options.includeExtraStat) {
-        values.push(equipment.extraStat);
-      }
-      if (options.includeHighlights) {
-        values.push(...(equipment.highlights ?? []));
-      }
-
-      return values;
-    })
-  );
-}
-
-function summarizeEquipmentEffects(
-  equipments: Equipment[],
-  options: Parameters<typeof getEquipmentEffectTexts>[1]
-) {
-  return getEquipmentEffectTexts(equipments, options).join(' / ');
-}
-
-const cloneRuneStoneSets = (equipment: Equipment): Equipment['runeStoneSets'] =>
-  equipment.runeStoneSets?.map((set) =>
-    set.map((runeStone) => ({
-      ...runeStone,
-      stats: { ...runeStone.stats },
-    }))
-  );
-
-function cloneEquipmentForEditor(equipment: Equipment): Equipment {
-  return {
-    ...equipment,
-    highlights: equipment.highlights ? [...equipment.highlights] : undefined,
-    baseStats: { ...equipment.baseStats },
-    stats: { ...equipment.stats },
-    runeStoneSets: cloneRuneStoneSets(equipment),
-    runeStoneSetsNames: equipment.runeStoneSetsNames
-      ? [...equipment.runeStoneSetsNames]
-      : undefined,
-  };
-}
-
-const AVAILABLE_RUNES = [
-  { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
-  { id: '1-2', name: '红符石(精)', type: 'red', stats: { damage: 2 } },
-  { id: '2', name: '蓝符石', type: 'blue', stats: { speed: 1.5 } },
-  { id: '2-2', name: '蓝符石(精)', type: 'blue', stats: { speed: 2 } },
-  { id: '3', name: '绿符石', type: 'green', stats: { defense: 1.5 } },
-  { id: '3-2', name: '绿符石(精)', type: 'green', stats: { defense: 2 } },
-  { id: '4', name: '黄符石', type: 'yellow', stats: { hit: 2 } },
-  { id: '4-2', name: '黄符石(精)', type: 'yellow', stats: { hit: 3 } },
-  { id: '5', name: '白符石', type: 'white', stats: { magic: 2 } },
-  { id: '6', name: '黑符石', type: 'black', stats: { magicDamage: 1.5 } },
-  { id: '7', name: '紫符石', type: 'purple', stats: { dodge: 2 } },
-];
-
-const AVAILABLE_STAR_POSITIONS = [
-  '无',
-  '伤害 +2.5',
-  '气血 +10',
-  '速度 +1.5',
-  '防御 +2',
-  '法伤 +2.5',
-  '躲避 +2',
-];
-const AVAILABLE_STAR_ALIGNMENTS = [
-  '无',
-  '体质 +2',
-  '魔力 +2',
-  '力量 +2',
-  '耐力 +2',
-  '敏捷 +2',
-];
-
-// 可选的符石组合名称
-const AVAILABLE_RUNE_SETS = [
-  '全能',
-  '法门',
-  '逐兽',
-  '聚焦',
-  '仙骨',
-  '药香',
-  '心印',
-  '招云',
-  '腾蛟',
-];
-
-const AVAILABLE_GEMSTONES = [
-  '红玛瑙',
-  '太阳石',
-  '月亮石',
-  '黑宝石',
-  '舍利子',
-  '光芒石',
-  '翡翠石',
-  '神秘石',
-];
-
-const CATEGORIES = [
-  {
-    name: '装备',
-    slots: [
-      { id: 'weapon', label: '武器', type: 'weapon' },
-      { id: 'helmet', label: '头盔', type: 'helmet' },
-      { id: 'necklace', label: '项链', type: 'necklace' },
-      { id: 'armor', label: '衣服', type: 'armor' },
-      { id: 'belt', label: '腰带', type: 'belt' },
-      { id: 'shoes', label: '鞋子', type: 'shoes' },
-    ],
-  },
-  {
-    name: '灵饰',
-    slots: [
-      { id: 'trinket1', label: '戒指', type: 'trinket', slot: 1 },
-      { id: 'trinket2', label: '耳饰', type: 'trinket', slot: 2 },
-      { id: 'trinket3', label: '手镯', type: 'trinket', slot: 3 },
-      { id: 'trinket4', label: '佩饰', type: 'trinket', slot: 4 },
-    ],
-  },
-  {
-    name: '玉魄',
-    slots: [
-      { id: 'jade1', label: '阳玉', type: 'jade', slot: 1 },
-      { id: 'jade2', label: '阴玉', type: 'jade', slot: 2 },
-    ],
-  },
-];
-
-function calculateEquipmentTotalStats(equipments: Equipment[]) {
-  const totals: Record<string, number> = {};
-  let totalPrice = 0;
-
-  equipments.forEach((eq) => {
-    if (eq.price) totalPrice += eq.price;
-
-    // 基础属性
-    Object.entries(eq.stats || {}).forEach(([key, val]) => {
-      if (typeof val === 'number') {
-        totals[key] = (totals[key] || 0) + val;
-      }
-    });
-
-    // 叠加激活的符石属性
-    if (eq.runeStoneSets && eq.activeRuneStoneSet !== undefined) {
-      const activeSet = eq.runeStoneSets[eq.activeRuneStoneSet];
-      if (activeSet) {
-        activeSet.forEach((rs) => {
-          Object.entries(rs.stats || {}).forEach(([key, val]) => {
-            if (typeof val === 'number') {
-              totals[key] = (totals[key] || 0) + val;
-            }
-          });
-        });
-      }
-    }
-  });
-
-  return { totals, totalPrice };
-}
-
-function getFallbackSeatTotalDamage(seatCombatStats: Record<string, number>) {
   return (
-    (seatCombatStats.magicDamage || 0) +
-    (seatCombatStats.magicPower || 0) * 0.7 +
-    (seatCombatStats.damage || 0) * 0.25
+    typeof snapshot.id === 'string' &&
+    typeof snapshot.name === 'string' &&
+    typeof snapshot.source === 'string' &&
+    typeof snapshot.notes === 'string'
   );
-}
-
-// 计算席位的显示名称
-function getSeatDisplayName(seat: any, allSeats: any[]) {
-  if (seat.isSample) {
-    return seat.name;
-  }
-  const comparisonSeats = allSeats.filter((s) => !s.isSample);
-  const index = comparisonSeats.findIndex((s) => s.id === seat.id);
-  return `对比席位${index + 1}`;
 }
 
 export function LaboratoryPanel() {
@@ -296,7 +96,7 @@ export function LaboratoryPanel() {
   // 席位栏位选择器状态
   const [selectedSlot, setSelectedSlot] = useState<{
     seatId: string;
-    slotType: string;
+    slotType: Equipment['type'];
     slotSlot?: number;
     slotLabel: string;
     currentEquip?: Equipment;
@@ -316,9 +116,15 @@ export function LaboratoryPanel() {
   const [isLoadingLab, setIsLoadingLab] = useState(false);
   const [isSavingCurrentEquipment, setIsSavingCurrentEquipment] =
     useState(false);
+  const [isRollingBackCurrentEquipment, setIsRollingBackCurrentEquipment] =
+    useState(false);
   const [isSavingCandidateEquipment, setIsSavingCandidateEquipment] =
     useState(false);
   const [isLoadingCandidateEquipment, setIsLoadingCandidateEquipment] =
+    useState(false);
+  const [latestRollbackSnapshot, setLatestRollbackSnapshot] =
+    useState<EquipmentRollbackSnapshot | null>(null);
+  const [isLoadingRollbackSnapshot, setIsLoadingRollbackSnapshot] =
     useState(false);
 
   const pendingEquipments = useGameStore((state) => state.pendingEquipments);
@@ -416,12 +222,21 @@ export function LaboratoryPanel() {
 
   const { baseAttributes, treasure } = useGameStore();
   const [labValuationBySeatId, setLabValuationBySeatId] = useState<
-    Record<string, any>
+    Record<string, LabValuationSeatResult>
   >({});
   const [isLoadingLabValuation, setIsLoadingLabValuation] = useState(false);
   const [labValuationError, setLabValuationError] = useState<string | null>(
     null
   );
+
+  const formatRollbackTime = (timestamp: number | string | null | undefined) =>
+    formatDateTimeValue(timestamp, {
+      locale: 'zh',
+      timeZone: 'Asia/Shanghai',
+      empty: '时间未知',
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
 
   // 格式化金额：默认不显示小数，有小数时最多显示2位
   const formatPrice = (price: number | undefined) => {
@@ -458,6 +273,38 @@ export function LaboratoryPanel() {
       }
     } finally {
       setIsLoadingLab(false);
+    }
+  };
+
+  const loadLatestRollbackSnapshot = async (silent = false) => {
+    try {
+      setIsLoadingRollbackSnapshot(true);
+      const response = await fetch(
+        '/api/simulator/current/equipment/rollback',
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      );
+      const payload = await response.json();
+
+      if (!response.ok || payload?.code !== 0) {
+        throw new Error(payload?.message || '读取回滚快照失败');
+      }
+
+      setLatestRollbackSnapshot(
+        isEquipmentRollbackSnapshot(payload?.data) ? payload.data : null
+      );
+    } catch (error) {
+      console.error(
+        'Failed to load latest simulator rollback snapshot:',
+        error
+      );
+      if (!silent) {
+        toast.error('读取回滚快照失败');
+      }
+    } finally {
+      setIsLoadingRollbackSnapshot(false);
     }
   };
 
@@ -619,7 +466,12 @@ export function LaboratoryPanel() {
 
   const saveCurrentEquipment = async (
     nextEquipment: Equipment[],
-    successMessage: string
+    successMessage: string,
+    options?: {
+      createHistorySnapshot?: boolean;
+      historySnapshotName?: string;
+      historySnapshotNotes?: string;
+    }
   ) => {
     try {
       setIsSavingCurrentEquipment(true);
@@ -632,6 +484,9 @@ export function LaboratoryPanel() {
           equipment: nextEquipment,
           equipmentSets,
           activeSetIndex,
+          createHistorySnapshot: options?.createHistorySnapshot === true,
+          historySnapshotName: options?.historySnapshotName,
+          historySnapshotNotes: options?.historySnapshotNotes,
         }),
       });
 
@@ -643,6 +498,9 @@ export function LaboratoryPanel() {
       applySimulatorBundleToStore(payload.data, {
         preserveWorkbenchState: true,
       });
+      if (options?.createHistorySnapshot) {
+        await loadLatestRollbackSnapshot(true);
+      }
       toast.success(successMessage);
       return true;
     } catch (error) {
@@ -661,7 +519,12 @@ export function LaboratoryPanel() {
     const nextEquipment = buildNextCurrentEquipment(equipment);
     await saveCurrentEquipment(
       nextEquipment,
-      `已将 ${equipment.name} 同步到当前装备`
+      `已将 ${equipment.name} 同步到当前装备`,
+      {
+        createHistorySnapshot: true,
+        historySnapshotName: `单件替换前快照 · ${equipment.name}`,
+        historySnapshotNotes: `实验室单件替换前自动保存：${equipment.name}`,
+      }
     );
   };
 
@@ -676,7 +539,12 @@ export function LaboratoryPanel() {
 
     const didSave = await saveCurrentEquipment(
       seat.equipment,
-      `已成功应用 ${confirmOverwriteDialog.equipmentSetName} 到当前装备`
+      `已成功应用 ${confirmOverwriteDialog.equipmentSetName} 到当前装备`,
+      {
+        createHistorySnapshot: true,
+        historySnapshotName: `整套应用前快照 · ${confirmOverwriteDialog.equipmentSetName}`,
+        historySnapshotNotes: `实验室整套应用前自动保存：${confirmOverwriteDialog.equipmentSetName}`,
+      }
     );
 
     if (didSave) {
@@ -716,6 +584,7 @@ export function LaboratoryPanel() {
       target: {
         name: combatTarget.name,
         magicDefense: combatTarget.magicDefense || 0,
+        speed: combatTarget.speed || 0,
       },
       seats: experimentSeats.slice(0, 2).map((seat) => {
         const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
@@ -774,7 +643,10 @@ export function LaboratoryPanel() {
 
         setLabValuationBySeatId(
           Object.fromEntries(
-            payload.data.seats.map((seat: any) => [seat.seatId, seat])
+            payload.data.seats.map((seat: LabValuationSeatResult) => [
+              seat.seatId,
+              seat,
+            ])
           )
         );
       } catch (error) {
@@ -797,48 +669,6 @@ export function LaboratoryPanel() {
       window.clearTimeout(timer);
     };
   }, [labValuationPayload]);
-
-  const [simulatedLibEquip, setSimulatedLibEquip] = useState<any>(null);
-
-  // 符石和星石编辑相关状态
-  const [runePopover, setRunePopover] = useState<{
-    type:
-      | 'rune'
-      | 'starPosition'
-      | 'starAlignment'
-      | 'luckyHoles'
-      | 'runeSet'
-      | 'gemstone';
-    index?: number;
-  } | null>(null);
-
-  const [referenceElement, setReferenceElement] = useState<HTMLElement | null>(
-    null
-  );
-  const [popperElement, setPopperElement] = useState<HTMLElement | null>(null);
-  const { styles, attributes } = usePopper(referenceElement, popperElement, {
-    placement: 'bottom-start',
-    strategy: 'fixed',
-    modifiers: [
-      { name: 'preventOverflow', options: { padding: 8 } },
-      {
-        name: 'flip',
-        options: {
-          fallbackPlacements: ['top-start', 'right-start', 'left-start'],
-        },
-      },
-      { name: 'offset', options: { offset: [0, 4] } },
-    ],
-  });
-
-  useEffect(() => {
-    if (!selectedLibEquip) {
-      setSimulatedLibEquip(null);
-      return;
-    }
-
-    setSimulatedLibEquip(cloneEquipmentForEditor(selectedLibEquip));
-  }, [selectedLibEquip]);
 
   // 固定上传区域逻辑
   const [isProcessing, setIsProcessing] = useState(false);
@@ -965,25 +795,53 @@ export function LaboratoryPanel() {
   useEffect(() => {
     if (libTab === 'library') {
       setPrimaryCategory('equipment');
-      setSecondaryCategory('weapon');
+      setSecondaryCategory(getDefaultSimulatorSecondaryCategory('equipment'));
     }
   }, [libTab]);
 
   // 切换一级分类时，自动选中第一个二级分类
   useEffect(() => {
-    const firstSecondary = (() => {
-      if (primaryCategory === 'equipment') return 'weapon';
-      if (primaryCategory === 'trinket') return 'ring';
-      if (primaryCategory === 'jade') return 'jade1';
-      return 'weapon';
-    })();
+    const firstSecondary =
+      getDefaultSimulatorSecondaryCategory(primaryCategory);
     setSecondaryCategory(firstSecondary);
   }, [primaryCategory]);
 
   useEffect(() => {
     void handleLoadLabSession(true);
     void handleLoadCandidateEquipment(true);
+    void loadLatestRollbackSnapshot(true);
   }, []);
+
+  const handleRollbackLatestApplication = async () => {
+    try {
+      setIsRollingBackCurrentEquipment(true);
+      const response = await fetch(
+        '/api/simulator/current/equipment/rollback',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      const payload = await response.json();
+
+      if (!response.ok || payload?.code !== 0 || !payload?.data) {
+        throw new Error(payload?.message || '回滚当前装备失败');
+      }
+
+      applySimulatorBundleToStore(payload.data, {
+        preserveWorkbenchState: true,
+      });
+      await loadLatestRollbackSnapshot(true);
+      toast.success('已回滚到最近一次应用前快照');
+    } catch (error) {
+      console.error('Failed to rollback simulator equipment:', error);
+      toast.error('回滚当前装备失败');
+    } finally {
+      setIsRollingBackCurrentEquipment(false);
+    }
+  };
 
   return (
     <div className="flex min-h-0 w-full flex-1 gap-6 overflow-hidden">
@@ -1031,6 +889,33 @@ export function LaboratoryPanel() {
           </div>
           <div className="mt-2 text-[11px] text-slate-400">
             当前实验室席位和候选装备库都会保存到 Cloudflare D1
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-yellow-800/30 bg-slate-950/50 px-3 py-2">
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-yellow-200">
+                覆盖当前装备时会自动保存应用前快照
+              </div>
+              <div className="truncate text-[11px] text-slate-400">
+                {latestRollbackSnapshot
+                  ? `${latestRollbackSnapshot.name} · ${formatRollbackTime(
+                      latestRollbackSnapshot.createdAt
+                    )}`
+                  : isLoadingRollbackSnapshot
+                    ? '正在读取最近一次回滚快照...'
+                    : '还没有可回滚的应用记录'}
+              </div>
+            </div>
+            <button
+              className="shrink-0 rounded-lg border border-yellow-700/50 bg-slate-900/70 px-3 py-1.5 text-xs font-semibold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={
+                isRollingBackCurrentEquipment ||
+                isLoadingRollbackSnapshot ||
+                !latestRollbackSnapshot
+              }
+              onClick={handleRollbackLatestApplication}
+            >
+              {isRollingBackCurrentEquipment ? '回滚中...' : '回滚最近一次应用'}
+            </button>
           </div>
           <div className="mt-3 flex rounded-lg border border-yellow-800/40 bg-slate-900/80 p-1">
             <button
@@ -1200,34 +1085,7 @@ export function LaboratoryPanel() {
             <div className="flex h-full flex-col">
               {/* 一��分类页签 */}
               <div className="mb-3 flex rounded-lg border border-yellow-800/30 bg-slate-900/60 p-1">
-                {[
-                  {
-                    key: 'equipment' as const,
-                    name: '装备',
-                    count: libraryEquipments.filter((e) =>
-                      [
-                        'weapon',
-                        'helmet',
-                        'necklace',
-                        'armor',
-                        'belt',
-                        'shoes',
-                      ].includes(e.type)
-                    ).length,
-                  },
-                  {
-                    key: 'trinket' as const,
-                    name: '灵饰',
-                    count: libraryEquipments.filter((e) => e.type === 'trinket')
-                      .length,
-                  },
-                  {
-                    key: 'jade' as const,
-                    name: '玉魄',
-                    count: libraryEquipments.filter((e) => e.type === 'jade')
-                      .length,
-                  },
-                ].map((cat) => (
+                {SIMULATOR_CATEGORY_CONFIG.map((cat) => (
                   <button
                     key={cat.key}
                     onClick={() => setPrimaryCategory(cat.key)}
@@ -1237,7 +1095,15 @@ export function LaboratoryPanel() {
                         : 'text-yellow-100/60 hover:text-yellow-100'
                     }`}
                   >
-                    {cat.name} ({cat.count})
+                    {cat.name} (
+                    {
+                      libraryEquipments.filter((equipment) =>
+                        getSimulatorSlotDefinitions(cat.key).some((slot) =>
+                          matchesSimulatorSlotDefinition(slot, equipment)
+                        )
+                      ).length
+                    }
+                    )
                   </button>
                 ))}
               </div>
@@ -1246,68 +1112,12 @@ export function LaboratoryPanel() {
               <div className="mb-3 flex flex-wrap gap-1.5">
                 {(() => {
                   const secondaryCategories =
-                    primaryCategory === 'equipment'
-                      ? [
-                          { id: 'weapon', name: '武器', type: 'weapon' },
-                          { id: 'helmet', name: '头盔', type: 'helmet' },
-                          { id: 'necklace', name: '项链', type: 'necklace' },
-                          { id: 'armor', name: '衣服', type: 'armor' },
-                          { id: 'belt', name: '腰带', type: 'belt' },
-                          { id: 'shoes', name: '鞋子', type: 'shoes' },
-                        ]
-                      : primaryCategory === 'trinket'
-                        ? [
-                            {
-                              id: 'ring',
-                              name: '戒指',
-                              type: 'trinket',
-                              slot: 1,
-                            },
-                            {
-                              id: 'earring',
-                              name: '耳饰',
-                              type: 'trinket',
-                              slot: 2,
-                            },
-                            {
-                              id: 'bracelet',
-                              name: '手镯',
-                              type: 'trinket',
-                              slot: 3,
-                            },
-                            {
-                              id: 'pendant',
-                              name: '佩饰',
-                              type: 'trinket',
-                              slot: 4,
-                            },
-                          ]
-                        : [
-                            {
-                              id: 'jade1',
-                              name: '阳玉',
-                              type: 'jade',
-                              slot: 1,
-                            },
-                            {
-                              id: 'jade2',
-                              name: '阴玉',
-                              type: 'jade',
-                              slot: 2,
-                            },
-                          ];
+                    getSimulatorSlotDefinitions(primaryCategory);
 
                   return secondaryCategories.map((cat) => {
-                    const count = libraryEquipments.filter((eq) => {
-                      if (eq.type !== cat.type) return false;
-                      if (
-                        'slot' in cat &&
-                        cat.slot !== undefined &&
-                        eq.slot !== cat.slot
-                      )
-                        return false;
-                      return true;
-                    }).length;
+                    const count = libraryEquipments.filter((eq) =>
+                      matchesSimulatorSlotDefinition(cat, eq)
+                    ).length;
 
                     return (
                       <button
@@ -1319,7 +1129,7 @@ export function LaboratoryPanel() {
                             : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
                         }`}
                       >
-                        {cat.name} ({count})
+                        {getSimulatorSlotLabel(cat, 'laboratory')} ({count})
                       </button>
                     );
                   });
@@ -1370,43 +1180,15 @@ export function LaboratoryPanel() {
               <div className="flex-1 overflow-y-auto">
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
-                    const currentSecondary = (() => {
-                      if (primaryCategory === 'equipment') {
-                        return [
-                          { id: 'weapon', type: 'weapon' },
-                          { id: 'helmet', type: 'helmet' },
-                          { id: 'necklace', type: 'necklace' },
-                          { id: 'armor', type: 'armor' },
-                          { id: 'belt', type: 'belt' },
-                          { id: 'shoes', type: 'shoes' },
-                        ].find((c) => c.id === secondaryCategory);
-                      } else if (primaryCategory === 'trinket') {
-                        return [
-                          { id: 'ring', type: 'trinket', slot: 1 },
-                          { id: 'earring', type: 'trinket', slot: 2 },
-                          { id: 'bracelet', type: 'trinket', slot: 3 },
-                          { id: 'pendant', type: 'trinket', slot: 4 },
-                        ].find((c) => c.id === secondaryCategory);
-                      } else {
-                        return [
-                          { id: 'jade1', type: 'jade', slot: 1 },
-                          { id: 'jade2', type: 'jade', slot: 2 },
-                        ].find((c) => c.id === secondaryCategory);
-                      }
-                    })();
+                    const currentSecondary = getSimulatorSlotDefinitions(
+                      primaryCategory
+                    ).find((category) => category.id === secondaryCategory);
 
                     if (!currentSecondary) return null;
 
-                    const filtered = libraryEquipments.filter((eq) => {
-                      if (eq.type !== currentSecondary.type) return false;
-                      if (
-                        'slot' in currentSecondary &&
-                        currentSecondary.slot !== undefined &&
-                        eq.slot !== currentSecondary.slot
-                      )
-                        return false;
-                      return true;
-                    });
+                    const filtered = libraryEquipments.filter((eq) =>
+                      matchesSimulatorSlotDefinition(currentSecondary, eq)
+                    );
 
                     return filtered.map((item) => {
                       const totalPrice =
@@ -1575,1640 +1357,59 @@ export function LaboratoryPanel() {
         )}
 
         <div className="flex flex-1 gap-4 overflow-hidden p-4">
-          {/* 三个模块并排展示 */}
-          {experimentSeats.slice(0, 2).map((seat) => {
-            // 样本席位使用选中的装备组合，对比席位使用自己的装备
-            const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
-            const { totals, totalPrice } =
-              calculateEquipmentTotalStats(seatEquip);
-            const seatCombatStats = computeDerivedStats(
-              baseAttributes,
-              seatEquip,
-              treasure
-            );
-            const baseCombatStats = computeDerivedStats(
-              baseAttributes,
-              sampleEquipment,
-              treasure
-            );
+          {experimentSeats.slice(0, 2).map((seat) => (
+            <LaboratorySeatCard
+              key={seat.id}
+              seat={seat}
+              experimentSeats={experimentSeats}
+              sampleEquipment={sampleEquipment}
+              equipmentSets={equipmentSets}
+              selectedSampleSetIndex={selectedSampleSetIndex}
+              onSelectedSampleSetIndexChange={setSelectedSampleSetIndex}
+              onApplySeat={(targetSeat) => {
+                const equipmentSetName =
+                  equipmentSets[selectedSampleSetIndex]?.name ||
+                  `装备组合 ${selectedSampleSetIndex + 1}`;
+                setConfirmOverwriteDialog({
+                  seatId: targetSeat.id,
+                  seatName: getSeatDisplayName(targetSeat, experimentSeats),
+                  equipmentSetName,
+                });
+              }}
+              onSelectSlot={setSelectedSlot}
+              onClearDetailSelection={() => {
+                setSelectedLibEquip(null);
+                setSelectedPendingItem(null);
+              }}
+              baseAttributes={baseAttributes}
+              treasure={treasure}
+              baseSampleStats={baseSampleStats}
+              seatLabValuation={labValuationBySeatId[seat.id]}
+              labValuationError={labValuationError}
+              isLoadingLabValuation={isLoadingLabValuation}
+            />
+          ))}
 
-            const seatRuneSets = getEquipmentRuneStoneSetInfo(seatEquip);
-            const baseRuneSets = getEquipmentRuneStoneSetInfo(sampleEquipment);
-
-            // 找出变化的符石套装（假设只关注第一个变化的）
-            const addedSets = seatRuneSets.filter(
-              (s) => !baseRuneSets.includes(s)
-            );
-            const removedSets = baseRuneSets.filter(
-              (s) => !seatRuneSets.includes(s)
-            );
-
-            let seatRuneStoneInfo = seatRuneSets[0] || '';
-            if (!seat.isSample && addedSets.length > 0) {
-              seatRuneStoneInfo = addedSets[0];
-            }
-
-            let runeStoneChange = '';
-            if (!seat.isSample) {
-              if (addedSets.length > 0 && removedSets.length > 0) {
-                runeStoneChange = `${removedSets[0]} → ${addedSets[0]}`;
-              } else if (addedSets.length > 0) {
-                runeStoneChange = `新增: ${addedSets[0]}`;
-              } else if (removedSets.length > 0) {
-                runeStoneChange = `移除: ${removedSets[0]}`;
-              }
-            }
-
-            // 计算 Diff
-            const diffs: Record<string, number> = {};
-            const combatDiffs: Record<string, number> = {};
-            let totalDamageDiff = 0;
-            let diffPrice = 0;
-            const seatLabValuation = labValuationBySeatId[seat.id];
-            const isServiceUnavailable =
-              Boolean(labValuationError) && !seatLabValuation;
-
-            if (!seat.isSample) {
-              // 基础装备属性差异（展示用）
-              Object.keys(totals).forEach((k) => {
-                const diff = totals[k] - (baseSampleStats.totals[k] || 0);
-                if (Math.abs(diff) > 0.01) diffs[k] = diff;
-              });
-              Object.keys(baseSampleStats.totals).forEach((k) => {
-                if (!(k in totals)) {
-                  diffs[k] = -(baseSampleStats.totals[k] || 0);
-                }
-              });
-
-              // 实际战斗属性差异
-              Object.keys(seatCombatStats).forEach((k) => {
-                const key = k as keyof typeof seatCombatStats;
-                const diff = seatCombatStats[key] - baseCombatStats[key];
-                if (Math.abs(diff) > 0.01) combatDiffs[key] = diff;
-              });
-
-              // 伤害提升计算：根据门派决定主属性
-              const isMagicFaction = ['龙宫', '魔王寨', '神木林'].includes(
-                baseAttributes.faction
-              );
-              totalDamageDiff = isMagicFaction
-                ? combatDiffs.magicDamage || 0
-                : combatDiffs.damage || 0;
-
-              diffPrice = totalPrice - baseSampleStats.totalPrice;
-
-              if (seatLabValuation?.comparison) {
-                totalDamageDiff =
-                  seatLabValuation.comparison.damageDiff ?? totalDamageDiff;
-                diffPrice = seatLabValuation.comparison.priceDiff ?? diffPrice;
-              }
-            }
-
-            const displayDiffs = { ...combatDiffs };
-            // 额外展示基础属性变化
-            Object.keys(diffs).forEach((k) => {
-              if (!(k in combatDiffs)) {
-                displayDiffs[k] = diffs[k];
-              }
-            });
-
-            let costPerDamageDisplay =
-              seatLabValuation?.comparison?.costLabel || '-';
-            if (!seatLabValuation?.comparison && !isServiceUnavailable) {
-              if (totalDamageDiff > 0) {
-                if (diffPrice > 0) {
-                  costPerDamageDisplay = `¥ ${(diffPrice / totalDamageDiff).toFixed(1)}`;
-                } else {
-                  costPerDamageDisplay = '收益';
-                }
-              } else if (totalDamageDiff < 0) {
-                if (diffPrice < 0) {
-                  costPerDamageDisplay = `省 ¥ ${Math.abs(diffPrice / totalDamageDiff).toFixed(1)}`;
-                } else {
-                  costPerDamageDisplay = '纯亏';
-                }
-              } else {
-                costPerDamageDisplay =
-                  diffPrice > 0
-                    ? '只花钱不提升'
-                    : diffPrice < 0
-                      ? '纯省钱'
-                      : '-';
-              }
-            }
-
-            return (
-              <div
-                key={seat.id}
-                className="flex h-full flex-1 flex-col overflow-hidden rounded-xl border border-yellow-800/40 bg-slate-900/60 p-4"
-              >
-                {/* 顶部：席位标题（固定） */}
-                <div className="mb-3 flex flex-shrink-0 items-center justify-between border-b border-yellow-800/30 pb-2">
-                  <div className="flex items-center gap-2">
-                    <h3
-                      className={`text-sm font-bold ${seat.isSample ? 'text-yellow-500' : 'text-yellow-100'}`}
-                    >
-                      {getSeatDisplayName(seat, experimentSeats)}
-                    </h3>
-                    {seat.isSample && (
-                      <select
-                        id={`sample-seat-set-${seat.id}`}
-                        name={`sample-seat-set-${seat.id}`}
-                        value={selectedSampleSetIndex}
-                        onChange={(e) =>
-                          setSelectedSampleSetIndex(Number(e.target.value))
-                        }
-                        className="cursor-pointer rounded border border-yellow-700/40 bg-slate-800/80 px-2 py-0.5 text-xs text-yellow-100 focus:ring-1 focus:ring-yellow-600/50 focus:outline-none"
-                      >
-                        {equipmentSets.map((set, index) => (
-                          <option key={set.id} value={index}>
-                            {set.name || `装备组合 ${index + 1}`}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!seat.isSample && (
-                      <button
-                        onClick={() => {
-                          const equipmentSetName =
-                            equipmentSets[selectedSampleSetIndex]?.name ||
-                            `装备组合 ${selectedSampleSetIndex + 1}`;
-                          setConfirmOverwriteDialog({
-                            seatId: seat.id,
-                            seatName: getSeatDisplayName(seat, experimentSeats),
-                            equipmentSetName,
-                          });
-                        }}
-                        className="flex items-center gap-1 rounded border border-yellow-600/40 bg-yellow-600/20 px-2 py-1 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-600/30 hover:text-yellow-300"
-                        title="将此席位装备应用到当前装备"
-                      >
-                        <Upload className="h-3.5 w-3.5" />
-                        <span>应用</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 中间：可滚动区域（装备列表 + 符石套装效果 + 属性变化） */}
-                <div className="custom-scrollbar mb-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
-                  {/* 装备列表区 */}
-                  <div className="space-y-4">
-                    {CATEGORIES.map((category) => {
-                      // 检查此分类下在当前对比席位是否有任何装备需要展示
-                      return (
-                        <div key={category.name} className="space-y-2">
-                          <div className="mb-2 border-b border-yellow-800/30 pb-1 text-xs font-bold text-yellow-600">
-                            {category.name}
-                          </div>
-                          <div className="space-y-2">
-                            {category.slots.map((slotDef) => {
-                              const eq = seatEquip.find(
-                                (e) =>
-                                  e.type === slotDef.type &&
-                                  (slotDef.slot === undefined ||
-                                    e.slot === slotDef.slot)
-                              );
-                              const currentEq = sampleEquipment.find(
-                                (e) =>
-                                  e.type === slotDef.type &&
-                                  (slotDef.slot === undefined ||
-                                    e.slot === slotDef.slot)
-                              );
-
-                              // 逻辑：
-                              // 1. 如果是对比席位（非样本），且与“当前装备”完全一致（ID相同，或者都为空）
-                              const isSameAsCurrent =
-                                !seat.isSample &&
-                                ((!eq && !currentEq) ||
-                                  (eq && currentEq && eq.id === currentEq.id));
-
-                              if (isSameAsCurrent) {
-                                return (
-                                  <div
-                                    key={slotDef.id}
-                                    onClick={() => {
-                                      if (!seat.isSample) {
-                                        setSelectedSlot({
-                                          seatId: seat.id,
-                                          slotType: slotDef.type,
-                                          slotSlot: slotDef.slot,
-                                          slotLabel: slotDef.label,
-                                          currentEquip: currentEq,
-                                        });
-                                        // 关闭其他弹窗
-                                        setSelectedLibEquip(null);
-                                        setSelectedPendingItem(null);
-                                      }
-                                    }}
-                                    className={`flex items-center gap-2 rounded-lg border border-slate-800/50 bg-slate-900/40 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/40 hover:bg-slate-900/60' : ''}`}
-                                  >
-                                    <span className="w-10 shrink-0 border-r border-slate-700/50 pr-2 text-right text-slate-500">
-                                      {slotDef.label}
-                                    </span>
-                                    <span className="font-medium tracking-wide text-slate-400">
-                                      当前装备
-                                    </span>
-                                  </div>
-                                );
-                              }
-
-                              if (!eq) {
-                                return (
-                                  <div
-                                    key={slotDef.id}
-                                    onClick={() => {
-                                      if (!seat.isSample) {
-                                        setSelectedSlot({
-                                          seatId: seat.id,
-                                          slotType: slotDef.type,
-                                          slotSlot: slotDef.slot,
-                                          slotLabel: slotDef.label,
-                                        });
-                                        // 关闭其他弹窗
-                                        setSelectedLibEquip(null);
-                                        setSelectedPendingItem(null);
-                                      }
-                                    }}
-                                    className={`flex items-center gap-2 rounded-lg border border-slate-800/50 bg-slate-900/40 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/40 hover:bg-slate-900/60' : ''}`}
-                                  >
-                                    <span className="w-10 shrink-0 border-r border-slate-700/50 pr-2 text-right text-slate-500">
-                                      {slotDef.label}
-                                    </span>
-                                    <span className="text-slate-600 italic">
-                                      空
-                                    </span>
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div
-                                  key={slotDef.id}
-                                  onClick={() => {
-                                    if (!seat.isSample) {
-                                      setSelectedSlot({
-                                        seatId: seat.id,
-                                        slotType: slotDef.type,
-                                        slotSlot: slotDef.slot,
-                                        slotLabel: slotDef.label,
-                                        currentEquip: eq,
-                                      });
-                                      // 关闭其他弹窗
-                                      setSelectedLibEquip(null);
-                                      setSelectedPendingItem(null);
-                                    }
-                                  }}
-                                  className={`flex rounded-lg border border-slate-700/80 bg-slate-800/80 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/60 hover:bg-slate-800' : ''}`}
-                                >
-                                  <span className="mt-0.5 w-10 shrink-0 border-r border-slate-700/50 pr-2 text-right text-slate-400">
-                                    {slotDef.label}
-                                  </span>
-                                  <div className="ml-2 h-8 w-8 shrink-0 overflow-hidden rounded border border-slate-700/50 bg-slate-950/50">
-                                    <img
-                                      src={
-                                        eq.imageUrl ||
-                                        getEquipmentDefaultImage(eq.type)
-                                      }
-                                      alt={eq.name}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  </div>
-                                  <div className="min-w-0 flex-1 pl-2">
-                                    <div className="flex items-start justify-between">
-                                      <span className="truncate text-sm font-bold text-yellow-100">
-                                        {eq.name}
-                                      </span>
-                                      {eq.price ? (
-                                        <span className="ml-2 shrink-0 font-bold text-[#fff064]">
-                                          ¥ {eq.price}
-                                        </span>
-                                      ) : null}
-                                    </div>
-
-                                    {eq.mainStat && (
-                                      <div className="mt-1 leading-snug break-all whitespace-pre-line text-slate-300">
-                                        {eq.mainStat}
-                                      </div>
-                                    )}
-
-                                    {eq.extraStat && (
-                                      <div className="mt-1 leading-snug break-all whitespace-pre-line text-red-400">
-                                        {eq.extraStat}
-                                      </div>
-                                    )}
-
-                                    {eq.highlights &&
-                                      eq.highlights.length > 0 && (
-                                        <div className="mt-1.5 flex flex-wrap gap-1">
-                                          {eq.highlights.map((hl, j) => (
-                                            <span
-                                              key={j}
-                                              className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
-                                            >
-                                              {hl}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* 符石套装效果区域 */}
-                  {seatRuneStoneInfo && (
-                    <div className="rounded-lg bg-slate-950/40 p-3">
-                      <div className="mb-2 text-xs font-bold text-yellow-400">
-                        符石套装效果
-                      </div>
-                      <div className="text-xs leading-relaxed text-slate-300">
-                        {seatRuneStoneInfo || '无套装'}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 属性对比区域（不含核心伤害提升） */}
-                  <div className="rounded-lg bg-slate-950/40 p-3">
-                    <div className="mb-2 text-xs font-bold text-yellow-400">
-                      属性及伤害变化
-                    </div>
-                    {seat.isSample ? (
-                      <div className="py-4 text-center text-xs text-slate-500 italic">
-                        样本席位，作为对比基准
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                          {Object.entries(displayDiffs).map(([k, v]) => {
-                            const isPositive = v > 0;
-                            return (
-                              <div
-                                key={k}
-                                className="flex justify-between text-xs"
-                              >
-                                <span className="text-slate-400">
-                                  {statNames[k] || k}:
-                                </span>
-                                <span
-                                  className={
-                                    isPositive
-                                      ? 'text-green-400'
-                                      : 'text-red-400'
-                                  }
-                                >
-                                  {isPositive ? '+' : ''}
-                                  {Math.round(v)}
-                                </span>
-                              </div>
-                            );
-                          })}
-                          {Object.keys(displayDiffs).length === 0 && (
-                            <div className="col-span-2 text-xs text-slate-500 italic">
-                              无属性变化
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 符石套装变化 */}
-                        {runeStoneChange && (
-                          <div className="mt-3 border-t border-yellow-800/30 pt-2">
-                            <div className="mb-1.5 text-xs font-bold text-yellow-400">
-                              符石套装变化
-                            </div>
-                            <div className="text-xs text-cyan-400">
-                              {runeStoneChange}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 底部：核心伤害提升（固定） */}
-                <div className="flex-shrink-0 rounded-lg border-t border-yellow-800/30 bg-slate-950/60 p-3">
-                  {seat.isSample ? (
-                    <div className="text-center text-xs text-slate-500 italic">
-                      当前基准
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-xs font-bold">
-                        <span className="text-yellow-100">服务端总伤提升:</span>
-                        {isServiceUnavailable ? (
-                          <span className="text-amber-300">不可用</span>
-                        ) : (
-                          <span
-                            className={
-                              totalDamageDiff > 0
-                                ? 'text-green-400'
-                                : totalDamageDiff < 0
-                                  ? 'text-red-400'
-                                  : 'text-slate-400'
-                            }
-                          >
-                            {totalDamageDiff > 0 ? '+' : ''}
-                            {Math.round(totalDamageDiff)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-400">差价成本:</span>
-                        <span className="text-yellow-400">
-                          ¥{' '}
-                          {diffPrice > 0
-                            ? `+${Number(diffPrice.toFixed(2))}`
-                            : Number(diffPrice.toFixed(2))}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-400">单点伤害成本:</span>
-                        <span className="text-yellow-400">
-                          {isServiceUnavailable
-                            ? '不可用'
-                            : isLoadingLabValuation &&
-                                !seatLabValuation?.comparison &&
-                                costPerDamageDisplay === '-'
-                              ? '计算中'
-                              : costPerDamageDisplay}
-                          {!isServiceUnavailable &&
-                          costPerDamageDisplay.includes('¥')
-                            ? ' / 点'
-                            : ''}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* 第三列：明细属性对比 */}
-          <div className="flex-1 overflow-auto rounded-xl border border-yellow-800/40 bg-slate-900/60 p-4">
-            {(() => {
-              // 准备两个席位的对比数据
-              const displaySeats = experimentSeats.slice(0, 2);
-
-              const allSeatsData = displaySeats.map((seat) => {
-                const seatEquip = seat.isSample
-                  ? sampleEquipment
-                  : seat.equipment;
-                const { totals, totalPrice } =
-                  calculateEquipmentTotalStats(seatEquip);
-                const seatCombatStats = computeDerivedStats(
-                  baseAttributes,
-                  seatEquip,
-                  treasure
-                );
-                const seatLabValuation = labValuationBySeatId[seat.id];
-
-                return {
-                  seat,
-                  seatEquip,
-                  totals,
-                  totalPrice,
-                  seatCombatStats,
-                  seatLabValuation,
-                };
-              });
-
-              // 属性列表 - 与"固定属性"页签对齐
-              const attributeList = [
-                // 五围属性
-                { key: 'physique', label: '体质', isBase: true },
-                { key: 'magic', label: '魔力', isBase: true },
-                { key: 'strength', label: '力量', isBase: true },
-                { key: 'endurance', label: '耐力', isBase: true },
-                { key: 'agility', label: '敏捷', isBase: true },
-                // 攻击属性
-                { key: 'magicDamage', label: '法术伤害', isBase: false },
-                { key: 'spiritualPower', label: '灵力', isBase: false },
-                { key: 'magicCritLevel', label: '法术暴击等级', isBase: false },
-                { key: 'speed', label: '速度', isBase: false },
-                { key: 'hit', label: '命中', isBase: false },
-                { key: 'fixedDamage', label: '固定伤害', isBase: false },
-                { key: 'pierceLevel', label: '穿刺等级', isBase: false },
-                {
-                  key: 'elementalMastery',
-                  label: '五行克制能力',
-                  isBase: false,
-                },
-                // 防御属性
-                { key: 'hp', label: '气血', isBase: false },
-                { key: 'magicDefense', label: '法术防御', isBase: false },
-                { key: 'defense', label: '物理防御', isBase: false },
-                { key: 'block', label: '格挡值', isBase: false },
-                { key: 'antiCritLevel', label: '抗暴击等级', isBase: false },
-                {
-                  key: 'sealResistLevel',
-                  label: '抵抗封印等级',
-                  isBase: false,
-                },
-                { key: 'dodge', label: '躲避', isBase: false },
-                {
-                  key: 'elementalResistance',
-                  label: '五行克制抵御能力',
-                  isBase: false,
-                },
-              ];
-
-              return (
-                <div className="flex h-full flex-col space-y-4">
-                  <h3 className="flex-shrink-0 text-sm font-bold text-yellow-400">
-                    明细属性对比
-                  </h3>
-
-                  {/* 属性对比表 */}
-                  <div className="flex-1 overflow-auto rounded-lg border border-yellow-800/30 bg-slate-900/40">
-                    <table className="w-full border-collapse text-xs">
-                      <thead className="sticky top-0">
-                        <tr className="bg-slate-800/80">
-                          <th className="w-24 border-r border-yellow-800/30 p-2.5 text-left text-xs font-bold text-yellow-400">
-                            属性
-                          </th>
-                          {allSeatsData.map(({ seat }) => (
-                            <th
-                              key={seat.id}
-                              className={`p-2.5 text-center text-xs font-bold ${seat.isSample ? 'text-yellow-500' : 'text-yellow-100'}`}
-                            >
-                              {getSeatDisplayName(seat, experimentSeats)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {attributeList.map((attr) => {
-                          const sampleValue = attr.isBase
-                            ? baseAttributes[
-                                attr.key as keyof typeof baseAttributes
-                              ] + (allSeatsData[0].totals[attr.key] || 0)
-                            : allSeatsData[0].seatCombatStats[
-                                attr.key as keyof (typeof allSeatsData)[0]['seatCombatStats']
-                              ] || 0;
-
-                          return (
-                            <tr
-                              key={attr.key}
-                              className="border-b border-yellow-800/10 hover:bg-slate-800/20"
-                            >
-                              <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                                {attr.label}
-                              </td>
-                              {allSeatsData.map(
-                                ({ seat, totals, seatCombatStats }, idx) => {
-                                  const currentValue = attr.isBase
-                                    ? baseAttributes[
-                                        attr.key as keyof typeof baseAttributes
-                                      ] + (totals[attr.key] || 0)
-                                    : seatCombatStats[
-                                        attr.key as keyof typeof seatCombatStats
-                                      ] || 0;
-
-                                  const diff =
-                                    idx === 0 ? 0 : currentValue - sampleValue;
-                                  const isUnchanged = diff === 0 && idx !== 0;
-                                  const isPositive = diff > 0;
-                                  const isNegative = diff < 0;
-
-                                  return (
-                                    <td
-                                      key={seat.id}
-                                      className="p-2.5 text-center text-xs"
-                                    >
-                                      {isUnchanged ? (
-                                        <span className="text-slate-500">
-                                          —
-                                        </span>
-                                      ) : (
-                                        <div className="flex flex-col items-center gap-0.5">
-                                          <div
-                                            className={
-                                              seat.isSample
-                                                ? 'font-bold text-yellow-100'
-                                                : 'text-slate-200'
-                                            }
-                                          >
-                                            {Math.round(currentValue)}
-                                          </div>
-                                          {idx !== 0 && !isUnchanged && (
-                                            <div
-                                              className={`text-[10px] font-medium ${isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-500'}`}
-                                            >
-                                              {isPositive ? '+' : ''}
-                                              {Math.round(diff)}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </td>
-                                  );
-                                }
-                              )}
-                            </tr>
-                          );
-                        })}
-
-                        {/* 分隔行 */}
-                        <tr className="bg-slate-800/60">
-                          <td
-                            colSpan={allSeatsData.length + 1}
-                            className="p-0"
-                          ></td>
-                        </tr>
-
-                        {/* 符石组合对比 - 按装备栏位分别展示 */}
-                        {(() => {
-                          const slotLabels = [
-                            { type: 'weapon', label: '武器' },
-                            { type: 'helmet', label: '头盔' },
-                            { type: 'armor', label: '衣服' },
-                            { type: 'belt', label: '腰带' },
-                            { type: 'shoes', label: '鞋子' },
-                          ];
-
-                          return slotLabels.map(({ type, label }) => (
-                            <tr
-                              key={type}
-                              className="border-b border-yellow-800/10 hover:bg-slate-800/20"
-                            >
-                              <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                                {label}符石
-                              </td>
-                              {allSeatsData.map(({ seat, seatEquip }, idx) => {
-                                const equipment = seatEquip.find(
-                                  (eq) => eq.type === type
-                                );
-                                const runeSetName =
-                                  equipment?.runeStoneSetsNames?.[0];
-
-                                const sampleSlotEquipment =
-                                  allSeatsData[0].seatEquip.find(
-                                    (eq) => eq.type === type
-                                  );
-                                const sampleRuneSetName =
-                                  sampleSlotEquipment?.runeStoneSetsNames?.[0];
-                                const isDifferent =
-                                  idx !== 0 &&
-                                  runeSetName !== sampleRuneSetName;
-
-                                return (
-                                  <td
-                                    key={seat.id}
-                                    className="p-2.5 text-center text-xs"
-                                  >
-                                    <div
-                                      className={`${seat.isSample ? 'font-bold text-purple-400' : isDifferent ? 'text-purple-300' : 'text-slate-400'}`}
-                                    >
-                                      {runeSetName || '无'}
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ));
-                        })()}
-
-                        {/* 分隔行 */}
-                        <tr className="bg-slate-800/60">
-                          <td
-                            colSpan={allSeatsData.length + 1}
-                            className="p-0"
-                          ></td>
-                        </tr>
-
-                        {/* 符石套装效果对比 */}
-                        <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
-                          <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            符石套装效果
-                          </td>
-                          {allSeatsData.map(({ seat, seatEquip }, idx) => {
-                            const runeSetEffect =
-                              summarizeEquipmentEffects(seatEquip, {
-                                includeRuneSetName: true,
-                                includeRuneSetEffect: true,
-                              }) || '无';
-                            const sampleRuneSetEffect =
-                              summarizeEquipmentEffects(
-                                allSeatsData[0].seatEquip,
-                                {
-                                  includeRuneSetName: true,
-                                  includeRuneSetEffect: true,
-                                }
-                              ) || '无';
-                            const isDifferent =
-                              idx !== 0 &&
-                              runeSetEffect !== sampleRuneSetEffect;
-
-                            return (
-                              <td
-                                key={seat.id}
-                                className="p-2.5 text-center text-xs"
-                              >
-                                <div
-                                  className={`${seat.isSample ? 'font-bold text-orange-400' : isDifferent ? 'text-orange-300' : 'text-slate-400'}`}
-                                >
-                                  {runeSetEffect}
-                                </div>
-                              </td>
-                            );
-                          })}
-                        </tr>
-
-                        {/* 灵饰套装效果对比 */}
-                        <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
-                          <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            灵饰套装效果
-                          </td>
-                          {allSeatsData.map(({ seat, seatEquip }, idx) => {
-                            const trinketSetEffect =
-                              summarizeEquipmentEffects(seatEquip, {
-                                predicate: (eq) => eq.type === 'trinket',
-                                includeSetName: true,
-                                includeSpecialEffect: true,
-                                includeRefinementEffect: true,
-                                includeHighlights: true,
-                              }) || '无';
-                            const sampleTrinketSetEffect =
-                              summarizeEquipmentEffects(
-                                allSeatsData[0].seatEquip,
-                                {
-                                  predicate: (eq) => eq.type === 'trinket',
-                                  includeSetName: true,
-                                  includeSpecialEffect: true,
-                                  includeRefinementEffect: true,
-                                  includeHighlights: true,
-                                }
-                              ) || '无';
-                            const isDifferent =
-                              idx !== 0 &&
-                              trinketSetEffect !== sampleTrinketSetEffect;
-
-                            return (
-                              <td
-                                key={seat.id}
-                                className="p-2.5 text-center text-xs"
-                              >
-                                <div
-                                  className={`${seat.isSample ? 'font-bold text-cyan-400' : isDifferent ? 'text-cyan-300' : 'text-slate-400'}`}
-                                >
-                                  {trinketSetEffect}
-                                </div>
-                              </td>
-                            );
-                          })}
-                        </tr>
-
-                        {/* 分隔行 */}
-                        <tr className="bg-slate-800/60">
-                          <td
-                            colSpan={allSeatsData.length + 1}
-                            className="p-0"
-                          ></td>
-                        </tr>
-
-                        {/* 伤害预估 */}
-                        <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
-                          <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            服务端总伤
-                          </td>
-                          {allSeatsData.map(
-                            (
-                              { seat, seatCombatStats, seatLabValuation },
-                              idx
-                            ) => {
-                              const isServiceUnavailable =
-                                Boolean(labValuationError) && !seatLabValuation;
-                              const fallbackTotalDamage =
-                                getFallbackSeatTotalDamage(seatCombatStats);
-                              const fallbackSampleTotalDamage =
-                                getFallbackSeatTotalDamage(
-                                  allSeatsData[0].seatCombatStats
-                                );
-                              const totalDamage =
-                                seatLabValuation?.totalDamage ??
-                                fallbackTotalDamage;
-                              const sampleTotalDamage =
-                                allSeatsData[0].seatLabValuation?.totalDamage ??
-                                fallbackSampleTotalDamage;
-                              const diff =
-                                idx === 0 ? 0 : totalDamage - sampleTotalDamage;
-                              const isUnchanged =
-                                Math.abs(diff) < 0.1 && idx !== 0;
-                              const isPositive = diff > 0;
-                              const isNegative = diff < 0;
-
-                              return (
-                                <td
-                                  key={seat.id}
-                                  className="p-2.5 text-center text-xs"
-                                >
-                                  {isLoadingLabValuation &&
-                                  !seatLabValuation ? (
-                                    <span className="text-slate-500">
-                                      计算中
-                                    </span>
-                                  ) : isServiceUnavailable ? (
-                                    <span className="text-amber-300">
-                                      不可用
-                                    </span>
-                                  ) : isUnchanged ? (
-                                    <span className="text-slate-500">—</span>
-                                  ) : (
-                                    <div className="flex flex-col items-center gap-0.5">
-                                      <div
-                                        className={
-                                          seat.isSample
-                                            ? 'font-bold text-yellow-100'
-                                            : 'text-slate-200'
-                                        }
-                                      >
-                                        {Math.round(totalDamage)}
-                                      </div>
-                                      {idx !== 0 && !isUnchanged && (
-                                        <div
-                                          className={`text-[10px] font-medium ${isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-500'}`}
-                                        >
-                                          {isPositive ? '+' : ''}
-                                          {Math.round(diff)}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            }
-                          )}
-                        </tr>
-
-                        {/* 分隔行 */}
-                        <tr className="bg-slate-800/60">
-                          <td
-                            colSpan={allSeatsData.length + 1}
-                            className="p-0"
-                          ></td>
-                        </tr>
-
-                        {/* 价格对比 - 样本席位显示横线，对比席位只显示额外花费 */}
-                        <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
-                          <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            总价格
-                          </td>
-                          {allSeatsData.map(({ seat, totalPrice }, idx) => {
-                            const diff =
-                              idx === 0
-                                ? 0
-                                : (allSeatsData[idx].seatLabValuation
-                                    ?.comparison?.priceDiff ??
-                                  totalPrice - allSeatsData[0].totalPrice);
-
-                            return (
-                              <td
-                                key={seat.id}
-                                className="p-2.5 text-center text-xs"
-                              >
-                                {seat.isSample ? (
-                                  <span className="text-slate-500">—</span>
-                                ) : (
-                                  <div
-                                    className={`${diff > 0 ? 'text-red-400' : diff < 0 ? 'text-green-400' : 'text-slate-500'}`}
-                                  >
-                                    {diff === 0
-                                      ? '—'
-                                      : `${diff > 0 ? '+' : ''}¥${Math.round(diff)}`}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-
-                        {/* 1点伤害成本 */}
-                        <tr className="hover:bg-slate-800/20">
-                          <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                            1点伤害成本
-                          </td>
-                          {allSeatsData.map(
-                            ({
-                              seat,
-                              totalPrice,
-                              seatCombatStats,
-                              seatLabValuation,
-                            }) => {
-                              const isServiceUnavailable =
-                                Boolean(labValuationError) && !seatLabValuation;
-                              if (seat.isSample) {
-                                return (
-                                  <td
-                                    key={seat.id}
-                                    className="p-2.5 text-center text-xs"
-                                  >
-                                    <span className="text-slate-500">—</span>
-                                  </td>
-                                );
-                              }
-
-                              const fallbackTotalDamage =
-                                getFallbackSeatTotalDamage(seatCombatStats);
-                              const fallbackSampleTotalDamage =
-                                getFallbackSeatTotalDamage(
-                                  allSeatsData[0].seatCombatStats
-                                );
-                              const totalDamage =
-                                seatLabValuation?.totalDamage ??
-                                fallbackTotalDamage;
-                              const sampleTotalDamage =
-                                allSeatsData[0].seatLabValuation?.totalDamage ??
-                                fallbackSampleTotalDamage;
-                              const damageDiff =
-                                totalDamage - sampleTotalDamage;
-                              const priceDiff =
-                                seatLabValuation?.comparison?.priceDiff ??
-                                totalPrice - allSeatsData[0].totalPrice;
-                              const costPerDamage =
-                                seatLabValuation?.comparison?.costPerDamage ??
-                                (damageDiff > 0 ? priceDiff / damageDiff : 0);
-                              const costLabel =
-                                seatLabValuation?.comparison?.costLabel;
-                              const shouldShowNumericCost =
-                                !costLabel || costLabel === '-';
-
-                              return (
-                                <td
-                                  key={seat.id}
-                                  className="p-2.5 text-center text-xs"
-                                >
-                                  {isLoadingLabValuation &&
-                                  !seatLabValuation ? (
-                                    <span className="text-slate-500">
-                                      计算中
-                                    </span>
-                                  ) : isServiceUnavailable ? (
-                                    <span className="text-amber-300">
-                                      不可用
-                                    </span>
-                                  ) : costLabel && costLabel !== '-' ? (
-                                    <span className="text-[#fff064]">
-                                      {costLabel}
-                                    </span>
-                                  ) : damageDiff <= 0 ? (
-                                    <span className="text-slate-500">—</span>
-                                  ) : (
-                                    <div className="text-[#fff064]">
-                                      {shouldShowNumericCost
-                                        ? `¥${Math.round(costPerDamage)}`
-                                        : costLabel}
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            }
-                          )}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          <LaboratoryComparisonTable
+            experimentSeats={experimentSeats}
+            sampleEquipment={sampleEquipment}
+            baseAttributes={baseAttributes}
+            treasure={treasure}
+            labValuationBySeatId={labValuationBySeatId}
+            labValuationError={labValuationError}
+            isLoadingLabValuation={isLoadingLabValuation}
+          />
         </div>
 
-        {/* 详情弹窗 */}
-        {simulatedLibEquip && selectedLibEquip && (
-          <div className="absolute inset-0 z-10 flex flex-col bg-slate-950/95 p-5">
-            <div className="mb-4 flex flex-shrink-0 items-center justify-between">
-              <h3 className="font-bold text-yellow-100">装备详情 & 挂载</h3>
-              <button
-                onClick={() => setSelectedLibEquip(null)}
-                className="flex items-center gap-1 text-sm text-yellow-400 hover:text-yellow-300"
-              >
-                <X className="h-5 w-5" /> 返回
-              </button>
-            </div>
-
-            <div className="custom-scrollbar mb-4 flex-1 overflow-y-auto">
-              <div className="space-y-3">
-                {/* 装备名称和状态 */}
-                <div className="rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                  <div className="flex gap-6">
-                    {/* 装备图片 */}
-                    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-                      <img
-                        src={
-                          simulatedLibEquip.imageUrl ||
-                          getEquipmentDefaultImage(simulatedLibEquip.type)
-                        }
-                        alt={simulatedLibEquip.name}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-
-                    {/* 左列：装备信息 */}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <div className="text-2xl font-bold text-yellow-400">
-                          {simulatedLibEquip.name}
-                        </div>
-                        <div className="rounded border border-green-600/50 bg-green-900/20 px-2 py-0.5 text-[10px] font-medium text-green-400">
-                          已入库
-                        </div>
-                      </div>
-
-                      {/* 亮点标签 */}
-                      {simulatedLibEquip.highlights &&
-                        simulatedLibEquip.highlights.length > 0 && (
-                          <div className="mb-3 flex flex-wrap gap-1.5">
-                            {simulatedLibEquip.highlights.map((hl, j) => (
-                              <span
-                                key={j}
-                                className="rounded border border-red-500/50 px-2 py-0.5 text-xs font-medium text-red-400"
-                              >
-                                {hl}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                      {simulatedLibEquip.description && (
-                        <div className="mb-2 text-sm leading-relaxed text-slate-300">
-                          {simulatedLibEquip.description}
-                        </div>
-                      )}
-
-                      {simulatedLibEquip.equippableRoles && (
-                        <div>
-                          <span className="text-xs text-green-400">
-                            【装备角色】
-                          </span>
-                          <span className="ml-1 text-xs text-slate-300">
-                            {simulatedLibEquip.equippableRoles}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 右列：价格信息 */}
-                    <div className="flex shrink-0 flex-col gap-3 border-l border-yellow-800/30 pl-6">
-                      <div className="text-right">
-                        <div className="mb-1 text-[10px] text-slate-500">
-                          售价
-                        </div>
-                        <div className="text-xl font-bold text-[#fff064]">
-                          ¥ {formatPrice(simulatedLibEquip.price)}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="mb-1 text-[10px] text-slate-500">
-                          跨服费用
-                        </div>
-                        <div className="text-xl font-bold text-[#fff064]">
-                          ¥ {formatPrice(simulatedLibEquip.crossServerFee)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 基础信息 */}
-                <div className="rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                  <div className="mb-3 flex gap-6">
-                    {simulatedLibEquip.level && (
-                      <div>
-                        <span className="text-sm font-bold text-yellow-400">
-                          等级 {simulatedLibEquip.level}
-                        </span>
-                      </div>
-                    )}
-                    {simulatedLibEquip.element &&
-                      simulatedLibEquip.element !== '无' && (
-                        <div>
-                          <span className="text-sm text-yellow-400">五行 </span>
-                          <span className="text-sm font-bold text-yellow-400">
-                            {simulatedLibEquip.element}
-                          </span>
-                        </div>
-                      )}
-                  </div>
-
-                  <div className="mb-2 text-sm text-yellow-100">
-                    {simulatedLibEquip.mainStat}
-                  </div>
-
-                  {simulatedLibEquip.durability && (
-                    <div className="text-sm text-slate-300">
-                      耐久度 {simulatedLibEquip.durability}
-                    </div>
-                  )}
-
-                  {simulatedLibEquip.forgeLevel !== undefined &&
-                    simulatedLibEquip.gemstone && (
-                      <>
-                        <div className="mt-1 text-sm text-slate-300">
-                          {simulatedLibEquip.type === 'trinket'
-                            ? '星辉石等级 '
-                            : simulatedLibEquip.type === 'jade'
-                              ? '玉魄阶数 '
-                              : '锻炼等级 '}
-                          {simulatedLibEquip.forgeLevel}
-                        </div>
-                        {simulatedLibEquip.type !== 'jade' && (
-                          <div className="relative mt-1 text-sm text-slate-300">
-                            <span className="text-slate-300">镶嵌宝石 </span>
-                            <span
-                              ref={
-                                runePopover?.type === 'gemstone'
-                                  ? setReferenceElement
-                                  : null
-                              }
-                              className="-mx-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 text-red-400 transition-colors hover:bg-slate-800/80"
-                              onClick={() =>
-                                setRunePopover({ type: 'gemstone' })
-                              }
-                            >
-                              {simulatedLibEquip.gemstone}
-                              <Edit2 className="h-3 w-3 text-red-400/60" />
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                  {simulatedLibEquip.extraStat && (
-                    <div className="mt-1 text-sm text-green-400">
-                      {simulatedLibEquip.extraStat}
-                    </div>
-                  )}
-
-                  {/* 宝石选择浮层 */}
-                  {runePopover?.type === 'gemstone' && (
-                    <div
-                      ref={setPopperElement}
-                      style={{ ...styles.popper, zIndex: 9999 }}
-                      {...attributes.popper}
-                      className="w-40 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                    >
-                      <div className="custom-scrollbar max-h-64 overflow-y-auto p-1">
-                        <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                          选择宝石
-                        </div>
-                        {AVAILABLE_GEMSTONES.map((gemstone) => (
-                          <div
-                            key={gemstone}
-                            className="cursor-pointer rounded px-3 py-2 text-sm text-red-400 transition-colors hover:bg-slate-700"
-                            onClick={() => {
-                              setSimulatedLibEquip({
-                                ...simulatedLibEquip,
-                                gemstone,
-                              });
-                              setRunePopover(null);
-                            }}
-                          >
-                            {gemstone}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 宝石选择关闭层 */}
-                  {runePopover?.type === 'gemstone' && (
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setRunePopover(null)}
-                    />
-                  )}
-                </div>
-
-                {/* 符石信息 / 特效 */}
-                {simulatedLibEquip.type === 'trinket' &&
-                  simulatedLibEquip.specialEffect && (
-                    <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                      <div className="text-sm text-purple-400">
-                        特效：{simulatedLibEquip.specialEffect}
-                      </div>
-                    </div>
-                  )}
-
-                {simulatedLibEquip.type !== 'trinket' &&
-                  simulatedLibEquip.type !== 'jade' &&
-                  simulatedLibEquip.runeStoneSets &&
-                  simulatedLibEquip.runeStoneSets.length > 0 && (
-                    <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                      {/* 开运孔数 - 可点击修改 */}
-                      <div className="relative">
-                        <div
-                          ref={
-                            runePopover?.type === 'luckyHoles'
-                              ? setReferenceElement
-                              : null
-                          }
-                          className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                          onClick={() => setRunePopover({ type: 'luckyHoles' })}
-                        >
-                          开运孔数：{simulatedLibEquip.luckyHoles || '0'}
-                          <Edit2 className="h-3 w-3 text-green-400/60" />
-                        </div>
-
-                        {/* 开运孔数选择浮层 */}
-                        {runePopover?.type === 'luckyHoles' && (
-                          <div
-                            ref={setPopperElement}
-                            style={{ ...styles.popper, zIndex: 9999 }}
-                            {...attributes.popper}
-                            className="w-32 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                          >
-                            <div className="p-1">
-                              <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                                选择孔数
-                              </div>
-                              {[0, 1, 2, 3, 4, 5].map((num) => (
-                                <div
-                                  key={num}
-                                  className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
-                                  onClick={() => {
-                                    const newEquip = {
-                                      ...simulatedLibEquip,
-                                      luckyHoles: num.toString(),
-                                    };
-
-                                    // 调整符石数组长度以匹配新的开孔数
-                                    if (
-                                      newEquip.runeStoneSets &&
-                                      newEquip.runeStoneSets.length > 0
-                                    ) {
-                                      newEquip.runeStoneSets = [
-                                        ...newEquip.runeStoneSets,
-                                      ];
-                                      const currentRunes = [
-                                        ...(newEquip.runeStoneSets[0] || []),
-                                      ];
-
-                                      if (num < currentRunes.length) {
-                                        // 减少孔数，截断符石数组
-                                        newEquip.runeStoneSets[0] =
-                                          currentRunes.slice(0, num);
-                                      } else if (num > currentRunes.length) {
-                                        // 增加孔数时先补空占位，避免自动注入真实符石属性
-                                        while (
-                                          newEquip.runeStoneSets[0].length < num
-                                        ) {
-                                          newEquip.runeStoneSets[0].push({
-                                            id: `empty_rune_${newEquip.runeStoneSets[0].length + 1}`,
-                                            name: '未配置符石',
-                                            type: 'empty',
-                                            stats: {},
-                                          });
-                                        }
-                                      }
-                                    }
-
-                                    setSimulatedLibEquip(newEquip);
-                                    setRunePopover(null);
-                                  }}
-                                >
-                                  {num} 个孔
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {runePopover && (
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={() => setRunePopover(null)}
-                        />
-                      )}
-
-                      {simulatedLibEquip.runeStoneSets[0].map(
-                        (stone: any, idx: number) => (
-                          <div key={idx} className="relative">
-                            <div
-                              ref={
-                                runePopover?.type === 'rune' &&
-                                runePopover.index === idx
-                                  ? setReferenceElement
-                                  : null
-                              }
-                              className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                              onClick={() =>
-                                setRunePopover({ type: 'rune', index: idx })
-                              }
-                            >
-                              <span>
-                                符石{idx + 1}：{stone.name || ''}{' '}
-                                {Object.entries(stone.stats)
-                                  .map(([key, value]) => {
-                                    const localStatNames: Record<
-                                      string,
-                                      string
-                                    > = {
-                                      hp: '气血',
-                                      magic: '魔法',
-                                      damage: '伤害',
-                                      hit: '命中',
-                                      defense: '防御',
-                                      magicDefense: '法防',
-                                      speed: '速度',
-                                      dodge: '躲避',
-                                      magicDamage: '法伤',
-                                      physique: '体质',
-                                      magicPower: '魔力',
-                                      strength: '力量',
-                                      endurance: '耐力',
-                                      agility: '敏捷',
-                                    };
-                                    return `${localStatNames[key] || key} +${value}`;
-                                  })
-                                  .join(' ')}
-                              </span>
-                              <Edit2 className="h-3 w-3 text-green-400/60" />
-                            </div>
-
-                            {/* 符石选择浮层 */}
-                            {runePopover?.type === 'rune' &&
-                              runePopover.index === idx && (
-                                <div
-                                  ref={setPopperElement}
-                                  style={{ ...styles.popper, zIndex: 9999 }}
-                                  {...attributes.popper}
-                                  className="w-64 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                                >
-                                  <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                                    <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                                      选择要替换的符石
-                                    </div>
-                                    {AVAILABLE_RUNES.map((r) => (
-                                      <div
-                                        key={r.id}
-                                        className="flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm transition-colors hover:bg-slate-700"
-                                        onClick={() => {
-                                          const newEquip = {
-                                            ...simulatedLibEquip,
-                                          };
-                                          newEquip.runeStoneSets = [
-                                            ...newEquip.runeStoneSets,
-                                          ];
-                                          newEquip.runeStoneSets[0] = [
-                                            ...newEquip.runeStoneSets[0],
-                                          ];
-                                          newEquip.runeStoneSets[0][idx] = {
-                                            ...r,
-                                          };
-                                          setSimulatedLibEquip(newEquip);
-                                          setRunePopover(null);
-                                        }}
-                                      >
-                                        <span className="font-medium text-green-400">
-                                          {r.name}
-                                        </span>
-                                        <span className="text-xs text-slate-300">
-                                          {Object.entries(r.stats)
-                                            .map(([k, v]) => {
-                                              const localStatNames: Record<
-                                                string,
-                                                string
-                                              > = {
-                                                hp: '气血',
-                                                magic: '魔法',
-                                                damage: '伤害',
-                                                hit: '命中',
-                                                defense: '防御',
-                                                magicDefense: '法防',
-                                                speed: '速度',
-                                                dodge: '躲避',
-                                                magicDamage: '法伤',
-                                                physique: '体质',
-                                                magicPower: '魔力',
-                                                strength: '力量',
-                                                endurance: '耐力',
-                                                agility: '敏捷',
-                                              };
-                                              return `${localStatNames[k] || k} +${v}`;
-                                            })
-                                            .join(' ')}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                          </div>
-                        )
-                      )}
-
-                      <div className="relative">
-                        {simulatedLibEquip.starPosition && (
-                          <div
-                            ref={
-                              runePopover?.type === 'starPosition'
-                                ? setReferenceElement
-                                : null
-                            }
-                            className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                            onClick={() =>
-                              setRunePopover({ type: 'starPosition' })
-                            }
-                          >
-                            星位：{simulatedLibEquip.starPosition}
-                            <Edit2 className="h-3 w-3 text-green-400/60" />
-                          </div>
-                        )}
-
-                        {/* 星位选择浮层 */}
-                        {runePopover?.type === 'starPosition' && (
-                          <div
-                            ref={setPopperElement}
-                            style={{ ...styles.popper, zIndex: 9999 }}
-                            {...attributes.popper}
-                            className="w-48 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                          >
-                            <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                              <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                                选择星位属性
-                              </div>
-                              {AVAILABLE_STAR_POSITIONS.map((sp, i) => (
-                                <div
-                                  key={i}
-                                  className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
-                                  onClick={() => {
-                                    setSimulatedLibEquip({
-                                      ...simulatedLibEquip,
-                                      starPosition: sp,
-                                    });
-                                    setRunePopover(null);
-                                  }}
-                                >
-                                  {sp}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="relative">
-                        {simulatedLibEquip.starAlignment && (
-                          <div
-                            ref={
-                              runePopover?.type === 'starAlignment'
-                                ? setReferenceElement
-                                : null
-                            }
-                            className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                            onClick={() =>
-                              setRunePopover({ type: 'starAlignment' })
-                            }
-                          >
-                            星相互合：{simulatedLibEquip.starAlignment}
-                            <Edit2 className="h-3 w-3 text-green-400/60" />
-                          </div>
-                        )}
-
-                        {/* 星相互合选择浮层 */}
-                        {runePopover?.type === 'starAlignment' && (
-                          <div
-                            ref={setPopperElement}
-                            style={{ ...styles.popper, zIndex: 9999 }}
-                            {...attributes.popper}
-                            className="w-48 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                          >
-                            <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                              <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                                选择星相互合属性
-                              </div>
-                              {AVAILABLE_STAR_ALIGNMENTS.map((sa, i) => (
-                                <div
-                                  key={i}
-                                  className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
-                                  onClick={() => {
-                                    setSimulatedLibEquip({
-                                      ...simulatedLibEquip,
-                                      starAlignment: sa,
-                                    });
-                                    setRunePopover(null);
-                                  }}
-                                >
-                                  {sa}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 符石组合 - 可点击修改 */}
-                      {simulatedLibEquip.runeStoneSetsNames &&
-                        simulatedLibEquip.runeStoneSetsNames.length > 0 && (
-                          <div className="relative">
-                            <div
-                              ref={
-                                runePopover?.type === 'runeSet'
-                                  ? setReferenceElement
-                                  : null
-                              }
-                              className="-mx-2 mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-purple-400 transition-colors hover:bg-slate-800/80"
-                              onClick={() =>
-                                setRunePopover({ type: 'runeSet' })
-                              }
-                            >
-                              符石组合：
-                              {simulatedLibEquip.runeStoneSetsNames[0]}
-                              <Edit2 className="h-3 w-3 text-purple-400/60" />
-                            </div>
-
-                            {/* 符石组合选择浮层 */}
-                            {runePopover?.type === 'runeSet' && (
-                              <div
-                                ref={setPopperElement}
-                                style={{ ...styles.popper, zIndex: 9999 }}
-                                {...attributes.popper}
-                                className="w-48 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                              >
-                                <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                                  <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                                    选择符石组合
-                                  </div>
-                                  {AVAILABLE_RUNE_SETS.map((rsName, i) => (
-                                    <div
-                                      key={i}
-                                      className="cursor-pointer rounded px-3 py-2 text-sm text-purple-400 transition-colors hover:bg-slate-700"
-                                      onClick={() => {
-                                        const newEquip = {
-                                          ...simulatedLibEquip,
-                                        };
-                                        newEquip.runeStoneSetsNames = [
-                                          rsName,
-                                          ...(newEquip.runeStoneSetsNames?.slice(
-                                            1
-                                          ) || []),
-                                        ];
-                                        setSimulatedLibEquip(newEquip);
-                                        setRunePopover(null);
-                                      }}
-                                    >
-                                      {rsName}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                    </div>
-                  )}
-              </div>
-            </div>
-
-            {/* 挂载操作区 */}
-            <div className="flex-shrink-0 border-t border-yellow-800/30 pt-4">
-              <div className="mb-3 text-sm font-bold text-yellow-100">
-                选择挂载位置：
-              </div>
-              <div className="custom-scrollbar flex gap-2 overflow-x-auto pb-1">
-                <button
-                  onClick={() => {
-                    handleReplaceCurrent(simulatedLibEquip || selectedLibEquip);
-                    setSelectedLibEquip(null);
-                  }}
-                  className="flex w-[calc(100%/6)] min-w-[140px] flex-shrink-0 flex-col items-center justify-center rounded-lg border border-yellow-600/40 bg-yellow-900/30 p-3 text-center transition-colors hover:bg-yellow-900/50"
-                >
-                  <span className="text-sm font-medium text-yellow-100">
-                    替换到【当前状态】
-                  </span>
-                </button>
-
-                {experimentSeats
-                  .filter((s) => !s.isSample)
-                  .map((seat) => (
-                    <button
-                      key={seat.id}
-                      onClick={() => {
-                        handleApplyToSeat(
-                          seat.id,
-                          simulatedLibEquip || selectedLibEquip
-                        );
-                        setSelectedLibEquip(null);
-                      }}
-                      className="flex w-[calc(100%/6)] min-w-[140px] flex-shrink-0 flex-col items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center transition-colors hover:bg-slate-800/80"
-                    >
-                      <span className="text-sm text-slate-200">
-                        挂载到【{getSeatDisplayName(seat, experimentSeats)}】
-                      </span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          </div>
+        {selectedLibEquip && (
+          <LaboratoryEquipmentDetailModal
+            equipment={selectedLibEquip}
+            experimentSeats={experimentSeats}
+            formatPrice={formatPrice}
+            onClose={() => setSelectedLibEquip(null)}
+            onReplaceCurrent={handleReplaceCurrent}
+            onApplyToSeat={handleApplyToSeat}
+          />
         )}
 
         {selectedPendingItem && (
@@ -3315,10 +1516,11 @@ export function LaboratoryPanel() {
                               name: target.name,
                               defense: target.defense,
                               magicDefense: target.magicDefense,
+                              speed: target.speed,
                               hp: target.hp,
                               level: 175,
                               dungeonName: undefined,
-                            } as any);
+                            });
                             setShowTargetSelector(false);
                           }}
                           className={`cursor-pointer rounded-lg border bg-slate-800/80 p-3 transition-colors hover:bg-slate-700/80 ${
@@ -3362,12 +1564,13 @@ export function LaboratoryPanel() {
                                 name: target.name,
                                 defense: target.defense,
                                 magicDefense: target.magicDefense,
+                                speed: target.speed || 0,
                                 hp: target.hp,
                                 level: target.level,
                                 element: target.element,
                                 formation: target.formation,
                                 dungeonName: dungeon.name,
-                              } as any);
+                              });
                               setShowTargetSelector(false);
                             }}
                             className={`ml-2 cursor-pointer rounded-lg border bg-slate-800/80 p-3 transition-colors hover:bg-slate-700/80 ${

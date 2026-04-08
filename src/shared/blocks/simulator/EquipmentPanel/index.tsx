@@ -1,15 +1,37 @@
-// @ts-nocheck
 'use client';
 
 import { useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import { Edit2, Gem, Settings, Shield, Sparkles, Sword } from 'lucide-react';
+import {
+  Edit2,
+  Gem,
+  Settings,
+  Shield,
+  Sparkles,
+  Sword,
+  type LucideIcon,
+} from 'lucide-react';
+
+import type {
+  SimulatorAccessoryEquipmentType,
+  SimulatorPrimaryEquipmentType,
+} from '@/shared/lib/simulator-equipment';
+import {
+  findSimulatorSlotDefinition,
+  getSimulatorSlotLabel,
+  SIMULATOR_JADE_SLOT_DEFINITIONS,
+  SIMULATOR_PRIMARY_SLOT_DEFINITIONS,
+  SIMULATOR_TRINKET_SLOT_DEFINITIONS,
+} from '@/shared/lib/simulator-slot-config';
 
 import { EquipmentDetailModal } from './EquipmentDetailModal';
 import { EquipmentLibraryModal } from './EquipmentLibraryModal';
-import { EquipmentPanelSlot } from './EquipmentPanelSlot';
+import {
+  EquipmentPanelSlot,
+  type EquipmentPanelSlotInfo,
+} from './EquipmentPanelSlot';
 import { getEquipmentRuneStoneSetInfo } from './RuneStoneHelper';
 
 function toDisplayText(value: unknown): string | null {
@@ -72,6 +94,10 @@ function getEquipmentEffectTexts(
   );
 }
 
+type EquipmentPanelSlotType =
+  | SimulatorPrimaryEquipmentType
+  | SimulatorAccessoryEquipmentType;
+
 export function EquipmentPanel() {
   const equipment = useGameStore((state) => state.equipment);
   const equipmentSets = useGameStore((state) => state.equipmentSets);
@@ -96,7 +122,7 @@ export function EquipmentPanel() {
     null
   );
   const [libraryModalInfo, setLibraryModalInfo] = useState<{
-    type: Equipment['type'];
+    type: EquipmentPanelSlotType;
     name: string;
     slot?: number;
   } | null>(null);
@@ -121,44 +147,42 @@ export function EquipmentPanel() {
     setEditingSetIndex(null);
   };
 
-  // 装备槽位
-  const equipmentSlots: Array<{
-    type: Equipment['type'];
-    name: string;
-    icon: any;
-    slot?: number;
-  }> = [
-    { type: 'weapon', name: '武器', icon: Sword },
-    { type: 'helmet', name: '头盔', icon: Shield },
-    { type: 'necklace', name: '项链', icon: Gem },
-    { type: 'armor', name: '铠甲', icon: Shield },
-    { type: 'belt', name: '腰带', icon: Gem },
-    { type: 'shoes', name: '鞋子', icon: Sparkles },
-  ];
+  const iconMap: Record<EquipmentPanelSlotType, LucideIcon> = {
+    weapon: Sword,
+    helmet: Shield,
+    necklace: Gem,
+    armor: Shield,
+    belt: Gem,
+    shoes: Sparkles,
+    trinket: Sparkles,
+    jade: Gem,
+  };
 
-  const trinketSlots: Array<{
-    type: Equipment['type'];
-    name: string;
-    icon: any;
-    slot: number;
-  }> = [
-    { type: 'trinket', name: '灵符', icon: Sparkles, slot: 1 },
-    { type: 'trinket', name: '灵石', icon: Sparkles, slot: 2 },
-    { type: 'trinket', name: '灵珏', icon: Sparkles, slot: 3 },
-    { type: 'trinket', name: '灵玉', icon: Sparkles, slot: 4 },
-  ];
+  const equipmentSlots: EquipmentPanelSlotInfo[] =
+    SIMULATOR_PRIMARY_SLOT_DEFINITIONS.map((slot) => ({
+      ...slot,
+      type: slot.type as SimulatorPrimaryEquipmentType,
+      name: getSimulatorSlotLabel(slot, 'equipmentPanel'),
+      icon: iconMap[slot.type as SimulatorPrimaryEquipmentType],
+    }));
 
-  const jadeSlots: Array<{
-    type: Equipment['type'];
-    name: '阳玉' | '阴玉';
-    icon: any;
-    slot: number;
-  }> = [
-    { type: 'jade', name: '阳玉', icon: Gem, slot: 1 },
-    { type: 'jade', name: '阴玉', icon: Gem, slot: 2 },
-  ];
+  const trinketSlots: EquipmentPanelSlotInfo[] =
+    SIMULATOR_TRINKET_SLOT_DEFINITIONS.map((slot) => ({
+      ...slot,
+      type: slot.type as SimulatorAccessoryEquipmentType,
+      name: getSimulatorSlotLabel(slot, 'equipmentPanel'),
+      icon: iconMap[slot.type as SimulatorAccessoryEquipmentType],
+    }));
 
-  const getEquipmentInSlot = (type: Equipment['type'], slot?: number) => {
+  const jadeSlots: EquipmentPanelSlotInfo[] =
+    SIMULATOR_JADE_SLOT_DEFINITIONS.map((slot) => ({
+      ...slot,
+      type: slot.type as SimulatorAccessoryEquipmentType,
+      name: getSimulatorSlotLabel(slot, 'equipmentPanel'),
+      icon: iconMap[slot.type as SimulatorAccessoryEquipmentType],
+    }));
+
+  const getEquipmentInSlot = (type: EquipmentPanelSlotType, slot?: number) => {
     return equipment.find(
       (e) => e.type === type && (slot === undefined || e.slot === slot)
     );
@@ -220,7 +244,7 @@ export function EquipmentPanel() {
     );
   };
 
-  const handleEquipClick = (type: Equipment['type'], slot?: number) => {
+  const handleEquipClick = (type: EquipmentPanelSlotType, slot?: number) => {
     const current = getEquipmentInSlot(type, slot);
 
     // 如果已装备，打开详情弹窗
@@ -230,11 +254,10 @@ export function EquipmentPanel() {
     }
 
     // 未装备：打开装备库选择浮层
-    const slotName =
-      equipmentSlots.find((s) => s.type === type)?.name ||
-      trinketSlots.find((s) => s.type === type && s.slot === slot)?.name ||
-      jadeSlots.find((s) => s.type === type && s.slot === slot)?.name ||
-      '装备';
+    const slotDefinition = findSimulatorSlotDefinition(type, slot);
+    const slotName = slotDefinition
+      ? getSimulatorSlotLabel(slotDefinition, 'equipmentPanel')
+      : '装备';
 
     setLibraryModalInfo({
       type,

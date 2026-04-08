@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 
-import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -16,6 +15,8 @@ import {
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
+import { formatDateTimeValue } from '@/shared/lib/date';
+import { getSimulatorEquipmentFieldLabel } from '@/shared/lib/simulator-equipment-editor';
 
 type ReviewItem = {
   id: string;
@@ -40,6 +41,12 @@ type Props = {
 function toNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildFieldId(...parts: Array<string | number>) {
+  return parts
+    .map((part) => String(part).replace(/[^a-zA-Z0-9_-]+/g, '-'))
+    .join('-');
 }
 
 function formatTimestamp(timestamp: number) {
@@ -105,6 +112,8 @@ export function SimulatorPendingReviewPanel({
     () => filteredItems.find((item) => item.id === selectedId) ?? null,
     [filteredItems, selectedId]
   );
+  const selectedFieldId = (field: string) =>
+    buildFieldId('pending-review', selectedItem?.id ?? 'empty', field);
 
   const handleLoad = async (status: ReviewItem['status']) => {
     setIsLoading(true);
@@ -123,7 +132,11 @@ export function SimulatorPendingReviewPanel({
       );
 
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取候选装备失败');
       }
 
@@ -223,7 +236,8 @@ export function SimulatorPendingReviewPanel({
       <CardHeader>
         <CardTitle>OCR 审核与候选装备管理</CardTitle>
         <CardDescription>
-          支持按状态查看候选装备，搜索用户与角色，查看原图、OCR 原文并直接修改记录。
+          支持按状态查看候选装备，搜索用户与角色，查看原图、OCR
+          原文并直接修改记录。
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -244,8 +258,10 @@ export function SimulatorPendingReviewPanel({
               ))}
             </div>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
+                name="keyword"
+                aria-label="搜索用户、邮箱、角色或装备"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 className="pl-9"
@@ -255,8 +271,10 @@ export function SimulatorPendingReviewPanel({
           </div>
 
           {filteredItems.length === 0 ? (
-            <div className="rounded-lg border px-4 py-6 text-sm text-muted-foreground">
-              {items.length === 0 ? '当前没有匹配的候选装备。' : '当前筛选条件下没有结果。'}
+            <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
+              {items.length === 0
+                ? '当前没有匹配的候选装备。'
+                : '当前筛选条件下没有结果。'}
             </div>
           ) : (
             filteredItems.map((item) => (
@@ -280,16 +298,16 @@ export function SimulatorPendingReviewPanel({
                   </div>
                   <Badge variant="outline">{item.status}</Badge>
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground">
+                <div className="text-muted-foreground mt-2 text-xs">
                   {item.userName} · {item.userEmail}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="text-muted-foreground mt-1 text-xs">
                   角色：{item.characterName}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="text-muted-foreground mt-1 text-xs">
                   来源：{item.source}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="text-muted-foreground mt-1 text-xs">
                   时间：{formatTimestamp(item.timestamp)}
                 </div>
               </button>
@@ -301,8 +319,9 @@ export function SimulatorPendingReviewPanel({
           <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>装备名称</Label>
+                <Label htmlFor={selectedFieldId('name')}>装备名称</Label>
                 <Input
+                  id={selectedFieldId('name')}
                   value={String(selectedItem.equipment.name || '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
@@ -314,21 +333,26 @@ export function SimulatorPendingReviewPanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>状态</Label>
+                <Label htmlFor={selectedFieldId('status')}>状态</Label>
                 <Input
+                  id={selectedFieldId('status')}
                   value={selectedItem.status}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
                       ...item,
-                      status: (e.target.value || 'pending') as ReviewItem['status'],
+                      status: (e.target.value ||
+                        'pending') as ReviewItem['status'],
                     }))
                   }
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>类型</Label>
+                <Label htmlFor={selectedFieldId('type')}>
+                  {getSimulatorEquipmentFieldLabel('type')}
+                </Label>
                 <Input
+                  id={selectedFieldId('type')}
                   value={String(selectedItem.equipment.type || '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
@@ -340,15 +364,20 @@ export function SimulatorPendingReviewPanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>槽位</Label>
+                <Label htmlFor={selectedFieldId('slot')}>
+                  {getSimulatorEquipmentFieldLabel('slot')}
+                </Label>
                 <Input
+                  id={selectedFieldId('slot')}
                   value={String(selectedItem.equipment.slot ?? '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
                       ...item,
                       equipment: {
                         ...item.equipment,
-                        slot: e.target.value ? toNumber(e.target.value) : undefined,
+                        slot: e.target.value
+                          ? toNumber(e.target.value)
+                          : undefined,
                       },
                     }))
                   }
@@ -356,41 +385,58 @@ export function SimulatorPendingReviewPanel({
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>主属性</Label>
+                <Label htmlFor={selectedFieldId('main-stat')}>
+                  {getSimulatorEquipmentFieldLabel('mainStat')}
+                </Label>
                 <Input
+                  id={selectedFieldId('main-stat')}
                   value={String(selectedItem.equipment.mainStat || '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
                       ...item,
-                      equipment: { ...item.equipment, mainStat: e.target.value },
+                      equipment: {
+                        ...item.equipment,
+                        mainStat: e.target.value,
+                      },
                     }))
                   }
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label>附加描述</Label>
+                <Label htmlFor={selectedFieldId('extra-stat')}>
+                  {getSimulatorEquipmentFieldLabel('extraStat')}
+                </Label>
                 <Input
+                  id={selectedFieldId('extra-stat')}
                   value={String(selectedItem.equipment.extraStat || '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
                       ...item,
-                      equipment: { ...item.equipment, extraStat: e.target.value },
+                      equipment: {
+                        ...item.equipment,
+                        extraStat: e.target.value,
+                      },
                     }))
                   }
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>价格</Label>
+                <Label htmlFor={selectedFieldId('price')}>
+                  {getSimulatorEquipmentFieldLabel('price')}
+                </Label>
                 <Input
+                  id={selectedFieldId('price')}
                   value={String(selectedItem.equipment.price ?? '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
                       ...item,
                       equipment: {
                         ...item.equipment,
-                        price: e.target.value ? toNumber(e.target.value) : undefined,
+                        price: e.target.value
+                          ? toNumber(e.target.value)
+                          : undefined,
                       },
                     }))
                   }
@@ -398,8 +444,11 @@ export function SimulatorPendingReviewPanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>跨服费</Label>
+                <Label htmlFor={selectedFieldId('cross-server-fee')}>
+                  {getSimulatorEquipmentFieldLabel('crossServerFee')}
+                </Label>
                 <Input
+                  id={selectedFieldId('cross-server-fee')}
                   value={String(selectedItem.equipment.crossServerFee ?? '')}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
@@ -419,8 +468,9 @@ export function SimulatorPendingReviewPanel({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-2">
-                <Label>OCR 原始文本</Label>
+                <Label htmlFor={selectedFieldId('raw-text')}>OCR 原始文本</Label>
                 <Textarea
+                  id={selectedFieldId('raw-text')}
                   rows={14}
                   value={selectedItem.rawText || ''}
                   onChange={(e) =>
@@ -434,15 +484,17 @@ export function SimulatorPendingReviewPanel({
               </div>
               <div className="space-y-2">
                 <Label>原图预览</Label>
-                <div className="overflow-hidden rounded-lg border bg-muted/20">
+                <div className="bg-muted/20 overflow-hidden rounded-lg border">
                   {getPreviewImageSrc(selectedItem.imagePreview) ? (
                     <img
                       src={getPreviewImageSrc(selectedItem.imagePreview)}
-                      alt={String(selectedItem.equipment.name || 'pending-equipment')}
+                      alt={String(
+                        selectedItem.equipment.name || 'pending-equipment'
+                      )}
                       className="h-auto w-full object-cover"
                     />
                   ) : (
-                    <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    <div className="text-muted-foreground px-4 py-12 text-center text-sm">
                       暂无原图
                     </div>
                   )}

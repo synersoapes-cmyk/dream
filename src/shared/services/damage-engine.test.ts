@@ -68,6 +68,16 @@ function createBundle(): SimulatorCharacterBundle {
         finalLevel: 150,
         sourceDetailJson: '{}',
       },
+      {
+        id: 'skill_2',
+        snapshotId: 'snapshot_1',
+        skillCode: 'dragon_teng',
+        skillName: '龙腾',
+        baseLevel: 140,
+        extraLevel: 0,
+        finalLevel: 140,
+        sourceDetailJson: '{}',
+      },
     ],
     cultivations: [
       {
@@ -94,6 +104,7 @@ function createBundle(): SimulatorCharacterBundle {
       targetHp: 50000,
       targetDefense: 1500,
       targetMagicDefense: 1250,
+      targetSpeed: 760,
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '普通阵',
@@ -546,6 +557,28 @@ function createRuleSet(): DamageRuleSet {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
+      {
+        id: 'formula_2',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        skillCode: 'dragon_teng',
+        skillName: '龙腾',
+        formulaKey: 'dragon_teng_default',
+        baseFormula: {
+          baseTerm: {
+            a: 1 / 145,
+            b: 1.4,
+            c: 39.5,
+          },
+        },
+        extraFormula: {},
+        condition: {},
+        sort: 10,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
     ],
     modifiers: [
       {
@@ -636,6 +669,63 @@ function createRuleSet(): DamageRuleSet {
   };
 }
 
+function applyFullSetRuneColors(
+  bundle: SimulatorCharacterBundle,
+  colors: [string, string, string, string, string, string]
+) {
+  const slots = ['helmet', 'necklace', 'weapon', 'armor', 'belt', 'shoes'];
+
+  bundle.equipments = slots.map((slot, index) => ({
+    ...bundle.equipments[0]!,
+    id: `eq_full_set_${index + 1}`,
+    slot,
+    snapshotSlot: slot,
+    build: {
+      ...bundle.equipments[0]!.build!,
+      equipmentId: `eq_full_set_${index + 1}`,
+      notesJson: JSON.stringify({
+        activeRuneStoneSet: 0,
+        runeStoneSets: [[{ id: `rune_${index + 1}`, type: colors[index], stats: {} }]],
+      }),
+    },
+  }));
+}
+
+function createFullSetModifier(params: {
+  id: string;
+  modifierDomain: string;
+  modifierKey: string;
+  targetKey: string;
+  value: number;
+  skillCode?: string;
+  sourceKey?: string;
+  modifierType?: string;
+  colors: Record<string, string>;
+}) {
+  return {
+    id: params.id,
+    versionId: 'rule_v1',
+    modifierDomain: params.modifierDomain,
+    modifierKey: params.modifierKey,
+    modifierType: params.modifierType ?? 'addend',
+    sourceKey: params.sourceKey ?? 'runeFullSet',
+    targetKey: params.targetKey,
+    value: params.value,
+    valueLookup: {},
+    condition: {
+      triggerType: 'rune_full_set',
+      school: ['龙宫'],
+      roleType: ['法师'],
+      ...(params.skillCode ? { skillCode: [params.skillCode] } : {}),
+      slotColorMap: params.colors,
+    },
+    sort: 100,
+    enabled: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
 test('calculateDamageFromRuleSet falls back to persisted battle context defaults', () => {
   const bundle = createBundle();
   const domain = buildSimulatorCharacterDomain(bundle);
@@ -672,6 +762,32 @@ test('calculateDamageFromRuleSet falls back to persisted battle context defaults
     (result.targets[0]?.breakdown as Record<string, unknown>)
       .targetMagicDefense,
     1250
+  );
+});
+
+test('calculateDamageFromRuleSet supports dragon_teng formula from the service rule set', () => {
+  const bundle = createBundle();
+  const domain = buildSimulatorCharacterDomain(bundle);
+
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillName: '龙腾',
+      targetCount: 1,
+    },
+  });
+
+  assert.equal(result.skill.skillCode, 'dragon_teng');
+  assert.equal(result.skill.skillName, '龙腾');
+  assert.equal(result.targets.length, 1);
+  assert.equal(result.targets[0]?.totalDamage, result.targets[0]?.damage);
+  assert.equal(
+    (result.targets[0]?.breakdown as Record<string, unknown>).formulaKey,
+    'dragon_teng_default'
   );
 });
 
@@ -790,4 +906,486 @@ test('calculateDamageFromRuleSet keeps explicit panel magic damage override for 
   );
   assert.equal(breakdown.panelMagicDamageBreakdown.overrideApplied, true);
   assert.equal(breakdown.panelMagicDamageBreakdown.overrideValue, 1500);
+});
+
+test('calculateDamageFromRuleSet derives active rune combo bonuses from persisted equipment metadata', () => {
+  const bundle = createBundle();
+  bundle.equipments[0]!.build!.notesJson = JSON.stringify({
+    activeRuneStoneSet: 0,
+    runeStoneSets: [
+      [
+        {
+          id: 'rune_1',
+          name: '黑符石',
+          type: 'black',
+          stats: { magicDamage: 12 },
+        },
+        {
+          id: 'rune_2',
+          name: '红符石',
+          type: 'red',
+          stats: { hit: 2 },
+        },
+        {
+          id: 'rune_3',
+          name: '白符石',
+          type: 'white',
+          stats: { magic: 2 },
+        },
+      ],
+    ],
+  });
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const ruleSet = createRuleSet();
+  ruleSet.skillBonuses = [
+    {
+      id: 'bonus_1',
+      versionId: 'rule_v1',
+      bonusGroup: 'school_skill_rune',
+      ruleCode: 'longteng_lv2',
+      skillCode: 'dragon_teng',
+      skillName: '龙腾',
+      bonusType: 'skill_level',
+      bonusValue: 2,
+      condition: {
+        triggerType: 'rune_combo',
+        colorSequence: ['黑', '红', '白'],
+        slotCount: 3,
+        positionScope: [
+          'weapon',
+          'helmet',
+          'necklace',
+          'armor',
+          'belt',
+          'shoes',
+        ],
+        school: ['龙宫'],
+        roleType: ['法师'],
+      },
+      conflictPolicy: 'take_max',
+      limitPolicy: {},
+      sort: 10,
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet,
+    request: {
+      skillCode: 'dragon_teng',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as any;
+
+  assert.equal(result.skill.finalLevel, 142);
+  assert.deepEqual(breakdown.activeBonusRuleCodes, ['longteng_lv2']);
+  assert.equal(breakdown.matchedBonusRules?.[0]?.ruleCode, 'longteng_lv2');
+});
+
+test('calculateDamageFromRuleSet applies 招云 full-set panel bonuses and target-speed addend', () => {
+  const bundle = createBundle();
+  applyFullSetRuneColors(bundle, [
+    'white',
+    'red',
+    'yellow',
+    'black',
+    'blue',
+    'red',
+  ]);
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const ruleSet = createRuleSet();
+  ruleSet.modifiers.push(
+    createFullSetModifier({
+      id: 'mod_zhaoyun_spirit',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'zhaoyun_spirit',
+      targetKey: 'spirit',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '黄',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_zhaoyun_magic_damage',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'zhaoyun_magic_damage',
+      targetKey: 'magicDamage',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '黄',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_zhaoyun_magic_defense',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'zhaoyun_magic_defense',
+      targetKey: 'magicDefense',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '黄',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_zhaoyun_target_speed',
+      modifierDomain: 'skill_damage_addend',
+      modifierKey: 'zhaoyun_target_speed',
+      modifierType: 'multiplier',
+      sourceKey: 'targetSpeed',
+      targetKey: 'finalDamage',
+      value: 0.04,
+      skillCode: 'dragon_roll',
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '黄',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    })
+  );
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet,
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(result.panelStats.spirit, 616);
+  assert.equal(result.panelStats.magicDamage, 3535);
+  assert.ok(Math.abs(result.panelStats.magicDefense - 725.4) < 1e-9);
+  assert.equal(breakdown.targetSpeed, 760);
+  assert.equal(breakdown.conditionalDamageAddend, 30.4);
+  assert.equal(breakdown.panelMagicDamageBreakdown.panelStatBonuses.magicDamage, 6);
+});
+
+test('calculateDamageFromRuleSet applies 腾蛟 full-set mana-cost addend', () => {
+  const bundle = createBundle();
+  applyFullSetRuneColors(bundle, [
+    'white',
+    'red',
+    'red',
+    'black',
+    'blue',
+    'red',
+  ]);
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const ruleSet = createRuleSet();
+  ruleSet.modifiers.push(
+    createFullSetModifier({
+      id: 'mod_tengjiao_spirit',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'tengjiao_spirit',
+      targetKey: 'spirit',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '红',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_tengjiao_magic_damage',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'tengjiao_magic_damage',
+      targetKey: 'magicDamage',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '红',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_tengjiao_magic_defense',
+      modifierDomain: 'panel_stat_bonus',
+      modifierKey: 'tengjiao_magic_defense',
+      targetKey: 'magicDefense',
+      value: 6,
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '红',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    }),
+    createFullSetModifier({
+      id: 'mod_tengjiao_mana_cost',
+      modifierDomain: 'skill_damage_addend',
+      modifierKey: 'tengjiao_mana_cost',
+      modifierType: 'multiplier',
+      sourceKey: 'manaCost',
+      targetKey: 'finalDamage',
+      value: 0.04,
+      skillCode: 'dragon_teng',
+      colors: {
+        helmet: '白',
+        necklace: '红',
+        weapon: '红',
+        armor: '黑',
+        belt: '蓝',
+        shoes: '红',
+      },
+    })
+  );
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet,
+    request: {
+      skillCode: 'dragon_teng',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(result.panelStats.spirit, 616);
+  assert.equal(result.panelStats.magicDamage, 3535);
+  assert.ok(Math.abs(result.panelStats.magicDefense - 725.4) < 1e-9);
+  assert.equal(breakdown.resolvedSkillManaCost, 30);
+  assert.equal(breakdown.conditionalDamageAddend, 1.2);
+  assert.equal(
+    breakdown.conditionalDamageAddends?.[0]?.modifierKey,
+    'tengjiao_mana_cost'
+  );
+});
+
+test('calculateDamageFromRuleSet applies jade spell ignore percent from effect text', () => {
+  const baselineBundle = createBundle();
+  const baselineDomain = buildSimulatorCharacterDomain(baselineBundle);
+  assert.ok(baselineDomain);
+
+  const baselineResult = calculateDamageFromRuleSet({
+    bundle: baselineBundle,
+    domain: baselineDomain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const bundle = createBundle();
+  bundle.equipments.push({
+    ...bundle.equipments[0]!,
+    id: 'jade_1',
+    slot: 'jade1',
+    name: '阳玉·法穿',
+    build: {
+      ...bundle.equipments[0]!.build!,
+      equipmentId: 'jade_1',
+      specialEffectJson: JSON.stringify({
+        specialEffect: '法术忽视 5%',
+      }),
+      setEffectJson: '{}',
+      notesJson: '{}',
+    },
+    attrs: [],
+    snapshotSlot: 'jade1',
+  });
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(breakdown.spellIgnorePercent, 0.05);
+  assert.equal(breakdown.actualTargetMagicDefense, 1187.5);
+  assert.equal(
+    breakdown.equipmentEffectModifiers?.[0]?.code,
+    'spell_ignore_percent'
+  );
+  assert.ok(
+    (result.targets[0]?.damage ?? 0) > (baselineResult.targets[0]?.damage ?? 0)
+  );
+});
+
+test('calculateDamageFromRuleSet applies jade spell damage percent from effect text', () => {
+  const baselineBundle = createBundle();
+  const baselineDomain = buildSimulatorCharacterDomain(baselineBundle);
+  assert.ok(baselineDomain);
+
+  const baselineResult = calculateDamageFromRuleSet({
+    bundle: baselineBundle,
+    domain: baselineDomain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const bundle = createBundle();
+  bundle.equipments.push({
+    ...bundle.equipments[0]!,
+    id: 'jade_spell_damage_text',
+    slot: 'jade1',
+    name: '阳玉·法伤',
+    build: {
+      ...bundle.equipments[0]!.build!,
+      equipmentId: 'jade_spell_damage_text',
+      specialEffectJson: JSON.stringify({
+        specialEffect: '基础法术伤害 +1.5%',
+      }),
+      setEffectJson: '{}',
+      notesJson: '{}',
+    },
+    attrs: [],
+    snapshotSlot: 'jade1',
+  });
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(breakdown.spellDamagePercent, 0.015);
+  assert.equal(
+    breakdown.panelMagicDamageBreakdown.panelMagicDamageBeforePercent,
+    2429
+  );
+  assert.equal(
+    breakdown.panelMagicDamageBreakdown.panelMagicDamageAfterPercent,
+    2465.435
+  );
+  assert.equal(breakdown.panelMagicDamage, 2465.435);
+  assert.equal(
+    breakdown.equipmentEffectModifiers?.[0]?.code,
+    'spell_damage_percent'
+  );
+  assert.ok(
+    (result.targets[0]?.damage ?? 0) > (baselineResult.targets[0]?.damage ?? 0)
+  );
+});
+
+test('calculateDamageFromRuleSet applies persisted spell damage percent modifiers from equipment metadata', () => {
+  const baselineBundle = createBundle();
+  const baselineDomain = buildSimulatorCharacterDomain(baselineBundle);
+  assert.ok(baselineDomain);
+
+  const baselineResult = calculateDamageFromRuleSet({
+    bundle: baselineBundle,
+    domain: baselineDomain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const bundle = createBundle();
+  bundle.equipments.push({
+    ...bundle.equipments[0]!,
+    id: 'jade_spell_damage_meta',
+    slot: 'jade1',
+    name: '阳玉·法伤元数据',
+    build: {
+      ...bundle.equipments[0]!.build!,
+      equipmentId: 'jade_spell_damage_meta',
+      specialEffectJson: '{}',
+      setEffectJson: '{}',
+      notesJson: JSON.stringify({
+        effectModifiers: [
+          {
+            code: 'spell_damage_percent',
+            value: 0.015,
+            label: '基础法术伤害 +1.5%',
+          },
+        ],
+      }),
+    },
+    attrs: [],
+    snapshotSlot: 'jade1',
+  });
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(breakdown.spellDamagePercent, 0.015);
+  assert.equal(
+    breakdown.equipmentEffectModifiers?.[0]?.source,
+    'persisted_modifier'
+  );
+  assert.equal(breakdown.panelMagicDamage, 2465.435);
+  assert.ok(
+    (result.targets[0]?.damage ?? 0) > (baselineResult.targets[0]?.damage ?? 0)
+  );
 });

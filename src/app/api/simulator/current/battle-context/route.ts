@@ -39,6 +39,7 @@ export async function PATCH(req: Request) {
       targetHp: toNumber(body?.targetHp, 0),
       targetDefense: toNumber(body?.targetDefense, 0),
       targetMagicDefense: toNumber(body?.targetMagicDefense, 0),
+      targetSpeed: toNumber(body?.targetSpeed, 0),
       targetMagicDefenseCultivation: toNumber(
         body?.targetMagicDefenseCultivation,
         0

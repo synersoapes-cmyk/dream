@@ -1,9 +1,12 @@
+import type { SimulatorEquipmentType } from '@/shared/lib/simulator-equipment';
 import type {
   SimulatorElement,
   SimulatorSchool,
 } from '@/shared/models/simulator-domain';
 
 export type Faction = SimulatorSchool;
+export type EquipmentType = SimulatorEquipmentType;
+export type CharacterStatMap = Partial<CombatStats & BaseAttributes>;
 
 export interface BaseAttributes {
   level: number;
@@ -27,6 +30,16 @@ export interface CombatStats {
   magicDefense: number;
   speed: number;
   dodge: number;
+  sealHit?: number;
+  spiritualPower?: number;
+  magicCritLevel?: number;
+  fixedDamage?: number;
+  pierceLevel?: number;
+  elementalMastery?: number;
+  block?: number;
+  antiCritLevel?: number;
+  sealResistLevel?: number;
+  elementalResistance?: number;
 }
 
 export interface RuneStone {
@@ -46,29 +59,28 @@ export interface RuneStone {
   quality?: string;
   description?: string;
   price?: number;
-  stats: Partial<CombatStats & BaseAttributes>;
+  stats: CharacterStatMap;
+}
+
+export interface EquipmentEffectModifier {
+  code: 'spell_ignore_percent' | 'spell_damage_percent' | (string & {});
+  value: number;
+  label?: string;
+  source?: string;
 }
 
 export interface Equipment {
   id: string;
   name: string;
-  type:
-    | 'weapon'
-    | 'helmet'
-    | 'necklace'
-    | 'armor'
-    | 'belt'
-    | 'shoes'
-    | 'trinket'
-    | 'jade'
-    | 'runeStone'
-    | 'rune';
+  type: EquipmentType;
   slot?: number;
+  setName?: string;
   mainStat: string;
   extraStat?: string;
   highlights?: string[];
-  baseStats: Partial<CombatStats & BaseAttributes>;
-  stats: Partial<CombatStats & BaseAttributes>;
+  effectModifiers?: EquipmentEffectModifier[];
+  baseStats: CharacterStatMap;
+  stats: CharacterStatMap;
   price?: number;
   crossServerFee?: number;
   imageUrl?: string;
@@ -177,6 +189,7 @@ export interface CombatTarget {
   hp: number;
   defense: number;
   magicDefense: number;
+  speed?: number;
   faction?: Faction;
   isBoss?: boolean;
   dungeonName?: string;
@@ -286,6 +299,22 @@ export interface AccountData {
   treasure: Treasure | null;
 }
 
+export interface SyncedCloudState {
+  accounts: AccountData[];
+  activeAccountId: string;
+  baseAttributes: BaseAttributes;
+  combatStats: CombatStats;
+  equipment: Equipment[];
+  equipmentSets: EquipmentSet[];
+  activeSetIndex: number;
+  skills: Skill[];
+  cultivation: Cultivation;
+  treasure: Treasure | null;
+  combatTarget: CombatTarget;
+  formation: string;
+  playerSetup: PlayerSetup;
+}
+
 export interface GameState {
   accounts: AccountData[];
   activeAccountId: string;
@@ -314,6 +343,12 @@ export interface GameState {
   removeManualTarget: (id: string) => void;
   updateManualTarget: (id: string, updates: Partial<EnemyTarget>) => void;
   selectSkill: (skill: Skill | null) => void;
+  syncedCloudState: SyncedCloudState | null;
+  autoRecalculateDerivedStats: boolean;
+  setAutoRecalculateDerivedStats: (
+    enabled: boolean,
+    options?: { restoreCloudState?: boolean }
+  ) => void;
   previewMode: boolean;
   previewEquipment: {
     current: Equipment | null;

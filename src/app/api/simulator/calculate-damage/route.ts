@@ -31,6 +31,8 @@ export async function POST(req: Request) {
       ? body.targets.map((item: any) => ({
           name: typeof item?.name === 'string' ? item.name : undefined,
           magicDefense: toFiniteNumber(item?.magicDefense),
+          speed:
+            item?.speed === undefined ? undefined : toFiniteNumber(item?.speed),
           magicDefenseCultivation: toFiniteNumber(item?.magicDefenseCultivation),
           shenmuValue:
             item?.shenmuValue === undefined ? undefined : toFiniteNumber(item?.shenmuValue),
@@ -67,6 +69,10 @@ export async function POST(req: Request) {
         body?.targetMagicDefense === undefined
           ? undefined
           : toFiniteNumber(body.targetMagicDefense),
+      targetSpeed:
+        body?.targetSpeed === undefined
+          ? undefined
+          : toFiniteNumber(body.targetSpeed),
       targetMagicDefenseCultivation:
         body?.targetMagicDefenseCultivation === undefined
           ? undefined

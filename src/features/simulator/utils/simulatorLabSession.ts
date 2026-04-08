@@ -10,6 +10,9 @@ function cloneEquipmentItem(equipment: Equipment): Equipment {
   return {
     ...equipment,
     highlights: equipment.highlights ? [...equipment.highlights] : undefined,
+    effectModifiers: equipment.effectModifiers?.map((modifier) => ({
+      ...modifier,
+    })),
     baseStats: { ...equipment.baseStats },
     stats: { ...equipment.stats },
     runeStoneSets: equipment.runeStoneSets?.map((set) =>

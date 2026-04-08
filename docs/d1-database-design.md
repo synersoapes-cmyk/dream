@@ -180,7 +180,7 @@
 
 #### `rule_skill_formula`
 
-用途：技能主公式定义。第一期只存龙卷雨击。
+用途：技能主公式定义。当前版本已覆盖龙卷雨击、龙腾。
 
 | 字段                 | 类型      | 说明                |
 | -------------------- | --------- | ------------------- |
@@ -335,22 +335,28 @@
 
 用途：角色完整状态快照
 
-| 字段            | 类型      | 说明                                                 |
-| --------------- | --------- | ---------------------------------------------------- |
-| `id`            | `TEXT PK` | 快照 ID                                              |
-| `character_id`  | `TEXT`    | 角色 ID                                              |
-| `snapshot_type` | `TEXT`    | `current` / `manual` / `lab_baseline` / `lab_result` |
-| `name`          | `TEXT`    | 快照名，如任务套、PK套                               |
-| `version_no`    | `INTEGER` | 角色内部版本号                                       |
-| `source`        | `TEXT`    | `manual` / `ocr` / `lab_apply`                       |
-| `notes`         | `TEXT`    | 备注                                                 |
-| `created_at`    | `INTEGER` | 创建时间                                             |
-| `updated_at`    | `INTEGER` | 更新时间                                             |
+| 字段            | 类型      | 说明                                                             |
+| --------------- | --------- | ---------------------------------------------------------------- |
+| `id`            | `TEXT PK` | 快照 ID                                                          |
+| `character_id`  | `TEXT`    | 角色 ID                                                          |
+| `snapshot_type` | `TEXT`    | `current` / `history` / `manual` / `lab_baseline` / `lab_result` |
+| `name`          | `TEXT`    | 快照名，如任务套、PK套                                           |
+| `version_no`    | `INTEGER` | 角色内部版本号                                                   |
+| `source`        | `TEXT`    | `manual` / `ocr` / `lab_apply` / `equipment_backup`              |
+| `notes`         | `TEXT`    | 备注                                                             |
+| `created_at`    | `INTEGER` | 创建时间                                                         |
+| `updated_at`    | `INTEGER` | 更新时间                                                         |
 
 索引：
 
 - `INDEX(character_id, created_at DESC)`
 - `INDEX(character_id, snapshot_type)`
+
+补充说明：
+
+- 当前线上实现里，实验室将装备应用到当前角色前，会先插入一条 `snapshot_type = history`、`source = equipment_backup` 的历史快照。
+- 这条历史快照会完整复制当时的 `character_profile / character_skill / character_cultivation / snapshot_battle_context / snapshot_equipment_slot`，用于“回滚最近一次应用”。
+- 回滚时不是直接把 `game_character.current_snapshot_id` 指向历史快照，而是把历史快照内容重新覆写回当前 `current` 快照，保证历史快照保持只读语义。
 
 ### `character_profile`
 
@@ -475,6 +481,12 @@
 | `special_effect_json` | `TEXT`    | 特技特效   |
 | `set_effect_json`     | `TEXT`    | 套装效果   |
 | `notes_json`          | `TEXT`    | 其他扩展   |
+
+补充说明：
+
+- 当前线上实现里，`special_effect_json` 主要保存高亮标签、特效、精炼效果等展示字段。
+- `set_effect_json` 保存符石套装文本、灵饰套装文本等摘要字段。
+- `notes_json` 会额外持久化激活符石组、符石颜色序列、开孔数、跨服费等扩展元数据，供服务端规则链路自动命中 `rule_skill_bonus`，避免前端试算和正式保存口径分叉。
 
 ## 5.4 符石、符石组合、星石与星相互合
 
@@ -656,6 +668,9 @@
 
 - 文档明确要求区分固定值与百分比
 - 例如 `法术忽视 5%` 必须保留为百分比数据，不能写死到结果里
+- 当前服务端试算已读取装备元数据中的 `spell_ignore_percent` / `spell_damage_percent`，以及 `法术忽视 %` / `基础法术伤害 %` 文本
+  - `spell_ignore_percent` 在公式阶段修正目标法防
+  - `spell_damage_percent` 在公式阶段修正最终参与计算的面板法伤
 
 ## 5.7 快照挂载关系
 
@@ -673,6 +688,11 @@
 约束建议：
 
 - `UNIQUE(snapshot_id, slot)`
+
+补充说明：
+
+- `snapshot_equipment_slot` 现在同时承载当前快照和历史回滚快照的装备引用。
+- 覆写当前装备时，只会清理当前 `snapshot_id` 自身绑定的装备，以及没有被其他历史快照引用的孤儿 `equipment_item`；历史快照引用的装备不会被删除。
 
 ### `snapshot_ornament_slot`
 
@@ -791,7 +811,7 @@
 
 - 文档要求支持“模拟老装备的符石/宝石”
 - 所以继承策略需要单独落字段，不能只靠前端临时传参
-- 当前版本先覆盖常规装备链路，灵饰和玉魄后续按同样模式补齐
+- 当前版本已覆盖常规装备链路，并支持灵饰/玉魄通过持久化元数据接入百分比效果；灵饰套装档位的自动数值派生仍待补齐
 
 ### `snapshot_battle_context`
 
@@ -815,6 +835,7 @@
 | `target_hp`                        | `REAL`    | 目标气血           |
 | `target_defense`                   | `REAL`    | 目标防御           |
 | `target_magic_defense`             | `REAL`    | 目标法防           |
+| `target_speed`                     | `REAL`    | 目标速度           |
 | `target_magic_defense_cultivation` | `INTEGER` | 目标法抗修炼       |
 | `target_element`                   | `TEXT`    | 目标五行           |
 | `target_formation`                 | `TEXT`    | 目标阵法           |
@@ -823,6 +844,7 @@
 说明：
 
 - 当前版本优先把“当前状态”和“伤害计算”需要的战斗参数持久化
+- `target_speed` 用于服务端执行 `招云` 套装的目标速度加伤规则；老数据迁移后默认补 `0`
 - 更细粒度的实验结果表，如 `lab_result`、`lab_attr_delta`、`lab_apply_log`，后续再补
 
 ## 5.10 战斗目标与规则模板

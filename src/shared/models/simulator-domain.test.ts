@@ -95,6 +95,7 @@ function createBundle(): SimulatorCharacterBundle {
       targetHp: 50000,
       targetDefense: 1500,
       targetMagicDefense: 1200,
+      targetSpeed: 720,
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '普通阵',
@@ -146,7 +147,29 @@ function createBundle(): SimulatorCharacterBundle {
           refineLevel: 7,
           specialEffectJson: '{}',
           setEffectJson: '{}',
-          notesJson: '{}',
+          notesJson: JSON.stringify({
+            activeRuneStoneSet: 0,
+            runeStoneSets: [
+              [
+                {
+                  id: 'rune_1',
+                  name: '黑符石',
+                  type: 'black',
+                  stats: {
+                    magicDamage: 12,
+                  },
+                },
+                {
+                  id: 'rune_2',
+                  name: '白符石',
+                  type: 'white',
+                  stats: {
+                    magic: 8,
+                  },
+                },
+              ],
+            ],
+          }),
         },
         attrs: [
           {
@@ -183,10 +206,12 @@ test('buildSimulatorCharacterDomain maps profile, battle context, and equipment 
   assert.equal(domain.profile.spirit, 610);
   assert.equal(domain.profile.dodge, 205);
   assert.equal(domain.cultivationLevels.magicAttack, 23);
-  assert.equal(domain.equipmentAttributeTotals.magicDamage, 220);
+  assert.equal(domain.equipmentAttributeTotals.magicDamage, 232);
+  assert.equal(domain.equipmentAttributeTotals.magic, 8);
   assert.equal(domain.equipmentAttributeTotals.magicResult, 35);
   assert.equal(domain.battleContext?.selfElement, '水');
   assert.equal(domain.battleContext?.targetName, '乌鸡国树怪');
+  assert.equal(domain.battleContext?.targetSpeed, 720);
   assert.equal(domain.skills[0]?.finalLevel, 152);
 });
 

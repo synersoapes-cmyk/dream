@@ -25,6 +25,19 @@ import { createPerfTimer } from '@/shared/lib/perf';
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
 import { getRequiredSimulatorSeedConfig } from '@/shared/models/simulator-template';
 
+import {
+  buildEquipmentNotesMeta,
+  buildEquipmentSetEffectMeta,
+  buildEquipmentSpecialEffectMeta,
+  normalizeEquipmentPayload,
+  normalizeLabSeatPayload,
+  resolveLabSessionEquipmentReferenceId,
+  toEquipmentAttrRows,
+  toEquipmentSlotValue,
+} from './simulator-payload';
+
+export { resolveLabSessionEquipmentReferenceId } from './simulator-payload';
+
 export type SimulatorCharacter = typeof gameCharacter.$inferSelect;
 export type SimulatorSnapshot = typeof characterSnapshot.$inferSelect;
 export type SimulatorProfile = typeof characterProfile.$inferSelect;
@@ -62,6 +75,11 @@ export type SimulatorCharacterBundle = {
   rules: SimulatorRule[];
   equipments: SimulatorEquipment[];
 };
+
+export type SimulatorRollbackSnapshotSummary = Pick<
+  SimulatorSnapshot,
+  'id' | 'name' | 'source' | 'notes' | 'createdAt'
+>;
 
 export type SimulatorLabSeatPayload = {
   id: string;
@@ -400,6 +418,7 @@ function parseJsonObject(value: string | null | undefined) {
 }
 
 const EQUIPMENT_PLAN_NOTES_KEY = 'equipmentPlan';
+const EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE = 'equipment_backup';
 
 type SimulatorEquipmentPlanNotes = {
   equipmentSets: Array<Record<string, unknown>>;
@@ -507,8 +526,21 @@ async function insertValuesInChunks(
   values: any[],
   chunkSize = 8
 ) {
-  for (const chunk of chunkArray(values, chunkSize)) {
-    await database.insert(table).values(chunk);
+  const queries = chunkArray(values, chunkSize).map((chunk) =>
+    database.insert(table).values(chunk)
+  );
+
+  if (queries.length === 0) {
+    return;
+  }
+
+  if (typeof database.batch === 'function') {
+    await database.batch(queries);
+    return;
+  }
+
+  for (const query of queries) {
+    await query;
   }
 }
 
@@ -691,6 +723,437 @@ async function loadPersistedBundleEquipments(params: {
   }));
 }
 
+function formatEquipmentRollbackSnapshotName(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+
+  return `应用前快照 ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+async function getNextSnapshotVersionNo(characterId: string) {
+  const [latestSnapshot] = await db()
+    .select({ versionNo: characterSnapshot.versionNo })
+    .from(characterSnapshot)
+    .where(eq(characterSnapshot.characterId, characterId))
+    .orderBy(
+      desc(characterSnapshot.versionNo),
+      desc(characterSnapshot.createdAt)
+    )
+    .limit(1);
+
+  return (latestSnapshot?.versionNo ?? 0) + 1;
+}
+
+async function loadSnapshotState(params: {
+  characterId: string;
+  snapshotId: string;
+}) {
+  const [profileRows, skills, cultivations, battleContextRows, equipments] =
+    await Promise.all([
+      db()
+        .select()
+        .from(characterProfile)
+        .where(eq(characterProfile.snapshotId, params.snapshotId))
+        .limit(1),
+      db()
+        .select()
+        .from(characterSkill)
+        .where(eq(characterSkill.snapshotId, params.snapshotId))
+        .orderBy(
+          desc(characterSkill.finalLevel),
+          asc(characterSkill.skillName)
+        ),
+      db()
+        .select()
+        .from(characterCultivation)
+        .where(eq(characterCultivation.snapshotId, params.snapshotId))
+        .orderBy(asc(characterCultivation.cultivationType)),
+      db()
+        .select()
+        .from(snapshotBattleContext)
+        .where(eq(snapshotBattleContext.snapshotId, params.snapshotId))
+        .limit(1),
+      loadPersistedBundleEquipments({
+        characterId: params.characterId,
+        snapshotId: params.snapshotId,
+      }),
+    ]);
+
+  return {
+    profile: profileRows[0] ?? null,
+    skills,
+    cultivations,
+    battleContext: battleContextRows[0] ?? null,
+    equipments,
+  };
+}
+
+type PersistedSnapshotState = {
+  profile: SimulatorProfile | null;
+  skills: SimulatorSkill[];
+  cultivations: SimulatorCultivation[];
+  battleContext: SimulatorBattleContext | null;
+  equipments: SimulatorEquipment[];
+};
+
+async function insertSnapshotState(params: {
+  snapshotId: string;
+  characterId: string;
+  profile: SimulatorProfile | null;
+  skills: SimulatorSkill[];
+  cultivations: SimulatorCultivation[];
+  battleContext: SimulatorBattleContext | null;
+  equipments: SimulatorEquipment[];
+  now: Date;
+}): Promise<PersistedSnapshotState> {
+  const database = db();
+  const batchQueries: any[] = [];
+  const nextProfile = params.profile
+    ? {
+        snapshotId: params.snapshotId,
+        school: params.profile.school,
+        level: params.profile.level,
+        physique: params.profile.physique,
+        magic: params.profile.magic,
+        strength: params.profile.strength,
+        endurance: params.profile.endurance,
+        agility: params.profile.agility,
+        potentialPoints: params.profile.potentialPoints,
+        hp: params.profile.hp,
+        mp: params.profile.mp,
+        damage: params.profile.damage,
+        defense: params.profile.defense,
+        magicDamage: params.profile.magicDamage,
+        magicDefense: params.profile.magicDefense,
+        speed: params.profile.speed,
+        hit: params.profile.hit,
+        sealHit: params.profile.sealHit,
+        rawBodyJson: params.profile.rawBodyJson,
+      }
+    : null;
+  const nextSkills = params.skills.map((skill) => ({
+    id: getUuid(),
+    snapshotId: params.snapshotId,
+    skillCode: skill.skillCode,
+    skillName: skill.skillName,
+    baseLevel: skill.baseLevel,
+    extraLevel: skill.extraLevel,
+    finalLevel: skill.finalLevel,
+    sourceDetailJson: skill.sourceDetailJson,
+  }));
+  const nextCultivations = params.cultivations.map((cultivation) => ({
+    id: getUuid(),
+    snapshotId: params.snapshotId,
+    cultivationType: cultivation.cultivationType,
+    level: cultivation.level,
+  }));
+  const nextBattleContext = params.battleContext
+    ? {
+        snapshotId: params.snapshotId,
+        ruleVersionId: params.battleContext.ruleVersionId ?? null,
+        selfFormation: params.battleContext.selfFormation,
+        selfElement: params.battleContext.selfElement,
+        formationCounterState: params.battleContext.formationCounterState,
+        elementRelation: params.battleContext.elementRelation,
+        transformCardFactor: params.battleContext.transformCardFactor,
+        splitTargetCount: params.battleContext.splitTargetCount,
+        shenmuValue: params.battleContext.shenmuValue,
+        magicResult: params.battleContext.magicResult,
+        targetTemplateId: params.battleContext.targetTemplateId ?? null,
+        targetName: params.battleContext.targetName,
+        targetLevel: params.battleContext.targetLevel,
+        targetHp: params.battleContext.targetHp,
+        targetDefense: params.battleContext.targetDefense,
+        targetMagicDefense: params.battleContext.targetMagicDefense,
+        targetSpeed: params.battleContext.targetSpeed,
+        targetMagicDefenseCultivation:
+          params.battleContext.targetMagicDefenseCultivation,
+        targetElement: params.battleContext.targetElement,
+        targetFormation: params.battleContext.targetFormation,
+        notesJson: params.battleContext.notesJson,
+        createdAt: params.now,
+        updatedAt: params.now,
+      }
+    : null;
+
+  if (nextProfile) {
+    batchQueries.push(database.insert(characterProfile).values(nextProfile));
+  }
+
+  if (nextSkills.length > 0) {
+    for (const chunk of chunkArray(nextSkills)) {
+      batchQueries.push(database.insert(characterSkill).values(chunk));
+    }
+  }
+
+  if (nextCultivations.length > 0) {
+    for (const chunk of chunkArray(nextCultivations)) {
+      batchQueries.push(database.insert(characterCultivation).values(chunk));
+    }
+  }
+
+  if (nextBattleContext) {
+    batchQueries.push(
+      database.insert(snapshotBattleContext).values(nextBattleContext)
+    );
+  }
+
+  if (params.equipments.length === 0) {
+    if (batchQueries.length > 0) {
+      if (typeof database.batch === 'function') {
+        await database.batch(batchQueries);
+      } else {
+        for (const query of batchQueries) {
+          await query;
+        }
+      }
+    }
+    return {
+      profile: nextProfile,
+      skills: nextSkills,
+      cultivations: nextCultivations,
+      battleContext: nextBattleContext,
+      equipments: [],
+    };
+  }
+
+  const equipmentIdMap = new Map<string, string>();
+  const equipmentItemValues = params.equipments.map((equipment) => {
+    const nextEquipmentId = getUuid();
+    equipmentIdMap.set(equipment.id, nextEquipmentId);
+
+    return {
+      id: nextEquipmentId,
+      characterId: params.characterId,
+      slot: equipment.slot,
+      name: equipment.name,
+      level: equipment.level,
+      quality: equipment.quality,
+      price: equipment.price,
+      source: equipment.source,
+      status: equipment.status,
+      isLocked: equipment.isLocked,
+      createdAt: params.now,
+      updatedAt: params.now,
+    };
+  });
+  const equipmentBuildValues = params.equipments.map((equipment) => ({
+    equipmentId: equipmentIdMap.get(equipment.id)!,
+    holeCount: equipment.build?.holeCount ?? 0,
+    gemLevelTotal: equipment.build?.gemLevelTotal ?? 0,
+    refineLevel: equipment.build?.refineLevel ?? 0,
+    specialEffectJson: equipment.build?.specialEffectJson ?? '{}',
+    setEffectJson: equipment.build?.setEffectJson ?? '{}',
+    notesJson: equipment.build?.notesJson ?? '{}',
+  }));
+  const equipmentAttrValues = params.equipments.flatMap((equipment) =>
+    equipment.attrs.map((attr) => ({
+      id: getUuid(),
+      equipmentId: equipmentIdMap.get(equipment.id)!,
+      attrGroup: attr.attrGroup,
+      attrType: attr.attrType,
+      valueType: attr.valueType,
+      attrValue: attr.attrValue,
+      displayOrder: attr.displayOrder,
+    }))
+  );
+  const snapshotSlotValues = params.equipments.map((equipment) => ({
+    id: getUuid(),
+    snapshotId: params.snapshotId,
+    slot: equipment.snapshotSlot ?? equipment.slot,
+    equipmentId: equipmentIdMap.get(equipment.id)!,
+  }));
+
+  for (const chunk of chunkArray(equipmentItemValues)) {
+    batchQueries.push(database.insert(equipmentItem).values(chunk));
+  }
+  for (const chunk of chunkArray(equipmentBuildValues)) {
+    batchQueries.push(database.insert(equipmentBuild).values(chunk));
+  }
+  for (const chunk of chunkArray(equipmentAttrValues)) {
+    batchQueries.push(database.insert(equipmentAttr).values(chunk));
+  }
+  for (const chunk of chunkArray(snapshotSlotValues)) {
+    batchQueries.push(database.insert(snapshotEquipmentSlot).values(chunk));
+  }
+
+  const buildByEquipmentId = new Map(
+    equipmentBuildValues.map((row) => [row.equipmentId, row] as const)
+  );
+  const attrsByEquipmentId = new Map<string, SimulatorEquipmentAttr[]>();
+
+  for (const attr of equipmentAttrValues) {
+    const current = attrsByEquipmentId.get(attr.equipmentId) ?? [];
+    current.push(attr);
+    attrsByEquipmentId.set(attr.equipmentId, current);
+  }
+
+  const nextEquipments = equipmentItemValues.map((row) => ({
+    ...row,
+    build: buildByEquipmentId.get(row.id) ?? null,
+    attrs: attrsByEquipmentId.get(row.id) ?? [],
+    snapshotSlot:
+      snapshotSlotValues.find((slotRow) => slotRow.equipmentId === row.id)
+        ?.slot ?? null,
+  }));
+
+  if (typeof database.batch === 'function') {
+    await database.batch(batchQueries);
+    return {
+      profile: nextProfile,
+      skills: nextSkills,
+      cultivations: nextCultivations,
+      battleContext: nextBattleContext,
+      equipments: nextEquipments,
+    };
+  }
+
+  for (const query of batchQueries) {
+    await query;
+  }
+
+  return {
+    profile: nextProfile,
+    skills: nextSkills,
+    cultivations: nextCultivations,
+    battleContext: nextBattleContext,
+    equipments: nextEquipments,
+  };
+}
+
+async function deleteEquipmentIdsInChunks(
+  database: ReturnType<typeof db>,
+  equipmentIds: string[]
+) {
+  if (equipmentIds.length === 0) {
+    return;
+  }
+
+  const queries = chunkArray(equipmentIds).map((chunk) =>
+    database.delete(equipmentItem).where(inArray(equipmentItem.id, chunk))
+  );
+
+  if (typeof database.batch === 'function') {
+    await database.batch(queries);
+    return;
+  }
+
+  for (const query of queries) {
+    await query;
+  }
+}
+
+async function deleteCurrentSnapshotEquipments(params: {
+  characterId: string;
+  snapshotId: string;
+}) {
+  const database = db();
+  const [equipmentRows, snapshotRows] = await Promise.all([
+    database
+      .select({ id: equipmentItem.id })
+      .from(equipmentItem)
+      .where(eq(equipmentItem.characterId, params.characterId)),
+    database
+      .select({ id: characterSnapshot.id })
+      .from(characterSnapshot)
+      .where(eq(characterSnapshot.characterId, params.characterId)),
+  ]);
+
+  const protectedSnapshotIds = snapshotRows
+    .map((row: { id: string }) => row.id)
+    .filter((snapshotId: string) => snapshotId !== params.snapshotId);
+  const protectedEquipmentRows: Array<{ equipmentId: string }> =
+    protectedSnapshotIds.length
+      ? await database
+          .select({ equipmentId: snapshotEquipmentSlot.equipmentId })
+          .from(snapshotEquipmentSlot)
+          .where(
+            inArray(snapshotEquipmentSlot.snapshotId, protectedSnapshotIds)
+          )
+      : [];
+  const protectedEquipmentIds = new Set(
+    protectedEquipmentRows.map(
+      (row: { equipmentId: string }) => row.equipmentId
+    )
+  );
+  const deletableEquipmentIds = equipmentRows
+    .map((row: { id: string }) => row.id)
+    .filter((equipmentId: string) => !protectedEquipmentIds.has(equipmentId));
+
+  await database
+    .delete(snapshotEquipmentSlot)
+    .where(eq(snapshotEquipmentSlot.snapshotId, params.snapshotId));
+  await deleteEquipmentIdsInChunks(database, deletableEquipmentIds);
+}
+
+async function createEquipmentRollbackSnapshot(params: {
+  character: SimulatorCharacter;
+  snapshot: SimulatorSnapshot;
+  name?: string;
+  notes?: string;
+  source?: string;
+}) {
+  const now = new Date();
+  const nextSnapshotId = getUuid();
+  const nextVersionNo = await getNextSnapshotVersionNo(params.character.id);
+  const snapshotState = await loadSnapshotState({
+    characterId: params.character.id,
+    snapshotId: params.snapshot.id,
+  });
+
+  await db()
+    .insert(characterSnapshot)
+    .values({
+      id: nextSnapshotId,
+      characterId: params.character.id,
+      snapshotType: 'history',
+      name: params.name ?? formatEquipmentRollbackSnapshotName(now),
+      versionNo: nextVersionNo,
+      source: params.source ?? EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE,
+      notes: params.notes ?? '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+  await insertSnapshotState({
+    snapshotId: nextSnapshotId,
+    characterId: params.character.id,
+    profile: snapshotState.profile,
+    skills: snapshotState.skills,
+    cultivations: snapshotState.cultivations,
+    battleContext: snapshotState.battleContext,
+    equipments: snapshotState.equipments,
+    now,
+  });
+}
+
+async function findLatestEquipmentRollbackSnapshot(characterId: string) {
+  const [snapshot] = await db()
+    .select({
+      id: characterSnapshot.id,
+      name: characterSnapshot.name,
+      source: characterSnapshot.source,
+      notes: characterSnapshot.notes,
+      createdAt: characterSnapshot.createdAt,
+    })
+    .from(characterSnapshot)
+    .where(
+      and(
+        eq(characterSnapshot.characterId, characterId),
+        eq(characterSnapshot.snapshotType, 'history'),
+        eq(characterSnapshot.source, EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE)
+      )
+    )
+    .orderBy(
+      desc(characterSnapshot.createdAt),
+      desc(characterSnapshot.versionNo)
+    )
+    .limit(1);
+
+  return snapshot ?? null;
+}
+
 export async function getSimulatorCharacterBundle(
   userId: string,
   characterId?: string
@@ -847,6 +1310,24 @@ export async function getSimulatorCharacterBundle(
   });
 }
 
+export async function getLatestSimulatorEquipmentRollbackSnapshot(
+  userId: string
+): Promise<SimulatorRollbackSnapshotSummary | null> {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry(
+    'getLatestSimulatorEquipmentRollbackSnapshot',
+    async () => {
+      const character = await findActiveCharacter(userId);
+      if (!character) {
+        return null;
+      }
+
+      return findLatestEquipmentRollbackSnapshot(character.id);
+    }
+  );
+}
+
 function getDefaultCharacterName(userName: string | null | undefined) {
   const normalized = String(userName || '').trim();
   if (!normalized) {
@@ -921,6 +1402,7 @@ export async function provisionDefaultSimulatorCharacterForUser(params: {
     targetHp: seedConfig.battleContext.targetHp,
     targetDefense: seedConfig.battleContext.targetDefense,
     targetMagicDefense: seedConfig.battleContext.targetMagicDefense,
+    targetSpeed: seedConfig.battleContext.targetSpeed,
     targetMagicDefenseCultivation:
       seedConfig.battleContext.targetMagicDefenseCultivation,
     targetElement: seedConfig.battleContext.targetElement,
@@ -1254,7 +1736,7 @@ export async function updateSimulatorProfile(
         magicDefense: payload.magicDefense,
         speed: payload.speed,
         hit: payload.hit,
-        sealHit: payload.sealHit ?? 0,
+        sealHit: payload.sealHit ?? existingProfile.sealHit ?? 0,
         rawBodyJson: nextRawBody,
       }
     : {
@@ -1275,7 +1757,7 @@ export async function updateSimulatorProfile(
         magicDefense: payload.magicDefense,
         speed: payload.speed,
         hit: payload.hit,
-        sealHit: payload.sealHit ?? 0,
+        sealHit: payload.sealHit ?? existingProfile?.sealHit ?? 0,
         rawBodyJson: nextRawBody,
       };
 
@@ -1315,7 +1797,7 @@ export async function updateSimulatorProfile(
         magicDefense: payload.magicDefense,
         speed: payload.speed,
         hit: payload.hit,
-        sealHit: payload.sealHit ?? 0,
+        sealHit: payload.sealHit ?? existingProfile?.sealHit ?? 0,
         rawBodyJson: nextRawBody,
       })
       .where(eq(characterProfile.snapshotId, snapshot.id));
@@ -1505,6 +1987,7 @@ export async function updateSimulatorBattleContext(
     targetHp?: number;
     targetDefense?: number;
     targetMagicDefense?: number;
+    targetSpeed?: number;
     targetMagicDefenseCultivation?: number;
     targetElement?: string;
     targetFormation?: string;
@@ -1565,6 +2048,21 @@ export async function updateSimulatorBattleContext(
   const profile = profileRows[0] ?? null;
   const existingContext = existingContextRows[0] ?? null;
 
+  const targetTemplateId =
+    payload.targetTemplateId === undefined
+      ? (existingContext?.targetTemplateId ?? null)
+      : payload.targetTemplateId || null;
+  const now = new Date();
+
+  const [targetTemplate, rules] = await Promise.all([
+    findBattleTargetTemplateById(targetTemplateId),
+    findAttributeRules({
+      school: profile?.school ?? character.school,
+      roleType: character.roleType,
+    }),
+  ]);
+  timer.mark('rules');
+
   const nextValue = {
     ruleVersionId: existingContext?.ruleVersionId ?? null,
     selfFormation: payload.selfFormation || '天覆阵',
@@ -1575,21 +2073,22 @@ export async function updateSimulatorBattleContext(
     splitTargetCount: payload.splitTargetCount ?? 1,
     shenmuValue: payload.shenmuValue ?? 0,
     magicResult: payload.magicResult ?? 0,
-    targetTemplateId:
-      payload.targetTemplateId === undefined
-        ? (existingContext?.targetTemplateId ?? null)
-        : payload.targetTemplateId || null,
+    targetTemplateId,
     targetName: payload.targetName || '默认目标',
     targetLevel: payload.targetLevel ?? 0,
     targetHp: payload.targetHp ?? 0,
     targetDefense: payload.targetDefense ?? 0,
     targetMagicDefense: payload.targetMagicDefense ?? 0,
+    targetSpeed:
+      payload.targetSpeed ??
+      targetTemplate?.speed ??
+      existingContext?.targetSpeed ??
+      0,
     targetMagicDefenseCultivation: payload.targetMagicDefenseCultivation ?? 0,
     targetElement: payload.targetElement || '',
     targetFormation: payload.targetFormation || '普通阵',
     notesJson: existingContext?.notesJson ?? '{}',
   };
-  const now = new Date();
   const nextBattleContext: SimulatorBattleContext = existingContext
     ? {
         ...existingContext,
@@ -1602,15 +2101,6 @@ export async function updateSimulatorBattleContext(
         createdAt: now,
         updatedAt: now,
       };
-
-  const [targetTemplate, rules] = await Promise.all([
-    findBattleTargetTemplateById(nextValue.targetTemplateId),
-    findAttributeRules({
-      school: profile?.school ?? character.school,
-      roleType: character.roleType,
-    }),
-  ]);
-  timer.mark('rules');
 
   if (existingContext) {
     await db()
@@ -1649,58 +2139,6 @@ export async function updateSimulatorBattleContext(
   return bundle;
 }
 
-function toEquipmentSlotValue(item: { type: string; slot?: number }) {
-  if (item.type === 'trinket') {
-    return `trinket${item.slot ?? 1}`;
-  }
-
-  if (item.type === 'jade') {
-    return `jade${item.slot ?? 1}`;
-  }
-
-  if (item.type === 'runeStone' || item.type === 'rune') {
-    return item.slot ? `${item.type}${item.slot}` : item.type;
-  }
-
-  return item.type;
-}
-
-function normalizeEquipmentPayload<
-  T extends {
-    type: string;
-    slot?: number;
-  },
->(equipment: T[]): T[] {
-  const deduped = new Map<string, T>();
-
-  for (const item of equipment) {
-    const slotKey = toEquipmentSlotValue(item);
-    deduped.set(slotKey, item);
-  }
-
-  return Array.from(deduped.values());
-}
-
-function toEquipmentAttrRows(item: {
-  stats?: Record<string, unknown>;
-  baseStats?: Record<string, unknown>;
-}) {
-  const mergedStats = {
-    ...(item.baseStats ?? {}),
-    ...(item.stats ?? {}),
-  };
-
-  return Object.entries(mergedStats)
-    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
-    .map(([attrType, attrValue], index) => ({
-      attrGroup: 'base',
-      attrType,
-      valueType: 'flat' as const,
-      attrValue: Number(attrValue),
-      displayOrder: index,
-    }));
-}
-
 const LAB_SEAT_META_SLOT = '__seat__';
 
 async function findActiveLabSession(characterId: string) {
@@ -1725,81 +2163,6 @@ async function findCandidateEquipmentRows(characterId: string) {
     .from(candidateEquipment)
     .where(eq(candidateEquipment.characterId, characterId))
     .orderBy(asc(candidateEquipment.sort), desc(candidateEquipment.updatedAt));
-}
-
-function buildLabSeatDefaultName(seatId: string, index: number) {
-  if (seatId === 'sample') {
-    return '样本席位';
-  }
-
-  return `对比席位${index + 1}`;
-}
-
-function normalizeLabSeatPayload(
-  seats: Array<{
-    id?: string;
-    name?: string;
-    isSample?: boolean;
-    equipment?: Array<Record<string, unknown>>;
-  }>
-): SimulatorLabSeatPayload[] {
-  const compareSeats: SimulatorLabSeatPayload[] = [];
-
-  for (const seat of seats) {
-    const normalizedId = String(seat?.id || '');
-    const isSample = Boolean(seat?.isSample) || normalizedId === 'sample';
-    const seatId = isSample
-      ? 'sample'
-      : normalizedId || `comp_${compareSeats.length + 1}`;
-
-    const equipment = Array.isArray(seat?.equipment)
-      ? normalizeEquipmentPayload(
-          seat.equipment as Array<{
-            type: string;
-            slot?: number;
-          }>
-        )
-      : [];
-
-    const normalizedSeat: SimulatorLabSeatPayload = {
-      id: seatId,
-      name: String(
-        seat?.name ||
-          (isSample
-            ? '样本席位'
-            : buildLabSeatDefaultName(seatId, compareSeats.length))
-      ),
-      isSample,
-      equipment: equipment as Array<Record<string, unknown>>,
-    };
-
-    if (isSample) {
-      continue;
-    }
-
-    compareSeats.push(normalizedSeat);
-  }
-
-  return [
-    {
-      id: 'sample',
-      name: '样本席位',
-      isSample: true,
-      equipment: [],
-    },
-    ...compareSeats.slice(0, 5),
-  ];
-}
-
-export function resolveLabSessionEquipmentReferenceId(
-  equipmentId: unknown,
-  persistedEquipmentIds: Set<string>
-) {
-  return typeof equipmentId === 'string' &&
-    equipmentId.length > 0 &&
-    persistedEquipmentIds.has(equipmentId)
-    ? equipmentId
-    : null;
 }
 
 async function buildSimulatorLabSessionBundle(
@@ -2781,9 +3144,34 @@ export async function updateSimulatorEquipment(
       highlights?: string[];
       stats?: Record<string, unknown>;
       baseStats?: Record<string, unknown>;
+      crossServerFee?: number;
+      runeStoneSets?: Array<Array<Record<string, unknown>>>;
+      runeStoneSetsNames?: string[];
+      activeRuneStoneSet?: number;
+      runeSetEffect?: string;
+      setName?: string;
+      extraStat?: string;
+      description?: string;
+      equippableRoles?: string;
+      element?: string;
+      durability?: number;
+      gemstone?: string;
+      luckyHoles?: string;
+      starPosition?: string;
+      starAlignment?: string;
+      factionRequirement?: string;
+      positionRequirement?: string;
+      specialEffect?: string;
+      manufacturer?: string;
+      refinementEffect?: string;
+      imageUrl?: string;
     }>;
     equipmentSets?: Array<Record<string, unknown>>;
     activeSetIndex?: number;
+    createHistorySnapshot?: boolean;
+    historySnapshotName?: string;
+    historySnapshotNotes?: string;
+    historySnapshotSource?: string;
   }
 ) {
   await ensureSimulatorDbReady();
@@ -2877,9 +3265,21 @@ export async function updateSimulatorEquipment(
     const now = new Date();
     let nextEquipments: SimulatorEquipment[] = [];
 
-    await db()
-      .delete(equipmentItem)
-      .where(eq(equipmentItem.characterId, character.id));
+    if (payload.createHistorySnapshot) {
+      await createEquipmentRollbackSnapshot({
+        character,
+        snapshot,
+        name: payload.historySnapshotName,
+        notes: payload.historySnapshotNotes,
+        source: payload.historySnapshotSource,
+      });
+      timer.mark('history_snapshot');
+    }
+
+    await deleteCurrentSnapshotEquipments({
+      characterId: character.id,
+      snapshotId: snapshot.id,
+    });
     timer.mark('delete_existing');
 
     if (normalizedEquipment.length > 0) {
@@ -2917,11 +3317,15 @@ export async function updateSimulatorEquipment(
           holeCount: 0,
           gemLevelTotal: 0,
           refineLevel: item.forgeLevel ?? 0,
-          specialEffectJson: JSON.stringify({
-            highlights: item.highlights ?? [],
-          }),
-          setEffectJson: '{}',
-          notesJson: '{}',
+          specialEffectJson: JSON.stringify(
+            buildEquipmentSpecialEffectMeta(item as Record<string, unknown>)
+          ),
+          setEffectJson: JSON.stringify(
+            buildEquipmentSetEffectMeta(item as Record<string, unknown>)
+          ),
+          notesJson: JSON.stringify(
+            buildEquipmentNotesMeta(item as Record<string, unknown>)
+          ),
         })
       );
 
@@ -2995,6 +3399,7 @@ export async function updateSimulatorEquipment(
       targetHp: existingContext?.targetHp ?? 0,
       targetDefense: existingContext?.targetDefense ?? 0,
       targetMagicDefense: existingContext?.targetMagicDefense ?? 0,
+      targetSpeed: existingContext?.targetSpeed ?? targetTemplate?.speed ?? 0,
       targetMagicDefenseCultivation:
         existingContext?.targetMagicDefenseCultivation ?? 0,
       targetElement: existingContext?.targetElement ?? '',
@@ -3045,6 +3450,7 @@ export async function updateSimulatorEquipment(
     timer.finish({
       status: 'ok',
       equipmentCount: nextEquipments.length,
+      createdHistorySnapshot: Boolean(payload.createHistorySnapshot),
       reusedSnapshotRelations: true,
       ruleCount: rules.length,
     });
@@ -3052,4 +3458,142 @@ export async function updateSimulatorEquipment(
     primeSimulatorCharacterBundleCache(userId, bundle);
     return bundle;
   });
+}
+
+export async function rollbackSimulatorEquipmentToLatestSnapshot(
+  userId: string
+) {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry(
+    'rollbackSimulatorEquipmentToLatestSnapshot',
+    async () => {
+      const timer = createPerfTimer(
+        'rollbackSimulatorEquipmentToLatestSnapshot:model',
+        {
+          slowThresholdMs: 300,
+        }
+      );
+
+      const character = await findActiveCharacter(userId);
+      timer.mark('character');
+      if (!character) {
+        timer.finish({ status: 'missing_character' });
+        return null;
+      }
+
+      const [currentSnapshot, latestRollbackSnapshot] = await Promise.all([
+        findCurrentSnapshot(character),
+        findLatestEquipmentRollbackSnapshot(character.id),
+      ]);
+      timer.mark('snapshots');
+
+      if (!currentSnapshot || !latestRollbackSnapshot) {
+        timer.finish({
+          status: currentSnapshot
+            ? 'missing_rollback_snapshot'
+            : 'missing_snapshot',
+        });
+        return null;
+      }
+
+      const snapshotState = await loadSnapshotState({
+        characterId: character.id,
+        snapshotId: latestRollbackSnapshot.id,
+      });
+      timer.mark('load_snapshot_state');
+
+      const now = new Date();
+      const database = db();
+
+      if (typeof database.batch === 'function') {
+        await database.batch([
+          database
+            .delete(characterProfile)
+            .where(eq(characterProfile.snapshotId, currentSnapshot.id)),
+          database
+            .delete(characterSkill)
+            .where(eq(characterSkill.snapshotId, currentSnapshot.id)),
+          database
+            .delete(characterCultivation)
+            .where(eq(characterCultivation.snapshotId, currentSnapshot.id)),
+          database
+            .delete(snapshotBattleContext)
+            .where(eq(snapshotBattleContext.snapshotId, currentSnapshot.id)),
+        ]);
+      } else {
+        await database
+          .delete(characterProfile)
+          .where(eq(characterProfile.snapshotId, currentSnapshot.id));
+        await database
+          .delete(characterSkill)
+          .where(eq(characterSkill.snapshotId, currentSnapshot.id));
+        await database
+          .delete(characterCultivation)
+          .where(eq(characterCultivation.snapshotId, currentSnapshot.id));
+        await database
+          .delete(snapshotBattleContext)
+          .where(eq(snapshotBattleContext.snapshotId, currentSnapshot.id));
+      }
+      await deleteCurrentSnapshotEquipments({
+        characterId: character.id,
+        snapshotId: currentSnapshot.id,
+      });
+      timer.mark('clear_current_state');
+
+      const restoredState = await insertSnapshotState({
+        snapshotId: currentSnapshot.id,
+        characterId: character.id,
+        profile: snapshotState.profile,
+        skills: snapshotState.skills,
+        cultivations: snapshotState.cultivations,
+        battleContext: snapshotState.battleContext,
+        equipments: snapshotState.equipments,
+        now,
+      });
+      await database
+        .update(characterSnapshot)
+        .set({
+          updatedAt: now,
+        })
+        .where(eq(characterSnapshot.id, currentSnapshot.id));
+      timer.mark('restore_current_state');
+
+      const [targetTemplate, rules] = await Promise.all([
+        findBattleTargetTemplateById(
+          restoredState.battleContext?.targetTemplateId
+        ),
+        findAttributeRules({
+          school: restoredState.profile?.school ?? character.school,
+          roleType: character.roleType,
+        }),
+      ]);
+      timer.mark('reload_bundle');
+
+      const bundle: SimulatorCharacterBundle = {
+        character,
+        snapshot: {
+          ...currentSnapshot,
+          updatedAt: now,
+        },
+        profile: restoredState.profile,
+        skills: restoredState.skills,
+        cultivations: restoredState.cultivations,
+        battleContext: restoredState.battleContext,
+        battleTargetTemplate: targetTemplate,
+        rules,
+        equipments: restoredState.equipments,
+      };
+
+      clearSimulatorCharacterBundleCache(userId, character.id);
+      primeSimulatorCharacterBundleCache(userId, bundle);
+
+      timer.finish({
+        status: 'ok',
+        equipmentCount: bundle.equipments.length,
+      });
+
+      return bundle;
+    }
+  );
 }

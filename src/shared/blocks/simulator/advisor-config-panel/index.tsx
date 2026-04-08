@@ -31,6 +31,9 @@ export function SimulatorAdvisorConfigPanel({
   canEdit = false,
   initialConfig,
 }: Props) {
+  const modelId = 'simulator-advisor-model';
+  const temperatureId = 'simulator-advisor-temperature';
+  const systemPromptId = 'simulator-advisor-system-prompt';
   const [config, setConfig] = useState(initialConfig);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -99,8 +102,9 @@ export function SimulatorAdvisorConfigPanel({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>顾问模型</Label>
+            <Label htmlFor={modelId}>顾问模型</Label>
             <Input
+              id={modelId}
               value={config.model}
               onChange={(e) =>
                 setConfig((current) => ({ ...current, model: e.target.value }))
@@ -110,8 +114,9 @@ export function SimulatorAdvisorConfigPanel({
             />
           </div>
           <div className="space-y-2">
-            <Label>生成温度</Label>
+            <Label htmlFor={temperatureId}>生成温度</Label>
             <Input
+              id={temperatureId}
               value={String(config.temperature)}
               onChange={(e) =>
                 setConfig((current) => ({
@@ -126,8 +131,9 @@ export function SimulatorAdvisorConfigPanel({
         </div>
 
         <div className="space-y-2">
-          <Label>系统提示词</Label>
+          <Label htmlFor={systemPromptId}>系统提示词</Label>
           <Textarea
+            id={systemPromptId}
             value={config.systemPrompt}
             onChange={(e) =>
               setConfig((current) => ({
@@ -143,6 +149,7 @@ export function SimulatorAdvisorConfigPanel({
 
         <label className="flex items-center gap-2 text-sm">
           <input
+            name="enabled"
             type="checkbox"
             checked={config.enabled}
             onChange={(e) =>

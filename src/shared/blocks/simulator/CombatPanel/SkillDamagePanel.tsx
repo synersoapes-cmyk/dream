@@ -1,10 +1,9 @@
-﻿// @ts-nocheck
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import type { Dungeon } from '@/features/simulator/store/gameTypes';
+import type { Dungeon, Skill } from '@/features/simulator/store/gameTypes';
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
 import { Calculator, ChevronDown, RefreshCw, X, Zap } from 'lucide-react';
 
@@ -13,10 +12,87 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/shared/components/ui/tooltip';
+import type {
+  DamageEngineResult,
+  DamageEngineTargetInput,
+  DamageEngineTargetResult,
+} from '@/shared/services/damage-engine';
 
 const ELEMENT_RELATION_OPTIONS = ['克制', '无克/普通', '被克制'];
 const DEFAULT_SELF_FORMATION_LABEL = '天覆阵';
 const DEFAULT_FORMATION_COUNTER_LABEL = '无克/普通';
+const PREFERRED_DAMAGE_SKILL_NAMES = ['龙卷雨击', '龙腾'];
+
+type PanelMagicContribution = {
+  sourceAttr: string;
+  coefficient: number;
+  contribution: number;
+};
+
+type PanelMagicDamageBreakdown = {
+  formula?: string;
+  spiritContributions?: PanelMagicContribution[];
+  magicDamageContributions?: PanelMagicContribution[];
+  overrideApplied?: boolean;
+  overrideValue?: number;
+  spiritBeforeRules?: number;
+  spiritAfterRules?: number;
+  ruleDerivedMagicDamage?: number;
+  equipmentMagicDamageFlat?: number;
+  result?: number;
+};
+
+type MatchedBonusRule = {
+  ruleCode: string;
+  skillName?: string;
+  bonusValue: number;
+};
+
+type DamageTargetDetails = {
+  baseItem: string;
+  splitRatio: string;
+  magicDamage: number;
+  targetDef: number;
+  formationRatio: string;
+  cultDiff: number;
+  magicResult: number;
+  shenmuValue: number;
+  elementFactor: string;
+  finalDamage: number;
+  critDamage: number;
+  formulaExpression: string;
+  matchedBonusRules: MatchedBonusRule[];
+  rawBreakdown: Record<string, unknown> & {
+    panelMagicDamageBreakdown?: PanelMagicDamageBreakdown;
+  };
+};
+
+type DamageDisplayTarget = DamageEngineTargetInput & {
+  name: string;
+  defense: number;
+  isBoss?: boolean;
+  singleTargetDamage: number;
+  critDamage: number;
+  totalDamage: number;
+  totalCritDamage: number;
+  details: DamageTargetDetails;
+  targets: number;
+};
+
+type DamageDisplayGroup = {
+  type: 'manual' | 'dungeon';
+  groupName: string;
+  targets: DamageDisplayTarget[];
+};
+
+type ModalSkillDetails = Skill & {
+  targets: number;
+  targetName: string;
+  groupName: string;
+  details: DamageTargetDetails;
+  finalDamage: number;
+  critDamage: number;
+};
 
 const localizeFormulaExpression = (expression: string) =>
   expression
@@ -31,7 +107,9 @@ const localizeFormulaExpression = (expression: string) =>
     .replaceAll('magic_result', '法伤结果')
     .replaceAll('base', '基础项');
 
-const getPanelMagicDamageTooltipLines = (details: any): string[] => {
+const getPanelMagicDamageTooltipLines = (
+  details: DamageTargetDetails | null | undefined
+): string[] => {
   const breakdown = details?.rawBreakdown?.panelMagicDamageBreakdown;
   if (!breakdown) {
     return ['当前面板法伤由服务端规则链统一计算。'];
@@ -41,7 +119,7 @@ const getPanelMagicDamageTooltipLines = (details: any): string[] => {
   const spiritContributions = Array.isArray(breakdown.spiritContributions)
     ? breakdown.spiritContributions
         .map(
-          (item: any) =>
+          (item) =>
             `${item.sourceAttr} x ${item.coefficient} = ${item.contribution}`
         )
         .join(' / ')
@@ -51,7 +129,7 @@ const getPanelMagicDamageTooltipLines = (details: any): string[] => {
   )
     ? breakdown.magicDamageContributions
         .map(
-          (item: any) =>
+          (item) =>
             `${item.sourceAttr} x ${item.coefficient} = ${item.contribution}`
         )
         .join(' / ')
@@ -84,8 +162,9 @@ const getPanelMagicDamageTooltipLines = (details: any): string[] => {
   return lines;
 };
 
-const getPanelMagicDamageTooltipText = (details: any) =>
-  getPanelMagicDamageTooltipLines(details).join('\n');
+const getPanelMagicDamageTooltipText = (
+  details: DamageTargetDetails | null | undefined
+) => getPanelMagicDamageTooltipLines(details).join('\n');
 
 const decodeName = (name: string): string => {
   if (!name) return '';
@@ -101,8 +180,69 @@ const toNumber = (value: unknown, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const mapTargetResult = (target: any, result: any, targetCount: number) => {
-  const breakdown = result?.breakdown ?? {};
+const getPreferredDamageSkillName = (skills: Array<{ name: string }>) => {
+  if (skills.length === 0) {
+    return '';
+  }
+
+  return (
+    PREFERRED_DAMAGE_SKILL_NAMES.find((name) =>
+      skills.some((skill) => skill.name === name)
+    ) ?? skills[0].name
+  );
+};
+
+const findDungeonIdForCombatTarget = (
+  dungeons: Dungeon[],
+  combatTarget: {
+    templateId?: string;
+    name?: string;
+    dungeonName?: string;
+  }
+) => {
+  if (!combatTarget.templateId && !combatTarget.dungeonName) {
+    return null;
+  }
+
+  for (const dungeon of dungeons) {
+    const matchedTarget = dungeon.targets.find(
+      (target) =>
+        target.templateId === combatTarget.templateId ||
+        target.id === combatTarget.templateId ||
+        (combatTarget.dungeonName === dungeon.name &&
+          target.name === combatTarget.name)
+    );
+
+    if (matchedTarget) {
+      return dungeon.id;
+    }
+  }
+
+  return null;
+};
+
+const mapTargetResult = (
+  target: DamageEngineTargetInput & { name: string; defense: number },
+  result: DamageEngineTargetResult | undefined,
+  targetCount: number
+): DamageDisplayTarget => {
+  const breakdown = (result?.breakdown ?? {}) as Record<string, unknown> & {
+    baseTerm?: number;
+    splitFactor?: number;
+    panelMagicDamage?: number;
+    targetMagicDefense?: number;
+    combinedFormationFactor?: number;
+    formationFactor?: number;
+    cultivationDiff?: number;
+    magicResult?: number;
+    elementFactor?: number;
+    shenmuValue?: number;
+    finalDamage?: number;
+    critDamage?: number;
+    formulaExpression?: string;
+    matchedBonusRules?: MatchedBonusRule[];
+    panelMagicDamageBreakdown?: PanelMagicDamageBreakdown;
+  };
   const baseTerm = toNumber(breakdown.baseTerm);
   const splitFactor = toNumber(breakdown.splitFactor, 0.5);
   const panelMagicDamage = toNumber(breakdown.panelMagicDamage);
@@ -156,12 +296,22 @@ async function requestDamageCalculation(params: {
   transformCardFactor: number;
   targets: Array<{
     name: string;
+    defense: number;
     magicDefense: number;
+    speed?: number;
     isBoss?: boolean;
   }>;
-}) {
+}): Promise<{
+  ruleVersion: DamageEngineResult['ruleVersion'] | null;
+  skill: DamageEngineResult['skill'] | null;
+  targets: DamageDisplayTarget[];
+}> {
   if (!params.skillName || params.targets.length === 0) {
-    return [];
+    return {
+      ruleVersion: null,
+      skill: null,
+      targets: [],
+    };
   }
 
   const response = await fetch('/api/simulator/calculate-damage', {
@@ -179,6 +329,7 @@ async function requestDamageCalculation(params: {
       targets: params.targets.map((target) => ({
         name: target.name,
         magicDefense: target.magicDefense,
+        speed: target.speed,
       })),
     }),
   });
@@ -189,11 +340,13 @@ async function requestDamageCalculation(params: {
   }
 
   const results = Array.isArray(payload?.data?.targets)
-    ? payload.data.targets
+    ? (payload.data.targets as DamageEngineTargetResult[])
     : [];
   return {
-    ruleVersion: payload?.data?.ruleVersion || null,
-    skill: payload?.data?.skill || null,
+    ruleVersion: (payload?.data?.ruleVersion ?? null) as
+      | DamageEngineResult['ruleVersion']
+      | null,
+    skill: (payload?.data?.skill ?? null) as DamageEngineResult['skill'] | null,
     targets: params.targets.map((target, index) =>
       mapTargetResult(target, results[index], params.targetCount)
     ),
@@ -211,15 +364,19 @@ export function SkillDamagePanel({
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
   const selectSkill = useGameStore((state) => state.selectSkill);
-  const combatTab = useGameStore((state) => state.combatTab);
 
   const [showModal, setShowModal] = useState(false);
-  const [modalSkillDetails, setModalSkillDetails] = useState<any>(null);
+  const [modalSkillDetails, setModalSkillDetails] =
+    useState<ModalSkillDetails | null>(null);
   const [activeTargetDisplay, setActiveTargetDisplay] = useState('手动设置');
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculationError, setCalculationError] = useState('');
-  const [damageDisplayData, setDamageDisplayData] = useState<any[]>([]);
-  const [ruleVersionInfo, setRuleVersionInfo] = useState<any>(null);
+  const [damageDisplayData, setDamageDisplayData] = useState<
+    DamageDisplayGroup[]
+  >([]);
+  const [ruleVersionInfo, setRuleVersionInfo] = useState<
+    DamageEngineResult['ruleVersion'] | null
+  >(null);
 
   const [targetDungeons, setTargetDungeons] =
     useState<Dungeon[]>(DUNGEON_DATABASE);
@@ -229,7 +386,7 @@ export function SkillDamagePanel({
   const [isDungeonSelectOpen, setIsDungeonSelectOpen] = useState(false);
 
   const [activeSkillId, setActiveSkillId] = useState<string>(
-    skills[0]?.name || ''
+    getPreferredDamageSkillName(skills)
   );
   const [isSkillSelectOpen, setIsSkillSelectOpen] = useState(false);
   const [skillSearchQuery, setSkillSearchQuery] = useState('');
@@ -249,6 +406,9 @@ export function SkillDamagePanel({
   const selectedDungeon = useMemo(
     () => targetDungeons.find((dungeon) => dungeon.id === selectedDungeonId),
     [selectedDungeonId, targetDungeons]
+  );
+  const isDungeonTargetSelected = Boolean(
+    combatTarget.templateId || combatTarget.dungeonName
   );
 
   useEffect(() => {
@@ -293,21 +453,50 @@ export function SkillDamagePanel({
   }, []);
 
   useEffect(() => {
-    if (activeSkillId) {
+    if (activeSkillId && skills.some((skill) => skill.name === activeSkillId)) {
       return;
     }
 
-    if (skills[0]?.name) {
-      setActiveSkillId(skills[0].name);
+    const nextSkillName = getPreferredDamageSkillName(skills);
+    if (nextSkillName) {
+      setActiveSkillId(nextSkillName);
     }
   }, [skills, activeSkillId]);
+
+  useEffect(() => {
+    if (!isOpen || targetDungeons.length === 0) {
+      return;
+    }
+
+    const matchedDungeonId = findDungeonIdForCombatTarget(
+      targetDungeons,
+      combatTarget
+    );
+
+    if (matchedDungeonId) {
+      setSelectedDungeonId(matchedDungeonId);
+      return;
+    }
+
+    setSelectedDungeonId((current) =>
+      targetDungeons.some((dungeon) => dungeon.id === current)
+        ? current
+        : targetDungeons[0]?.id || ''
+    );
+  }, [
+    isOpen,
+    targetDungeons,
+    combatTarget.templateId,
+    combatTarget.dungeonName,
+    combatTarget.name,
+  ]);
 
   const loadDamageData = async () => {
     setIsCalculating(true);
     setCalculationError('');
 
     let targetDisplay = '';
-    if (combatTab === 'manual') {
+    if (!isDungeonTargetSelected) {
       targetDisplay = '手动设置';
     } else {
       try {
@@ -335,14 +524,18 @@ export function SkillDamagePanel({
 
       const manualTargetInputs = manualTargets.map((target) => ({
         name: decodeName(target.name),
+        defense: toNumber(target.defense),
         magicDefense: toNumber(target.magicDefense),
+        speed: toNumber(target.speed),
       }));
 
       const dungeonTargetInputs =
-        selectedDungeon?.targets.map((target: any) => ({
+        selectedDungeon?.targets.map((target) => ({
           name: decodeName(target.name),
           magicDefense: toNumber(target.magicDefense),
+          speed: toNumber(target.speed),
           isBoss: target.isBoss,
+          defense: toNumber(target.defense),
         })) ?? [];
 
       const [manualResults, dungeonResults] = await Promise.all([
@@ -370,7 +563,7 @@ export function SkillDamagePanel({
         manualResults.ruleVersion || dungeonResults.ruleVersion || null
       );
 
-      const nextDisplayData: any[] = [
+      const nextDisplayData: DamageDisplayGroup[] = [
         {
           type: 'manual',
           groupName: '手动目标',
@@ -414,9 +607,10 @@ export function SkillDamagePanel({
     shenmuValue,
     magicResult,
     transformCardFactor,
-    combatTab,
     combatTarget.name,
     combatTarget.dungeonName,
+    combatTarget.templateId,
+    isDungeonTargetSelected,
   ]);
 
   const handleRecalculate = () => {
@@ -424,10 +618,14 @@ export function SkillDamagePanel({
   };
 
   const handleSkillClick = (
-    skillData: any,
-    targetData?: any,
+    skillData: Skill | undefined,
+    targetData?: DamageDisplayTarget,
     groupName?: string
   ) => {
+    if (!skillData) {
+      return;
+    }
+
     selectSkill(skillData);
     if (targetData && groupName) {
       setModalSkillDetails({
@@ -440,7 +638,7 @@ export function SkillDamagePanel({
         critDamage: targetData.critDamage,
       });
     } else {
-      setModalSkillDetails(skillData);
+      setModalSkillDetails(null);
     }
     setShowModal(true);
   };
@@ -483,6 +681,9 @@ export function SkillDamagePanel({
                   <div className="absolute top-full left-0 z-50 mt-2 flex w-48 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
                     <div className="border-b border-yellow-800/40 p-2">
                       <input
+                        id="skill-damage-search-input"
+                        name="skill-damage-search-input"
+                        aria-label="搜索技能"
                         type="text"
                         placeholder="搜索技能..."
                         value={skillSearchQuery}
@@ -686,7 +887,7 @@ export function SkillDamagePanel({
                 </div>
 
                 <div className="grid grid-cols-1 gap-2.5 p-3">
-                  {group.targets.map((target: any, idx: number) => (
+                  {group.targets.map((target, idx) => (
                     <button
                       key={idx}
                       onClick={() =>
@@ -897,16 +1098,14 @@ export function SkillDamagePanel({
                     命中的技能加成规则
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {modalSkillDetails.details.matchedBonusRules.map(
-                      (rule: any) => (
-                        <span
-                          key={rule.ruleCode}
-                          className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
-                        >
-                          {rule.skillName} +{rule.bonusValue}
-                        </span>
-                      )
-                    )}
+                    {modalSkillDetails.details.matchedBonusRules.map((rule) => (
+                      <span
+                        key={rule.ruleCode}
+                        className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
+                      >
+                        {rule.skillName} +{rule.bonusValue}
+                      </span>
+                    ))}
                   </div>
                 </div>
               )}

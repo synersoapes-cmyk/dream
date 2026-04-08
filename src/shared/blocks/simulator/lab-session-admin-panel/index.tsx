@@ -73,6 +73,8 @@ export function SimulatorLabSessionAdminPanel({ initialItems }: Props) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              name="keyword"
+              aria-label="搜索用户、角色、实验室或装备"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               className="pl-9"

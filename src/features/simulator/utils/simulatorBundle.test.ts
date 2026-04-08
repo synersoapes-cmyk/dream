@@ -93,6 +93,7 @@ function createBundle(): SimulatorCharacterBundle {
       targetHp: 50000,
       targetDefense: 1500,
       targetMagicDefense: 1250,
+      targetSpeed: 780,
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '地载阵',
@@ -139,6 +140,7 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
   assert.equal(state.combatTarget.name, '乌鸡国树怪');
   assert.equal(state.combatTarget.formation, '地载阵');
   assert.equal(state.combatTarget.element, '火');
+  assert.equal(state.combatTarget.speed, 780);
   assert.equal(state.formation, '虎翼阵');
   assert.equal(state.playerSetup.formation, '虎翼阵');
   assert.equal(state.playerSetup.element, '水');
@@ -219,7 +221,23 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
         refineLevel: 12,
         specialEffectJson: '{}',
         setEffectJson: '{}',
-        notesJson: '{}',
+        notesJson: JSON.stringify({
+          activeRuneStoneSet: 0,
+          runeStoneSets: [
+            [
+              {
+                id: 'rune_1',
+                name: '黑符石',
+                type: 'black',
+                stats: { magicDamage: 4 },
+              },
+            ],
+          ],
+          runeStoneSetsNames: ['腾蛟'],
+          runeSetEffect: '破血狂攻',
+          extraStat: '魔力 +28',
+          luckyHoles: '1',
+        }),
       },
       attrs: [
         {
@@ -285,4 +303,8 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
   assert.equal(state.equipmentSets[1]?.name, '爆发方案');
   assert.equal(state.equipmentSets[1]?.items[0]?.name, '当前云端武器');
   assert.equal(state.accounts[0]?.activeSetIndex, 1);
+  assert.equal(state.equipment[0]?.runeStoneSets?.[0]?.[0]?.name, '黑符石');
+  assert.equal(state.equipment[0]?.runeStoneSetsNames?.[0], '腾蛟');
+  assert.equal(state.equipment[0]?.extraStat, '魔力 +28');
+  assert.equal(state.equipment[0]?.luckyHoles, '1');
 });

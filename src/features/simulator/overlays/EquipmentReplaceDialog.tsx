@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from 'react';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import {
@@ -11,6 +10,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 
 import { useGameStore } from '../store/gameStore';
 
@@ -50,6 +51,9 @@ export function EquipmentReplaceDialog() {
   }
 
   const damageDiff = statsDiff.damageChange;
+  const attributeDiffEntries = Object.entries(statsDiff.attributes) as Array<
+    [string, number]
+  >;
 
   const handleConfirm = async () => {
     setIsSavingReplacement(true);
@@ -81,6 +85,9 @@ export function EquipmentReplaceDialog() {
           equipment: nextEquipment,
           equipmentSets,
           activeSetIndex,
+          createHistorySnapshot: true,
+          historySnapshotName: `装备替换前快照 · ${newEquip.name}`,
+          historySnapshotNotes: `当前装备替换前自动保存：${newEquip.name}`,
         }),
       });
 
@@ -109,20 +116,6 @@ export function EquipmentReplaceDialog() {
       return;
     }
     exitPreviewMode();
-  };
-
-  const statLabels: Record<string, string> = {
-    hit: '命中',
-    damage: '伤害',
-    defense: '防御',
-    speed: '速度',
-    magicDamage: '法伤',
-    magicDefense: '法防',
-    strength: '力量',
-    agility: '敏捷',
-    physique: '体质',
-    magic: '魔力',
-    endurance: '耐力',
   };
 
   return (
@@ -184,7 +177,7 @@ export function EquipmentReplaceDialog() {
                               className="flex justify-between text-sm"
                             >
                               <span className="text-yellow-600/80">
-                                {statLabels[key]}
+                                {getSimulatorStatLabel(key, 'equipment')}
                               </span>
                               <span className="text-yellow-300">+{value}</span>
                             </div>
@@ -218,7 +211,7 @@ export function EquipmentReplaceDialog() {
                       {Object.entries(newEquip.stats).map(([key, value]) => (
                         <div key={key} className="flex justify-between text-sm">
                           <span className="text-yellow-500/80">
-                            {statLabels[key]}
+                            {getSimulatorStatLabel(key, 'equipment')}
                           </span>
                           <span className="font-semibold text-green-400">
                             +{value}
@@ -235,7 +228,7 @@ export function EquipmentReplaceDialog() {
                     属性变化总览
                   </h3>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-                    {Object.entries(statsDiff.attributes).map(([key, diff]) => {
+                    {attributeDiffEntries.map(([key, diff]) => {
                       if (diff === 0) return null;
                       return (
                         <div
@@ -243,7 +236,7 @@ export function EquipmentReplaceDialog() {
                           className="flex items-center justify-between py-1 text-sm"
                         >
                           <span className="text-yellow-300">
-                            {statLabels[key]}
+                            {getSimulatorStatLabel(key, 'equipment')}
                           </span>
                           <span
                             className={`flex items-center gap-1 font-semibold ${diff > 0 ? 'text-green-400' : 'text-red-400'}`}

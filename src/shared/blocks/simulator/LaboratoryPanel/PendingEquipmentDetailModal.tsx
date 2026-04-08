@@ -1,12 +1,23 @@
-// @ts-nocheck
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   Equipment,
   PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
 import { Check, Edit2, Eye, Save, X } from 'lucide-react';
 import { motion } from 'motion/react';
+
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import {
+  getSimulatorEquipmentFieldLabel,
+  SIMULATOR_CHANGE_TRACKED_FIELDS,
+  SIMULATOR_EDITABLE_STAT_KEYS,
+  SIMULATOR_EQUIPMENT_TYPE_OPTIONS,
+  SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
+} from '@/shared/lib/simulator-equipment-editor';
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+
+type EditableStatKey = (typeof SIMULATOR_EDITABLE_STAT_KEYS)[number];
+type HintableEquipmentType = keyof typeof SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS;
 
 interface PendingEquipmentDetailModalProps {
   item: PendingEquipment;
@@ -16,45 +27,6 @@ interface PendingEquipmentDetailModalProps {
   onReplaceToCurrentState: () => void;
   onSave: (equipment: Equipment) => Promise<void> | void;
 }
-
-const STAT_KEYS = [
-  'hp',
-  'magic',
-  'hit',
-  'damage',
-  'magicDamage',
-  'defense',
-  'magicDefense',
-  'speed',
-  'dodge',
-  'physique',
-  'magicPower',
-  'strength',
-  'endurance',
-  'agility',
-];
-
-const EQUIPMENT_TYPES = [
-  { value: 'weapon', label: '武器' },
-  { value: 'helmet', label: '头盔' },
-  { value: 'necklace', label: '项链' },
-  { value: 'armor', label: '衣服' },
-  { value: 'belt', label: '腰带' },
-  { value: 'shoes', label: '鞋子' },
-  { value: 'trinket', label: '灵饰' },
-  { value: 'jade', label: '玉魄' },
-];
-
-const TYPE_STAT_HINTS: Record<string, string[]> = {
-  weapon: ['damage', 'hit', 'magicDamage'],
-  helmet: ['defense', 'magicDefense', 'hp', 'magic'],
-  necklace: ['magicDamage', 'magic', 'speed', 'hp'],
-  armor: ['defense', 'hp', 'physique', 'endurance'],
-  belt: ['hp', 'defense', 'speed'],
-  shoes: ['speed', 'defense', 'agility'],
-  trinket: ['damage', 'magicDamage', 'speed', 'defense', 'magicDefense'],
-  jade: ['damage', 'magicDamage', 'hp', 'defense', 'magicDefense', 'speed'],
-};
 
 function toFiniteNumber(value: string | number | undefined, fallback = 0) {
   const parsed = Number(value);
@@ -68,43 +40,17 @@ function formatPrice(price: number | undefined) {
 }
 
 function getStatName(key: string): string {
-  const statNames: Record<string, string> = {
-    hp: '气血',
-    magic: '魔法',
-    hit: '命中',
-    damage: '伤害',
-    magicDamage: '法伤',
-    defense: '防御',
-    magicDefense: '法防',
-    speed: '速度',
-    dodge: '躲避',
-    physique: '体质',
-    magicPower: '魔力',
-    strength: '力量',
-    endurance: '耐力',
-    agility: '敏捷',
-  };
-  return statNames[key] || key;
+  return getSimulatorStatLabel(key);
 }
 
 function getFieldLabel(key: string): string {
-  const labels: Record<string, string> = {
-    name: '名称',
-    type: '类型',
-    slot: '槽位',
-    mainStat: '主属性描述',
-    extraStat: '附加描述',
-    level: '等级',
-    element: '五行',
-    durability: '耐久',
-    forgeLevel: '锻炼等级',
-    gemstone: '宝石',
-    price: '售价',
-    crossServerFee: '跨服费',
-    highlights: '亮点标签',
-  };
+  return getSimulatorEquipmentFieldLabel(key);
+}
 
-  return labels[key] || key;
+function isHintableEquipmentType(
+  type: Equipment['type']
+): type is HintableEquipmentType {
+  return type in SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS;
 }
 
 function normalizeComparable(value: unknown) {
@@ -121,9 +67,17 @@ function normalizeComparable(value: unknown) {
 
 function buildConsistencyWarnings(draft: Equipment) {
   const warnings: string[] = [];
-  const expectedStats = TYPE_STAT_HINTS[draft.type] || [];
+  const expectedStats = isHintableEquipmentType(draft.type)
+    ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[draft.type]
+    : [];
   const statKeys = Object.keys(draft.stats || {}).filter(
-    (key) => Number(draft.stats?.[key])
+    (key): key is EditableStatKey =>
+      (SIMULATOR_EDITABLE_STAT_KEYS as readonly string[]).includes(key) &&
+      Boolean(
+        Number(
+          (draft.stats as Record<string, number | undefined> | undefined)?.[key]
+        )
+      )
   );
 
   if (
@@ -193,7 +147,7 @@ export function PendingEquipmentDetailModal({
 
   const statEntries = useMemo(
     () =>
-      STAT_KEYS.map((key) => ({
+      SIMULATOR_EDITABLE_STAT_KEYS.map((key) => ({
         key,
         label: getStatName(key),
         value: draft.stats?.[key] ?? draft.baseStats?.[key] ?? 0,
@@ -234,7 +188,9 @@ export function PendingEquipmentDetailModal({
 
   const suggestedChecks = useMemo(() => {
     const suggestions: string[] = [];
-    const expectedStats = TYPE_STAT_HINTS[draft.type] || [];
+    const expectedStats = isHintableEquipmentType(draft.type)
+      ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[draft.type]
+      : [];
 
     if (expectedStats.length > 0) {
       suggestions.push(
@@ -252,10 +208,7 @@ export function PendingEquipmentDetailModal({
       suggestions.push('如果截图里有红字双加或附加词条，建议补到附加描述。');
     }
 
-    if (
-      draft.type === 'trinket' &&
-      draft.slot === undefined
-    ) {
+    if (draft.type === 'trinket' && draft.slot === undefined) {
       suggestions.push('灵饰建议补槽位，常见值是 1-4。');
     }
 
@@ -263,35 +216,17 @@ export function PendingEquipmentDetailModal({
   }, [draft]);
 
   const changedFields = useMemo(() => {
-    const baseFields = [
-      'name',
-      'type',
-      'slot',
-      'mainStat',
-      'extraStat',
-      'level',
-      'element',
-      'durability',
-      'forgeLevel',
-      'gemstone',
-      'price',
-      'crossServerFee',
-      'highlights',
-    ];
+    const scalarChanges = SIMULATOR_CHANGE_TRACKED_FIELDS.filter(
+      (field) =>
+        normalizeComparable(item.equipment[field]) !==
+        normalizeComparable(draft[field])
+    ).map((field) => ({
+      label: getFieldLabel(field),
+      before: item.equipment[field],
+      after: draft[field],
+    }));
 
-    const scalarChanges = baseFields
-      .filter(
-        (field) =>
-          normalizeComparable(item.equipment[field]) !==
-          normalizeComparable(draft[field])
-      )
-      .map((field) => ({
-        label: getFieldLabel(field),
-        before: item.equipment[field],
-        after: draft[field],
-      }));
-
-    const statChanges = STAT_KEYS.filter(
+    const statChanges = SIMULATOR_EDITABLE_STAT_KEYS.filter(
       (key) =>
         normalizeComparable(item.equipment.stats?.[key]) !==
         normalizeComparable(draft.stats?.[key])
@@ -311,8 +246,9 @@ export function PendingEquipmentDetailModal({
     }));
   };
 
-  const updateStat = (key: string, value: string) => {
-    const nextValue = value.trim() === '' ? undefined : toFiniteNumber(value, 0);
+  const updateStat = (key: EditableStatKey, value: string) => {
+    const nextValue =
+      value.trim() === '' ? undefined : toFiniteNumber(value, 0);
     setDraft((current) => {
       const nextStats = { ...(current.stats || {}) };
       const nextBaseStats = { ...(current.baseStats || {}) };
@@ -411,7 +347,7 @@ export function PendingEquipmentDetailModal({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-6">
           <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
             <div className="space-y-4">
               <div className="rounded-lg border border-yellow-800/30 bg-slate-950/40 p-4">
@@ -420,7 +356,7 @@ export function PendingEquipmentDetailModal({
                   <div className="flex-1">
                     {isEditing ? (
                       <div className="grid gap-3 md:grid-cols-2">
-                        <Field label="名称">
+                        <Field label={getFieldLabel('name')}>
                           <input
                             value={draft.name || ''}
                             onChange={(event) =>
@@ -429,23 +365,26 @@ export function PendingEquipmentDetailModal({
                             className={inputClassName}
                           />
                         </Field>
-                        <Field label="类型">
+                        <Field label={getFieldLabel('type')}>
                           <select
                             value={draft.type}
                             onChange={(event) =>
-                              updateDraft({ type: event.target.value as Equipment['type'] })
+                              updateDraft({
+                                type: event.target.value as Equipment['type'],
+                              })
                             }
                             className={inputClassName}
                           >
-                            {EQUIPMENT_TYPES.map((option) => (
+                            {SIMULATOR_EQUIPMENT_TYPE_OPTIONS.map((option) => (
                               <option key={option.value} value={option.value}>
                                 {option.label}
                               </option>
                             ))}
                           </select>
                         </Field>
-                        {(draft.type === 'trinket' || draft.type === 'jade') && (
-                          <Field label="槽位">
+                        {(draft.type === 'trinket' ||
+                          draft.type === 'jade') && (
+                          <Field label={getFieldLabel('slot')}>
                             <input
                               value={draft.slot ?? ''}
                               onChange={(event) =>
@@ -460,7 +399,7 @@ export function PendingEquipmentDetailModal({
                             />
                           </Field>
                         )}
-                        <Field label="等级">
+                        <Field label={getFieldLabel('level')}>
                           <input
                             value={draft.level ?? ''}
                             onChange={(event) =>
@@ -480,11 +419,11 @@ export function PendingEquipmentDetailModal({
                         <div className="mb-2 text-2xl font-bold text-yellow-400">
                           {draft.name}
                         </div>
-                        <div className="mb-2 text-sm leading-relaxed text-slate-200 whitespace-pre-line">
+                        <div className="mb-2 text-sm leading-relaxed whitespace-pre-line text-slate-200">
                           {draft.mainStat || '待补充主属性'}
                         </div>
                         {draft.extraStat && (
-                          <div className="text-sm text-red-400 whitespace-pre-line">
+                          <div className="text-sm whitespace-pre-line text-red-400">
                             {draft.extraStat}
                           </div>
                         )}
@@ -495,7 +434,7 @@ export function PendingEquipmentDetailModal({
 
                 {isEditing ? (
                   <div className="grid gap-3 md:grid-cols-2">
-                    <Field label="主属性描述">
+                    <Field label={getFieldLabel('mainStat')}>
                       <textarea
                         value={draft.mainStat || ''}
                         onChange={(event) =>
@@ -505,17 +444,19 @@ export function PendingEquipmentDetailModal({
                         rows={3}
                       />
                     </Field>
-                    <Field label="附加描述">
+                    <Field label={getFieldLabel('extraStat')}>
                       <textarea
                         value={draft.extraStat || ''}
                         onChange={(event) =>
-                          updateDraft({ extraStat: event.target.value || undefined })
+                          updateDraft({
+                            extraStat: event.target.value || undefined,
+                          })
                         }
                         className={textareaClassName}
                         rows={3}
                       />
                     </Field>
-                    <Field label="亮点标签（逗号分隔）">
+                    <Field label={`${getFieldLabel('highlights')}（逗号分隔）`}>
                       <input
                         value={draft.highlights?.join(', ') || ''}
                         onChange={(event) =>
@@ -529,7 +470,7 @@ export function PendingEquipmentDetailModal({
                         className={inputClassName}
                       />
                     </Field>
-                    <Field label="装备角色">
+                    <Field label={getFieldLabel('equippableRoles')}>
                       <input
                         value={draft.equippableRoles || ''}
                         onChange={(event) =>
@@ -563,12 +504,14 @@ export function PendingEquipmentDetailModal({
                   基础信息
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="五行">
+                  <Field label={getFieldLabel('element')}>
                     {isEditing ? (
                       <input
                         value={draft.element || ''}
                         onChange={(event) =>
-                          updateDraft({ element: event.target.value || undefined })
+                          updateDraft({
+                            element: event.target.value || undefined,
+                          })
                         }
                         className={inputClassName}
                       />
@@ -576,7 +519,7 @@ export function PendingEquipmentDetailModal({
                       <ReadValue value={draft.element} />
                     )}
                   </Field>
-                  <Field label="耐久">
+                  <Field label={getFieldLabel('durability')}>
                     {isEditing ? (
                       <input
                         value={draft.durability ?? ''}
@@ -594,7 +537,7 @@ export function PendingEquipmentDetailModal({
                       <ReadValue value={draft.durability} />
                     )}
                   </Field>
-                  <Field label="锻炼等级">
+                  <Field label={getFieldLabel('forgeLevel')}>
                     {isEditing ? (
                       <input
                         value={draft.forgeLevel ?? ''}
@@ -612,12 +555,14 @@ export function PendingEquipmentDetailModal({
                       <ReadValue value={draft.forgeLevel} />
                     )}
                   </Field>
-                  <Field label="宝石">
+                  <Field label={getFieldLabel('gemstone')}>
                     {isEditing ? (
                       <input
                         value={draft.gemstone || ''}
                         onChange={(event) =>
-                          updateDraft({ gemstone: event.target.value || undefined })
+                          updateDraft({
+                            gemstone: event.target.value || undefined,
+                          })
                         }
                         className={inputClassName}
                       />
@@ -625,7 +570,7 @@ export function PendingEquipmentDetailModal({
                       <ReadValue value={draft.gemstone} />
                     )}
                   </Field>
-                  <Field label="售价">
+                  <Field label={getFieldLabel('price')}>
                     {isEditing ? (
                       <input
                         value={draft.price ?? ''}
@@ -643,7 +588,7 @@ export function PendingEquipmentDetailModal({
                       <ReadValue value={`¥ ${formatPrice(draft.price)}`} />
                     )}
                   </Field>
-                  <Field label="跨服费">
+                  <Field label={getFieldLabel('crossServerFee')}>
                     {isEditing ? (
                       <input
                         value={draft.crossServerFee ?? ''}
@@ -658,7 +603,9 @@ export function PendingEquipmentDetailModal({
                         className={inputClassName}
                       />
                     ) : (
-                      <ReadValue value={`¥ ${formatPrice(draft.crossServerFee)}`} />
+                      <ReadValue
+                        value={`¥ ${formatPrice(draft.crossServerFee)}`}
+                      />
                     )}
                   </Field>
                 </div>
@@ -767,7 +714,9 @@ export function PendingEquipmentDetailModal({
                 <ul className="space-y-2 text-xs leading-relaxed text-slate-300">
                   <li>优先修正名称、类型、主属性和数值属性。</li>
                   <li>价格和跨服费可以后补，不影响先入库。</li>
-                  <li>如果 OCR 丢了红字或特技，建议写到“附加描述”或亮点标签里。</li>
+                  <li>
+                    如果 OCR 丢了红字或特技，建议写到“附加描述”或亮点标签里。
+                  </li>
                 </ul>
               </div>
             </div>
@@ -818,13 +767,7 @@ export function PendingEquipmentDetailModal({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <div className="mb-1 text-xs text-slate-400">{label}</div>
@@ -834,7 +777,11 @@ function Field({
 }
 
 function ReadValue({ value }: { value?: string | number }) {
-  return <div className="min-h-10 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">{value || '-'}</div>;
+  return (
+    <div className="min-h-10 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
+      {value || '-'}
+    </div>
+  );
 }
 
 const inputClassName =

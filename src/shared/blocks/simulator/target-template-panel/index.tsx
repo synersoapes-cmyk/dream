@@ -30,6 +30,12 @@ function toNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function buildFieldId(...parts: Array<string | number>) {
+  return parts
+    .map((part) => String(part).replace(/[^a-zA-Z0-9_-]+/g, '-'))
+    .join('-');
+}
+
 function formatDate(timestamp: number) {
   return formatDateTimeValue(timestamp, {
     locale: 'zh-CN',
@@ -98,6 +104,9 @@ export function SimulatorTargetTemplatePanel({
   );
 
   const currentItem = isCreating ? draftItem : selectedItem;
+  const currentItemKey = currentItem ? (isCreating ? 'new' : currentItem.id) : null;
+  const currentFieldId = (field: string) =>
+    buildFieldId('target-template', currentItemKey ?? 'empty', field);
 
   const patchCurrentItem = (patch: Partial<EditableItem>) => {
     if (isCreating) {
@@ -243,6 +252,8 @@ export function SimulatorTargetTemplatePanel({
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                name="keyword"
+                aria-label="搜索副本、目标名、门派"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 className="pl-9"
@@ -308,16 +319,18 @@ export function SimulatorTargetTemplatePanel({
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>目标名称</Label>
+                <Label htmlFor={currentFieldId('name')}>目标名称</Label>
                 <Input
+                  id={currentFieldId('name')}
                   value={currentItem.name}
                   onChange={(e) => patchCurrentItem({ name: e.target.value })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>副本名</Label>
+                <Label htmlFor={currentFieldId('dungeon-name')}>副本名</Label>
                 <Input
+                  id={currentFieldId('dungeon-name')}
                   value={currentItem.dungeonName}
                   onChange={(e) =>
                     patchCurrentItem({ dungeonName: e.target.value })
@@ -326,8 +339,9 @@ export function SimulatorTargetTemplatePanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>目标类型</Label>
+                <Label htmlFor={currentFieldId('target-type')}>目标类型</Label>
                 <Input
+                  id={currentFieldId('target-type')}
                   value={currentItem.targetType}
                   onChange={(e) =>
                     patchCurrentItem({ targetType: e.target.value })
@@ -336,40 +350,45 @@ export function SimulatorTargetTemplatePanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>门派</Label>
+                <Label htmlFor={currentFieldId('school')}>门派</Label>
                 <Input
+                  id={currentFieldId('school')}
                   value={currentItem.school}
                   onChange={(e) => patchCurrentItem({ school: e.target.value })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>等级</Label>
+                <Label htmlFor={currentFieldId('level')}>等级</Label>
                 <Input
+                  id={currentFieldId('level')}
                   value={String(currentItem.level)}
                   onChange={(e) => patchCurrentItem({ level: toNumber(e.target.value) })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>速度</Label>
+                <Label htmlFor={currentFieldId('speed')}>速度</Label>
                 <Input
+                  id={currentFieldId('speed')}
                   value={String(currentItem.speed)}
                   onChange={(e) => patchCurrentItem({ speed: toNumber(e.target.value) })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>气血</Label>
+                <Label htmlFor={currentFieldId('hp')}>气血</Label>
                 <Input
+                  id={currentFieldId('hp')}
                   value={String(currentItem.hp)}
                   onChange={(e) => patchCurrentItem({ hp: toNumber(e.target.value) })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>防御</Label>
+                <Label htmlFor={currentFieldId('defense')}>防御</Label>
                 <Input
+                  id={currentFieldId('defense')}
                   value={String(currentItem.defense)}
                   onChange={(e) =>
                     patchCurrentItem({ defense: toNumber(e.target.value) })
@@ -378,8 +397,9 @@ export function SimulatorTargetTemplatePanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>法防</Label>
+                <Label htmlFor={currentFieldId('magic-defense')}>法防</Label>
                 <Input
+                  id={currentFieldId('magic-defense')}
                   value={String(currentItem.magicDefense)}
                   onChange={(e) =>
                     patchCurrentItem({ magicDefense: toNumber(e.target.value) })
@@ -388,8 +408,11 @@ export function SimulatorTargetTemplatePanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>法防修炼</Label>
+                <Label htmlFor={currentFieldId('magic-defense-cultivation')}>
+                  法防修炼
+                </Label>
                 <Input
+                  id={currentFieldId('magic-defense-cultivation')}
                   value={String(currentItem.magicDefenseCultivation)}
                   onChange={(e) =>
                     patchCurrentItem({
@@ -400,16 +423,18 @@ export function SimulatorTargetTemplatePanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label>五行</Label>
+                <Label htmlFor={currentFieldId('element')}>五行</Label>
                 <Input
+                  id={currentFieldId('element')}
                   value={currentItem.element}
                   onChange={(e) => patchCurrentItem({ element: e.target.value })}
                   disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
-                <Label>阵法</Label>
+                <Label htmlFor={currentFieldId('formation')}>阵法</Label>
                 <Input
+                  id={currentFieldId('formation')}
                   value={currentItem.formation}
                   onChange={(e) =>
                     patchCurrentItem({ formation: e.target.value })
@@ -420,8 +445,9 @@ export function SimulatorTargetTemplatePanel({
             </div>
 
             <div className="space-y-2">
-              <Label>备注</Label>
+              <Label htmlFor={currentFieldId('notes')}>备注</Label>
               <Textarea
+                id={currentFieldId('notes')}
                 value={currentItem.notes}
                 onChange={(e) => patchCurrentItem({ notes: e.target.value })}
                 disabled={!canEdit}
@@ -432,6 +458,7 @@ export function SimulatorTargetTemplatePanel({
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm">
                 <input
+                  name="enabled"
                   type="checkbox"
                   checked={currentItem.enabled}
                   onChange={(e) =>

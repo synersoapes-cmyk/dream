@@ -84,6 +84,8 @@ export function SimulatorUserDiagnosticsPanel({ initialItems }: Props) {
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                name="keyword"
+                aria-label="搜索用户、邮箱、角色"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => {

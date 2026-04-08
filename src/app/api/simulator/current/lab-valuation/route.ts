@@ -145,6 +145,10 @@ export async function POST(req: Request) {
               ? body.target.name
               : undefined,
           magicDefense: toFiniteNumber(body?.target?.magicDefense),
+          speed:
+            body?.target?.speed === undefined
+              ? undefined
+              : toFiniteNumber(body.target.speed),
           magicDefenseCultivation:
             body?.target?.magicDefenseCultivation === undefined
               ? undefined

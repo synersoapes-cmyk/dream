@@ -1,4 +1,9 @@
-import type { BaseAttributes, CombatStats, Equipment, EquipmentSet } from './gameTypes';
+import type {
+  BaseAttributes,
+  CombatStats,
+  Equipment,
+  EquipmentSet,
+} from './gameTypes';
 
 export const initialBaseAttributes: BaseAttributes = {
   level: 109,
@@ -22,29 +27,50 @@ export const initialCombatStats: CombatStats = {
   magicDefense: 1180,
   speed: 620,
   dodge: 260,
+  sealHit: 0,
+  spiritualPower: 0,
+  magicCritLevel: 0,
+  fixedDamage: 0,
+  pierceLevel: 0,
+  elementalMastery: 0,
+  block: 0,
+  antiCritLevel: 0,
+  sealResistLevel: 0,
+  elementalResistance: 0,
 };
 
 const cloneRuneStoneSets = (equipment: Equipment): Equipment['runeStoneSets'] =>
-  equipment.runeStoneSets?.map(set =>
-    set.map(runeStone => ({
+  equipment.runeStoneSets?.map((set) =>
+    set.map((runeStone) => ({
       ...runeStone,
       stats: { ...runeStone.stats },
-    })),
+    }))
   );
+
+const cloneEffectModifiers = (
+  equipment: Equipment
+): Equipment['effectModifiers'] =>
+  equipment.effectModifiers?.map((modifier) => ({ ...modifier }));
 
 const cloneEquipment = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
+  effectModifiers: cloneEffectModifiers(equipment),
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
   runeStoneSets: cloneRuneStoneSets(equipment),
-  runeStoneSetsNames: equipment.runeStoneSetsNames ? [...equipment.runeStoneSetsNames] : undefined,
+  runeStoneSetsNames: equipment.runeStoneSetsNames
+    ? [...equipment.runeStoneSetsNames]
+    : undefined,
 });
 
-export const createInitialEquipment = (presetEquipments: Equipment[]): Equipment[] =>
-  presetEquipments.map(cloneEquipment);
+export const createInitialEquipment = (
+  presetEquipments: Equipment[]
+): Equipment[] => presetEquipments.map(cloneEquipment);
 
-export const createInitialEquipmentSets = (presetEquipments: Equipment[]): EquipmentSet[] => {
+export const createInitialEquipmentSets = (
+  presetEquipments: Equipment[]
+): EquipmentSet[] => {
   const names = ['当前方案', '高速方案', '爆发方案', '续航方案', '实验方案'];
 
   return names.map((name, index) => ({

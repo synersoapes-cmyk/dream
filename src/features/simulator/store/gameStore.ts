@@ -102,6 +102,27 @@ export const useGameStore = create<GameState>()((set, get) => ({
   combatTab: 'manual',
   selectedDungeonIds: [],
   ...createCombatActions(set, get),
+  syncedCloudState: null,
+  autoRecalculateDerivedStats: true,
+  setAutoRecalculateDerivedStats: (enabled, options) => {
+    set((state) => {
+      if (!enabled && options?.restoreCloudState && state.syncedCloudState) {
+        return {
+          ...state.syncedCloudState,
+          syncedCloudState: state.syncedCloudState,
+          autoRecalculateDerivedStats: false,
+        };
+      }
+
+      return {
+        autoRecalculateDerivedStats: enabled,
+      };
+    });
+
+    if (enabled) {
+      get().recalculateCombatStats();
+    }
+  },
   previewMode: false,
   previewEquipment: null,
   enterPreviewMode: (current, newEquip, type) => {
@@ -157,7 +178,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
         activeSetIndex: state.activeSetIndex,
       });
     });
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
 
   removeEquipment: (id) => {
@@ -175,7 +198,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
         activeSetIndex: state.activeSetIndex,
       });
     });
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
 
   selectEquipmentSet: (index) => {
@@ -204,7 +229,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
         activeSetIndex: index,
       });
     });
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
 
   updateEquipmentSetName: (index, name) => {

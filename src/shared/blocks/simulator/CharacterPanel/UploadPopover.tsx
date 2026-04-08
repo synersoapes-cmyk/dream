@@ -1,11 +1,16 @@
-// @ts-nocheck
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
-import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
+import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlertCircle,
@@ -20,7 +25,7 @@ import { toast } from 'sonner';
 
 interface UploadPopoverProps {
   type: 'attributes' | 'equipment';
-  trigger: React.ReactNode;
+  trigger: ReactNode;
 }
 
 export function UploadPopover({ type, trigger }: UploadPopoverProps) {
@@ -57,7 +62,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
     return () => window.removeEventListener('paste', handleGlobalPaste);
   }, [isOpen]);
 
-  const processFile = async (file: File) => {
+  const processFile = async (file: File): Promise<void> => {
     const validation = validateImageFile(file);
     if (!validation.valid) {
       toast.error(validation.error || '文件验证失败');
@@ -70,13 +75,10 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
     });
 
     try {
-      const configResponse = await fetch(
-        '/api/simulator/current/ocr/config',
-        {
-          method: 'GET',
-          cache: 'no-store',
-        }
-      );
+      const configResponse = await fetch('/api/simulator/current/ocr/config', {
+        method: 'GET',
+        cache: 'no-store',
+      });
       const configPayload = await configResponse.json();
       if (
         !configResponse.ok ||
@@ -124,7 +126,10 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
         const recognizedLevel = payload?.data?.recognized?.level;
         const recognizedFaction = payload?.data?.recognized?.faction;
-        const summary = [recognizedFaction, recognizedLevel ? `等级 ${recognizedLevel}` : null]
+        const summary = [
+          recognizedFaction,
+          recognizedLevel ? `等级 ${recognizedLevel}` : null,
+        ]
           .filter(Boolean)
           .join(' · ');
 
@@ -176,7 +181,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     handleFileUpload(e.dataTransfer.files);

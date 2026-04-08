@@ -1,5 +1,5 @@
-import { respData, respErr } from '@/shared/lib/resp';
 import { createPerfTimer } from '@/shared/lib/perf';
+import { respData, respErr } from '@/shared/lib/resp';
 import { updateSimulatorEquipment } from '@/shared/models/simulator';
 import { getUserInfo } from '@/shared/models/user';
 
@@ -92,11 +92,31 @@ export async function PATCH(req: Request) {
     const activeSetIndex = Number.isInteger(body?.activeSetIndex)
       ? Number(body.activeSetIndex)
       : undefined;
+    const createHistorySnapshot = body?.createHistorySnapshot === true;
+    const historySnapshotName =
+      typeof body?.historySnapshotName === 'string' &&
+      body.historySnapshotName.trim().length > 0
+        ? body.historySnapshotName.trim()
+        : undefined;
+    const historySnapshotNotes =
+      typeof body?.historySnapshotNotes === 'string' &&
+      body.historySnapshotNotes.trim().length > 0
+        ? body.historySnapshotNotes.trim()
+        : undefined;
+    const historySnapshotSource =
+      typeof body?.historySnapshotSource === 'string' &&
+      body.historySnapshotSource.trim().length > 0
+        ? body.historySnapshotSource.trim()
+        : undefined;
     const bundle = await withTransientRetry('updateSimulatorEquipment', () =>
       updateSimulatorEquipment(user.id, {
         equipment,
         equipmentSets,
         activeSetIndex,
+        createHistorySnapshot,
+        historySnapshotName,
+        historySnapshotNotes,
+        historySnapshotSource,
       })
     );
     timer.mark('update');

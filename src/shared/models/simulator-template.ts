@@ -77,6 +77,7 @@ export type SimulatorSeedBattleContext = {
   targetHp: number;
   targetDefense: number;
   targetMagicDefense: number;
+  targetSpeed: number;
   targetMagicDefenseCultivation: number;
   targetElement: string;
   targetFormation: string;
@@ -331,6 +332,7 @@ export const DEFAULT_SIMULATOR_BATTLE_CONTEXT: SimulatorSeedBattleContext = {
   targetHp: 0,
   targetDefense: 0,
   targetMagicDefense: 0,
+  targetSpeed: 0,
   targetMagicDefenseCultivation: 0,
   targetElement: '',
   targetFormation: '普通阵',

@@ -76,6 +76,12 @@ function toNumber(value: string, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function buildFieldId(...parts: Array<string | number>) {
+  return parts
+    .map((part) => String(part).replace(/[^a-zA-Z0-9_-]+/g, '-'))
+    .join('-');
+}
+
 function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
@@ -405,6 +411,43 @@ export function RulePlaygroundPanel({
     );
   };
 
+  const selectedVersionLabelId = buildFieldId(
+    'rule-playground',
+    'selected-version-label',
+  );
+  const selectedVersionTriggerId = buildFieldId(
+    'rule-playground',
+    'selected-version',
+  );
+  const skillCodeId = buildFieldId('rule-playground', 'skill-code');
+  const targetCountId = buildFieldId('rule-playground', 'target-count');
+  const targetMagicDefenseId = buildFieldId(
+    'rule-playground',
+    'target-magic-defense',
+  );
+  const formationCounterLabelId = buildFieldId(
+    'rule-playground',
+    'formation-counter-label',
+  );
+  const formationCounterId = buildFieldId('rule-playground', 'formation-counter');
+  const elementRelationLabelId = buildFieldId(
+    'rule-playground',
+    'element-relation-label',
+  );
+  const elementRelationId = buildFieldId('rule-playground', 'element-relation');
+  const shenmuValueId = buildFieldId('rule-playground', 'shenmu-value');
+  const magicResultId = buildFieldId('rule-playground', 'magic-result');
+  const transformCardFactorId = buildFieldId(
+    'rule-playground',
+    'transform-card-factor',
+  );
+  const panelMagicDamageOverrideId = buildFieldId(
+    'rule-playground',
+    'panel-magic-damage-override',
+  );
+  const saveCaseNameId = buildFieldId('rule-playground', 'save-case-name');
+  const saveCaseNotesId = buildFieldId('rule-playground', 'save-case-notes');
+
   return (
     <Card>
       <CardHeader>
@@ -418,12 +461,15 @@ export function RulePlaygroundPanel({
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <Label>试算版本</Label>
+                <Label id={selectedVersionLabelId}>试算版本</Label>
                 <Select
                   value={selectedVersionId}
                   onValueChange={setSelectedVersionId}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    id={selectedVersionTriggerId}
+                    aria-labelledby={selectedVersionLabelId}
+                  >
                     <SelectValue placeholder="选择版本" />
                   </SelectTrigger>
                   <SelectContent>
@@ -436,35 +482,44 @@ export function RulePlaygroundPanel({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>技能代码</Label>
+                <Label htmlFor={skillCodeId}>技能代码</Label>
                 <Input
+                  id={skillCodeId}
+                  name={skillCodeId}
                   value={skillCode}
                   onChange={(e) => setSkillCode(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>目标数量</Label>
+                <Label htmlFor={targetCountId}>目标数量</Label>
                 <Input
+                  id={targetCountId}
+                  name={targetCountId}
                   value={targetCount}
                   onChange={(e) => setTargetCount(e.target.value)}
                   type="number"
                 />
               </div>
               <div className="space-y-2">
-                <Label>目标法防</Label>
+                <Label htmlFor={targetMagicDefenseId}>目标法防</Label>
                 <Input
+                  id={targetMagicDefenseId}
+                  name={targetMagicDefenseId}
                   value={targetMagicDefense}
                   onChange={(e) => setTargetMagicDefense(e.target.value)}
                   type="number"
                 />
               </div>
               <div className="space-y-2">
-                <Label>阵法克制</Label>
+                <Label id={formationCounterLabelId}>阵法克制</Label>
                 <Select
                   value={formationCounterState}
                   onValueChange={setFormationCounterState}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    id={formationCounterId}
+                    aria-labelledby={formationCounterLabelId}
+                  >
                     <SelectValue placeholder="选择阵法克制" />
                   </SelectTrigger>
                   <SelectContent>
@@ -477,12 +532,15 @@ export function RulePlaygroundPanel({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>五行关系</Label>
+                <Label id={elementRelationLabelId}>五行关系</Label>
                 <Select
                   value={elementRelation}
                   onValueChange={setElementRelation}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    id={elementRelationId}
+                    aria-labelledby={elementRelationLabelId}
+                  >
                     <SelectValue placeholder="选择五行关系" />
                   </SelectTrigger>
                   <SelectContent>
@@ -495,24 +553,30 @@ export function RulePlaygroundPanel({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>神木符</Label>
+                <Label htmlFor={shenmuValueId}>神木符</Label>
                 <Input
+                  id={shenmuValueId}
+                  name={shenmuValueId}
                   value={shenmuValue}
                   onChange={(e) => setShenmuValue(e.target.value)}
                   type="number"
                 />
               </div>
               <div className="space-y-2">
-                <Label>法伤结果</Label>
+                <Label htmlFor={magicResultId}>法伤结果</Label>
                 <Input
+                  id={magicResultId}
+                  name={magicResultId}
                   value={magicResult}
                   onChange={(e) => setMagicResult(e.target.value)}
                   type="number"
                 />
               </div>
               <div className="space-y-2">
-                <Label>变身卡系数</Label>
+                <Label htmlFor={transformCardFactorId}>变身卡系数</Label>
                 <Input
+                  id={transformCardFactorId}
+                  name={transformCardFactorId}
                   value={transformCardFactor}
                   onChange={(e) => setTransformCardFactor(e.target.value)}
                   type="number"
@@ -520,8 +584,10 @@ export function RulePlaygroundPanel({
                 />
               </div>
               <div className="space-y-2 md:col-span-3">
-                <Label>面板法伤覆盖值</Label>
+                <Label htmlFor={panelMagicDamageOverrideId}>面板法伤覆盖值</Label>
                 <Input
+                  id={panelMagicDamageOverrideId}
+                  name={panelMagicDamageOverrideId}
                   value={panelMagicDamageOverride}
                   onChange={(e) => setPanelMagicDamageOverride(e.target.value)}
                   placeholder="留空则使用服务端规则推导"
@@ -572,8 +638,10 @@ export function RulePlaygroundPanel({
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>样例名称</Label>
+                  <Label htmlFor={saveCaseNameId}>样例名称</Label>
                   <Input
+                    id={saveCaseNameId}
+                    name={saveCaseNameId}
                     value={saveCaseName}
                     onChange={(e) => setSaveCaseName(e.target.value)}
                     placeholder="例如：龙卷雨击-7目标-基准样例"
@@ -581,8 +649,10 @@ export function RulePlaygroundPanel({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>备注</Label>
+                  <Label htmlFor={saveCaseNotesId}>备注</Label>
                   <Textarea
+                    id={saveCaseNotesId}
+                    name={saveCaseNotesId}
                     value={saveCaseNotes}
                     onChange={(e) => setSaveCaseNotes(e.target.value)}
                     placeholder="可选：记录这个样例为什么重要"

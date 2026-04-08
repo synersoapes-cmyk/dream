@@ -231,6 +231,16 @@ function createBundle(): SimulatorCharacterBundle {
         finalLevel: 150,
         sourceDetailJson: '{}',
       },
+      {
+        id: 'skill_2',
+        snapshotId: 'snapshot_1',
+        skillCode: 'dragon_teng',
+        skillName: '龙腾',
+        baseLevel: 140,
+        extraLevel: 0,
+        finalLevel: 140,
+        sourceDetailJson: '{}',
+      },
     ],
     cultivations: [
       {
@@ -257,6 +267,7 @@ function createBundle(): SimulatorCharacterBundle {
       targetHp: 50000,
       targetDefense: 1500,
       targetMagicDefense: 1250,
+      targetSpeed: 760,
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '普通阵',
@@ -322,6 +333,28 @@ function createRuleSet(): DamageRuleSet {
         extraFormula: {},
         condition: {},
         sort: 0,
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'formula_2',
+        versionId: 'rule_v1',
+        school: '龙宫',
+        roleType: '法师',
+        skillCode: 'dragon_teng',
+        skillName: '龙腾',
+        formulaKey: 'dragon_teng_default',
+        baseFormula: {
+          baseTerm: {
+            a: 1 / 145,
+            b: 1.4,
+            c: 39.5,
+          },
+        },
+        extraFormula: {},
+        condition: {},
+        sort: 10,
         enabled: true,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -502,4 +535,265 @@ test('calculateLabValuationFromRuleSet uses service-side damage results for seat
   assert.ok((result.seats[1]?.comparison.damageDiff ?? 0) > 0);
   assert.ok((result.seats[1]?.comparison.costPerDamage ?? 0) > 0);
   assert.match(result.seats[1]?.comparison.costLabel ?? '', /^¥ /);
+});
+
+test('calculateLabValuationFromRuleSet supports dragon_teng service-side valuation', () => {
+  const result = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+      },
+      skillName: '龙腾',
+      targetCount: 1,
+      seats: [
+        {
+          seatId: 'sample',
+          seatName: '样本席位',
+          isSample: true,
+          totalPrice: 1000,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.skill.skillCode, 'dragon_teng');
+  assert.equal(result.skill.skillName, '龙腾');
+  assert.equal(result.sampleSeatId, 'sample');
+  assert.equal(
+    result.seats[0]?.totalDamage,
+    result.seats[0]?.singleTargetDamage
+  );
+});
+
+test('calculateLabValuationFromRuleSet applies jade spell ignore percent in seat comparison', () => {
+  const result = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+      },
+      skillName: '龙卷雨击',
+      targetCount: 1,
+      seats: [
+        {
+          seatId: 'sample',
+          seatName: '样本席位',
+          isSample: true,
+          totalPrice: 1000,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+          ],
+        },
+        {
+          seatId: 'compare_1',
+          seatName: '法穿玉魄席位',
+          isSample: false,
+          totalPrice: 1300,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+            {
+              id: 'jade_compare',
+              name: '阳玉·法穿',
+              type: 'jade',
+              slot: 1,
+              price: 300,
+              stats: {},
+              specialEffect: '法术忽视 5%',
+              effectModifiers: [
+                {
+                  code: 'spell_ignore_percent',
+                  value: 0.05,
+                  label: '法术忽视 5%',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.sampleSeatId, 'sample');
+  assert.equal(result.seats[0]?.seatId, 'sample');
+  assert.equal(result.seats[1]?.seatId, 'compare_1');
+  assert.ok(
+    (result.seats[1]?.totalDamage ?? 0) > (result.seats[0]?.totalDamage ?? 0)
+  );
+  assert.ok((result.seats[1]?.comparison.damageDiff ?? 0) > 0);
+});
+
+test('calculateLabValuationFromRuleSet applies jade spell damage percent in seat comparison', () => {
+  const result = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+      },
+      skillName: '龙卷雨击',
+      targetCount: 1,
+      seats: [
+        {
+          seatId: 'sample',
+          seatName: '样本席位',
+          isSample: true,
+          totalPrice: 1000,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+          ],
+        },
+        {
+          seatId: 'compare_1',
+          seatName: '法伤玉魄席位',
+          isSample: false,
+          totalPrice: 1400,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+            {
+              id: 'jade_compare',
+              name: '阳玉·法伤',
+              type: 'jade',
+              slot: 1,
+              price: 400,
+              stats: {},
+              specialEffect: '基础法术伤害 +1.5%',
+              effectModifiers: [
+                {
+                  code: 'spell_damage_percent',
+                  value: 0.015,
+                  label: '基础法术伤害 +1.5%',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.sampleSeatId, 'sample');
+  assert.equal(result.seats[0]?.seatId, 'sample');
+  assert.equal(result.seats[1]?.seatId, 'compare_1');
+  assert.ok(
+    (result.seats[1]?.totalDamage ?? 0) > (result.seats[0]?.totalDamage ?? 0)
+  );
+  assert.ok((result.seats[1]?.comparison.damageDiff ?? 0) > 0);
 });

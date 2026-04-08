@@ -1,7 +1,28 @@
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
+import {
+  normalizeSimulatorEquipmentSlot,
+  type SimulatorEquipmentSlot,
+} from '@/shared/lib/simulator-equipment';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 type JsonObject = Record<string, unknown>;
+type RuneStoneView = {
+  id: string;
+  name?: string;
+  type: string;
+  level?: number;
+  quality?: string;
+  description?: string;
+  price?: number;
+  stats: SimulatorNumericMap;
+};
+
+type EquipmentPersistedMeta = {
+  runeStoneSets?: RuneStoneView[][];
+  runeStoneSetsNames?: string[];
+  activeRuneStoneSet?: number;
+  [key: string]: unknown;
+};
 
 export type SimulatorSchool =
   | '龙宫'
@@ -15,21 +36,6 @@ export type SimulatorSchool =
 export type SimulatorRoleType = '法师' | '物理' | '辅助' | (string & {});
 
 export type SimulatorElement = '金' | '木' | '水' | '火' | '土';
-
-export type SimulatorEquipmentSlot =
-  | 'weapon'
-  | 'helmet'
-  | 'necklace'
-  | 'armor'
-  | 'belt'
-  | 'shoes'
-  | 'ring'
-  | 'earring'
-  | 'bracelet'
-  | 'amulet'
-  | 'jade'
-  | 'trinket'
-  | (string & {});
 
 export type SimulatorNumericMap = Record<string, number>;
 
@@ -111,6 +117,7 @@ export type SimulatorCharacterDomain = {
     targetHp: number;
     targetDefense: number;
     targetMagicDefense: number;
+    targetSpeed: number;
     targetMagicDefenseCultivation: number;
     targetElement: string;
     targetFormation: string;
@@ -136,32 +143,73 @@ function parseJsonObject(value: string | null | undefined): JsonObject {
   }
 }
 
-function normalizeEquipmentSlot(slot: string): SimulatorEquipmentSlot {
-  if (!slot) {
-    return 'weapon';
+function parseEquipmentPersistedMeta(
+  value: string | null | undefined
+): EquipmentPersistedMeta {
+  return parseJsonObject(value) as EquipmentPersistedMeta;
+}
+
+function parseRuneStoneSets(value: unknown): RuneStoneView[][] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  const normalized = slot.trim().toLowerCase();
-  const slotMap: Record<string, SimulatorEquipmentSlot> = {
-    weapon: 'weapon',
-    helmet: 'helmet',
-    head: 'helmet',
-    necklace: 'necklace',
-    armor: 'armor',
-    clothes: 'armor',
-    cloth: 'armor',
-    belt: 'belt',
-    shoes: 'shoes',
-    ring: 'ring',
-    earring: 'earring',
-    bracelet: 'bracelet',
-    amulet: 'amulet',
-    jade: 'jade',
-    trinket: 'trinket',
-    headwear: 'helmet',
-  };
+  return value
+    .filter(Array.isArray)
+    .map((set, setIndex) =>
+      set
+        .filter((item) => item && typeof item === 'object')
+        .map((runeStone, runeIndex) => {
+          const record = runeStone as Record<string, unknown>;
 
-  return slotMap[normalized] ?? (slot as SimulatorEquipmentSlot);
+          return {
+            id:
+              typeof record.id === 'string' && record.id.trim().length > 0
+                ? record.id
+                : `persisted_rune_${setIndex}_${runeIndex}`,
+            name: typeof record.name === 'string' ? record.name : undefined,
+            type:
+              typeof record.type === 'string' && record.type.trim().length > 0
+                ? record.type
+                : 'red',
+            level: toFiniteNumber(record.level, Number.NaN),
+            quality:
+              typeof record.quality === 'string' ? record.quality : undefined,
+            description:
+              typeof record.description === 'string'
+                ? record.description
+                : undefined,
+            price: toFiniteNumber(record.price, Number.NaN),
+            stats: Object.fromEntries(
+              Object.entries(
+                record.stats && typeof record.stats === 'object'
+                  ? (record.stats as Record<string, unknown>)
+                  : {}
+              )
+                .map(([key, statValue]) => [
+                  key,
+                  toFiniteNumber(statValue, Number.NaN),
+                ])
+                .filter(([, statValue]) => Number.isFinite(statValue))
+            ),
+          };
+        })
+    )
+    .filter((set) => set.length > 0);
+}
+
+function getActiveRuneStoneSet(meta: EquipmentPersistedMeta) {
+  const runeStoneSets = parseRuneStoneSets(meta.runeStoneSets);
+  if (runeStoneSets.length === 0) {
+    return [];
+  }
+
+  const activeIndex = Math.max(
+    0,
+    Math.floor(toFiniteNumber(meta.activeRuneStoneSet, 0))
+  );
+
+  return runeStoneSets[activeIndex] ?? runeStoneSets[0] ?? [];
 }
 
 export function buildSimulatorCharacterDomain(
@@ -176,35 +224,49 @@ export function buildSimulatorCharacterDomain(
   const spirit = toFiniteNumber(rawProfile.magicPower);
   const dodge = toFiniteNumber(rawProfile.dodge);
 
-  const equipment = bundle.equipments.map((item) => ({
-    id: item.id,
-    name: item.name,
-    slot: normalizeEquipmentSlot(item.slot),
-    level: toFiniteNumber(item.level),
-    quality: item.quality ?? '',
-    price: toFiniteNumber(item.price),
-    source: item.source ?? '',
-    status: item.status ?? '',
-    isLocked: Boolean(item.isLocked),
-    attributes: Object.fromEntries(
-      item.attrs.map((attr) => [attr.attrType, toFiniteNumber(attr.attrValue)])
-    ),
-    build: item.build
-      ? {
-          holeCount: toFiniteNumber(item.build.holeCount),
-          gemLevelTotal: toFiniteNumber(item.build.gemLevelTotal),
-          refineLevel: toFiniteNumber(item.build.refineLevel),
-          specialEffect: parseJsonObject(item.build.specialEffectJson),
-          setEffect: parseJsonObject(item.build.setEffectJson),
-          notes: parseJsonObject(item.build.notesJson),
-        }
-      : null,
-  }));
+  const equipment = bundle.equipments.map((item) => {
+    const persistedMeta = parseEquipmentPersistedMeta(item.build?.notesJson);
+
+    return {
+      id: item.id,
+      name: item.name,
+      slot: normalizeSimulatorEquipmentSlot(item.slot),
+      level: toFiniteNumber(item.level),
+      quality: item.quality ?? '',
+      price: toFiniteNumber(item.price),
+      source: item.source ?? '',
+      status: item.status ?? '',
+      isLocked: Boolean(item.isLocked),
+      attributes: Object.fromEntries(
+        item.attrs.map((attr) => [
+          attr.attrType,
+          toFiniteNumber(attr.attrValue),
+        ])
+      ),
+      build: item.build
+        ? {
+            holeCount: toFiniteNumber(item.build.holeCount),
+            gemLevelTotal: toFiniteNumber(item.build.gemLevelTotal),
+            refineLevel: toFiniteNumber(item.build.refineLevel),
+            specialEffect: parseJsonObject(item.build.specialEffectJson),
+            setEffect: parseJsonObject(item.build.setEffectJson),
+            notes: persistedMeta,
+          }
+        : null,
+    };
+  });
 
   const equipmentAttributeTotals = equipment.reduce<SimulatorNumericMap>(
     (totals, item) => {
       for (const [key, value] of Object.entries(item.attributes)) {
         totals[key] = (totals[key] ?? 0) + toFiniteNumber(value);
+      }
+
+      const activeRuneStoneSet = getActiveRuneStoneSet(item.build?.notes ?? {});
+      for (const runeStone of activeRuneStoneSet) {
+        for (const [key, value] of Object.entries(runeStone.stats)) {
+          totals[key] = (totals[key] ?? 0) + toFiniteNumber(value);
+        }
       }
 
       return totals;
@@ -296,6 +358,10 @@ export function buildSimulatorCharacterDomain(
           targetDefense: toFiniteNumber(bundle.battleContext.targetDefense),
           targetMagicDefense: toFiniteNumber(
             bundle.battleContext.targetMagicDefense
+          ),
+          targetSpeed: toFiniteNumber(
+            bundle.battleContext.targetSpeed,
+            bundle.battleTargetTemplate?.speed ?? 0
           ),
           targetMagicDefenseCultivation: toFiniteNumber(
             bundle.battleContext.targetMagicDefenseCultivation

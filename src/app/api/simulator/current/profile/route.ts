@@ -1,10 +1,19 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import { getUserInfo } from '@/shared/models/user';
 import { updateSimulatorProfile } from '@/shared/models/simulator';
+import { getUserInfo } from '@/shared/models/user';
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toOptionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export async function PATCH(req: Request) {
@@ -33,7 +42,7 @@ export async function PATCH(req: Request) {
       speed: toNumber(body?.speed),
       hit: toNumber(body?.hit),
       dodge: toNumber(body?.dodge),
-      sealHit: toNumber(body?.sealHit),
+      sealHit: toOptionalNumber(body?.sealHit),
     });
 
     if (!bundle) {

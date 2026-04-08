@@ -55,6 +55,7 @@ export function buildDungeonDatabaseFromTemplates(
       hp: template.hp,
       defense: template.defense,
       magicDefense: template.magicDefense,
+      speed: template.speed,
       element: (template.element || undefined) as any,
       formation: template.formation || undefined,
       description: template.notes || undefined,

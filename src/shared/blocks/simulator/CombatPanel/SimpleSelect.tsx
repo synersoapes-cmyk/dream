@@ -16,6 +16,9 @@ type SimpleSelectProps = {
   className?: string;
   disabled?: boolean;
   placeholder?: string;
+  triggerId?: string;
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
   value?: string;
   onValueChange?: (value: string) => void;
 };
@@ -38,6 +41,9 @@ export function SimpleSelect({
   children,
   disabled,
   placeholder,
+  triggerId,
+  ariaLabel,
+  ariaLabelledBy,
   value,
   onValueChange,
 }: SimpleSelectProps) {
@@ -50,6 +56,9 @@ export function SimpleSelect({
       onValueChange={onValueChange}
     >
       <SelectTrigger
+        id={triggerId}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         className={cn(
           'h-10 w-full border-yellow-700/60 bg-slate-950/80 text-yellow-100 shadow-none focus-visible:border-yellow-500 focus-visible:ring-yellow-500/20',
           className,

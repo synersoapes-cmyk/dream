@@ -222,6 +222,9 @@ export function AiChat() {
       {/* Input */}
       <div className="p-4 bg-slate-900/80 border-t border-yellow-800/40 flex gap-2 flex-shrink-0">
         <input
+          id="simulator-ai-chat-input"
+          name="simulator-ai-chat-input"
+          aria-label="AI 顾问输入框"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}

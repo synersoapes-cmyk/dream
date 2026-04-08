@@ -15,6 +15,7 @@ import { useAppContext } from '@/shared/contexts/app';
 import { EquipmentReplaceDialog } from '@/features/simulator/overlays/EquipmentReplaceDialog';
 import { AiChat } from '@/features/simulator/shell/AiChat';
 import { AccountSwitcher } from '@/features/simulator/shell/AccountSwitcher';
+import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
@@ -40,6 +41,9 @@ export default function SimulatorApp() {
   const callbackUrl = useMemo(() => pathname || '/', [pathname]);
   const { setIsShowSignModal } = useAppContext();
   const { data: session, isPending: isSessionPending } = useSession();
+  const setAutoRecalculateDerivedStats = useGameStore(
+    (state) => state.setAutoRecalculateDerivedStats
+  );
 
   const [mainTab, setMainTab] = useState<'status' | 'lab'>('status');
   const [showAI, setShowAI] = useState(false);
@@ -162,6 +166,16 @@ export default function SimulatorApp() {
       controller?.abort();
     };
   }, [isSessionPending, session?.user?.id]);
+
+  useEffect(() => {
+    if (authViewState !== 'ready') {
+      return;
+    }
+
+    setAutoRecalculateDerivedStats(mainTab === 'lab', {
+      restoreCloudState: mainTab === 'status',
+    });
+  }, [authViewState, mainTab, setAutoRecalculateDerivedStats]);
 
   if (authViewState === 'checking-session' || authViewState === 'bootstrapping') {
     return (

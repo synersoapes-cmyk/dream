@@ -48,6 +48,7 @@ export const createCombatTargetFromManualTarget = (
   hp: target.hp,
   defense: target.defense,
   magicDefense: target.magicDefense,
+  speed: target.speed,
   element: target.element,
   formation: target.formation,
 });

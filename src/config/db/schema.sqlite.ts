@@ -684,6 +684,7 @@ export const snapshotBattleContext = table(
     targetHp: real('target_hp').notNull().default(0),
     targetDefense: real('target_defense').notNull().default(0),
     targetMagicDefense: real('target_magic_defense').notNull().default(0),
+    targetSpeed: real('target_speed').notNull().default(0),
     targetMagicDefenseCultivation: integer('target_magic_defense_cultivation')
       .notNull()
       .default(0),

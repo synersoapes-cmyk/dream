@@ -1,4 +1,8 @@
 import { getUuid } from '@/shared/lib/hash';
+import {
+  normalizeSimulatorOcrEquipmentType,
+  type SimulatorOcrEquipmentType,
+} from '@/shared/lib/simulator-equipment';
 import { getAllConfigs } from '@/shared/models/config';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import { getStorageService } from '@/shared/services/storage';
@@ -6,15 +10,7 @@ import { getStorageService } from '@/shared/services/storage';
 type SimulatorEquipmentLike = {
   id: string;
   name: string;
-  type:
-    | 'weapon'
-    | 'helmet'
-    | 'necklace'
-    | 'armor'
-    | 'belt'
-    | 'shoes'
-    | 'trinket'
-    | 'jade';
+  type: SimulatorOcrEquipmentType;
   slot?: number;
   mainStat: string;
   extraStat?: string;
@@ -63,16 +59,6 @@ type SimulatorProfileLike = {
 };
 
 const GEMINI_VISION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'] as const;
-const SUPPORTED_TYPES = new Set([
-  'weapon',
-  'helmet',
-  'necklace',
-  'armor',
-  'belt',
-  'shoes',
-  'trinket',
-  'jade',
-]);
 const STAT_KEYS = new Set([
   'hp',
   'magic',
@@ -137,9 +123,7 @@ function toOptionalFiniteNumber(value: unknown) {
     return undefined;
   }
 
-  const normalized = value
-    .replace(/[,+，\s]/g, '')
-    .replace(/[^\d.-]/g, '');
+  const normalized = value.replace(/[,+，\s]/g, '').replace(/[^\d.-]/g, '');
 
   if (!normalized) {
     return undefined;
@@ -195,36 +179,7 @@ function normalizeGeminiOcrErrorMessage(status: number, detail: string) {
 }
 
 function normalizeEquipmentType(value: unknown) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase();
-
-  const aliasMap: Record<string, SimulatorEquipmentLike['type']> = {
-    weapon: 'weapon',
-    helmet: 'helmet',
-    necklace: 'necklace',
-    armor: 'armor',
-    belt: 'belt',
-    shoes: 'shoes',
-    trinket: 'trinket',
-    jade: 'jade',
-    武器: 'weapon',
-    头盔: 'helmet',
-    项链: 'necklace',
-    衣服: 'armor',
-    腰带: 'belt',
-    鞋子: 'shoes',
-    戒指: 'trinket',
-    耳饰: 'trinket',
-    手镯: 'trinket',
-    佩饰: 'trinket',
-    灵饰: 'trinket',
-    玉魄: 'jade',
-    阳玉: 'jade',
-    阴玉: 'jade',
-  };
-
-  return aliasMap[normalized] ?? (SUPPORTED_TYPES.has(normalized) ? (normalized as SimulatorEquipmentLike['type']) : 'weapon');
+  return normalizeSimulatorOcrEquipmentType(String(value || ''));
 }
 
 function normalizeStats(value: unknown) {
@@ -326,9 +281,7 @@ export function normalizeRecognizedProfile(
     speed: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['speed', '速度'])
     ),
-    hit: toOptionalFiniteNumber(
-      getFirstDefinedValue(sources, ['hit', '命中'])
-    ),
+    hit: toOptionalFiniteNumber(getFirstDefinedValue(sources, ['hit', '命中'])),
     dodge: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['dodge', '躲避'])
     ),
@@ -338,7 +291,9 @@ export function normalizeRecognizedProfile(
   };
 
   return Object.fromEntries(
-    Object.entries(normalizedProfile).filter(([, entryValue]) => entryValue !== undefined)
+    Object.entries(normalizedProfile).filter(
+      ([, entryValue]) => entryValue !== undefined
+    )
   ) as SimulatorProfileLike;
 }
 
@@ -390,19 +345,28 @@ export function mergeRecognizedProfileWithBundle(
       toFiniteNumber(currentProfile?.agility, rawProfile.agility),
     magicPower:
       recognizedProfile.magicPower ??
-      toFiniteNumber(rawProfile.magicPower, toFiniteNumber(rawProfile.spiritualPower)),
-    hp: recognizedProfile.hp ?? toFiniteNumber(currentProfile?.hp, toFiniteNumber(rawProfile.hp)),
+      toFiniteNumber(
+        rawProfile.magicPower,
+        toFiniteNumber(rawProfile.spiritualPower)
+      ),
+    hp:
+      recognizedProfile.hp ??
+      toFiniteNumber(currentProfile?.hp, toFiniteNumber(rawProfile.hp)),
     mp: recognizedProfile.mp ?? toFiniteNumber(currentProfile?.mp),
     damage: recognizedProfile.damage ?? toFiniteNumber(currentProfile?.damage),
-    defense: recognizedProfile.defense ?? toFiniteNumber(currentProfile?.defense),
+    defense:
+      recognizedProfile.defense ?? toFiniteNumber(currentProfile?.defense),
     magicDamage:
-      recognizedProfile.magicDamage ?? toFiniteNumber(currentProfile?.magicDamage),
+      recognizedProfile.magicDamage ??
+      toFiniteNumber(currentProfile?.magicDamage),
     magicDefense:
-      recognizedProfile.magicDefense ?? toFiniteNumber(currentProfile?.magicDefense),
+      recognizedProfile.magicDefense ??
+      toFiniteNumber(currentProfile?.magicDefense),
     speed: recognizedProfile.speed ?? toFiniteNumber(currentProfile?.speed),
     hit: recognizedProfile.hit ?? toFiniteNumber(currentProfile?.hit),
     dodge: recognizedProfile.dodge ?? toFiniteNumber(rawProfile.dodge),
-    sealHit: recognizedProfile.sealHit ?? toFiniteNumber(currentProfile?.sealHit),
+    sealHit:
+      recognizedProfile.sealHit ?? toFiniteNumber(currentProfile?.sealHit),
   };
 }
 
@@ -453,14 +417,18 @@ export function normalizeRecognizedEquipment(
     gemstone: value.gemstone ? String(value.gemstone) : undefined,
     luckyHoles: value.luckyHoles ? String(value.luckyHoles) : undefined,
     starPosition: value.starPosition ? String(value.starPosition) : undefined,
-    starAlignment: value.starAlignment ? String(value.starAlignment) : undefined,
+    starAlignment: value.starAlignment
+      ? String(value.starAlignment)
+      : undefined,
     factionRequirement: value.factionRequirement
       ? String(value.factionRequirement)
       : undefined,
     positionRequirement: value.positionRequirement
       ? String(value.positionRequirement)
       : undefined,
-    specialEffect: value.specialEffect ? String(value.specialEffect) : undefined,
+    specialEffect: value.specialEffect
+      ? String(value.specialEffect)
+      : undefined,
     manufacturer: value.manufacturer ? String(value.manufacturer) : undefined,
     refinementEffect: value.refinementEffect
       ? String(value.refinementEffect)

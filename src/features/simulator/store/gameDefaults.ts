@@ -73,9 +73,15 @@ const cloneRuneStoneSets = (equipment: Equipment): Equipment['runeStoneSets'] =>
     })),
   );
 
+const cloneEffectModifiers = (
+  equipment: Equipment,
+): Equipment['effectModifiers'] =>
+  equipment.effectModifiers?.map(modifier => ({ ...modifier }));
+
 const cloneEquipment = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
+  effectModifiers: cloneEffectModifiers(equipment),
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
   runeStoneSets: cloneRuneStoneSets(equipment),

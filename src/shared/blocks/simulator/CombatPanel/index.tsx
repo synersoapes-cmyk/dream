@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -6,6 +5,7 @@ import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   Dungeon,
+  DungeonTarget,
   EnemyTarget,
 } from '@/features/simulator/store/gameTypes';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
@@ -34,6 +34,56 @@ import { SimpleSelect } from './SimpleSelect';
 import { SkillDamagePanel } from './SkillDamagePanel';
 import { Slider } from './Slider';
 
+type ManualAttackStatKey =
+  | 'magicDamage'
+  | 'spiritualPower'
+  | 'magicCritLevel'
+  | 'speed'
+  | 'hit'
+  | 'fixedDamage'
+  | 'pierceLevel'
+  | 'elementalMastery';
+
+type ManualDefenseStatKey =
+  | 'hp'
+  | 'magicDefense'
+  | 'defense'
+  | 'block'
+  | 'antiCritLevel'
+  | 'sealResistLevel'
+  | 'dodge'
+  | 'elementalResistance';
+
+const MANUAL_ATTACK_STAT_FIELDS: Array<{
+  key: ManualAttackStatKey;
+  label: string;
+  max: number;
+}> = [
+  { key: 'magicDamage', label: '法术伤害', max: 2000 },
+  { key: 'spiritualPower', label: '灵力', max: 1000 },
+  { key: 'magicCritLevel', label: '法术暴击等级', max: 500 },
+  { key: 'speed', label: '速度', max: 1500 },
+  { key: 'hit', label: '命中', max: 2000 },
+  { key: 'fixedDamage', label: '固定伤害', max: 500 },
+  { key: 'pierceLevel', label: '穿刺等级', max: 500 },
+  { key: 'elementalMastery', label: '五行克制能力', max: 300 },
+];
+
+const MANUAL_DEFENSE_STAT_FIELDS: Array<{
+  key: ManualDefenseStatKey;
+  label: string;
+  max: number;
+}> = [
+  { key: 'hp', label: '气血', max: 200000 },
+  { key: 'magicDefense', label: '法术防御', max: 3000 },
+  { key: 'defense', label: '物理防御', max: 3000 },
+  { key: 'block', label: '格挡值', max: 1000 },
+  { key: 'antiCritLevel', label: '暴击等级', max: 500 },
+  { key: 'sealResistLevel', label: '抵抗封印等级', max: 500 },
+  { key: 'dodge', label: '躲避', max: 1500 },
+  { key: 'elementalResistance', label: '五行克制抵御能力', max: 300 },
+];
+
 export function CombatPanel() {
   const [activeTab, setActiveTab] = useState<'manual' | 'dungeon'>('manual');
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
@@ -44,22 +94,13 @@ export function CombatPanel() {
   const removeManualTarget = useGameStore((state) => state.removeManualTarget);
   const updateManualTarget = useGameStore((state) => state.updateManualTarget);
   const playerSetup = useGameStore((state) => state.playerSetup);
-  const skills = useGameStore((state) => state.skills);
   const selectedSkill = useGameStore((state) => state.selectedSkill);
-  const selectSkill = useGameStore((state) => state.selectSkill);
-  const baseAttributes = useGameStore((state) => state.baseAttributes);
-  const combatStats = useGameStore((state) => state.combatStats);
-  const cultivation = useGameStore((state) => state.cultivation);
   const selectedDungeonIds = useGameStore((state) => state.selectedDungeonIds);
+  const setCombatTab = useGameStore((state) => state.setCombatTab);
   const setSelectedDungeonIds = useGameStore(
     (state) => state.setSelectedDungeonIds
   );
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDungeonTarget, setSelectedDungeonTarget] = useState<
-    Dungeon['targets'][0] | null
-  >(null);
-  const [isDungeonSelectOpen, setIsDungeonSelectOpen] = useState(false);
   const [expandedTargetIds, setExpandedTargetIds] = useState<Set<string>>(
     new Set([manualTargets[0]?.id])
   );
@@ -78,7 +119,8 @@ export function CombatPanel() {
   const [saveBattleContextError, setSaveBattleContextError] = useState<
     string | null
   >(null);
-  const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>(DUNGEON_DATABASE);
+  const [targetDungeons, setTargetDungeons] =
+    useState<Dungeon[]>(DUNGEON_DATABASE);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +132,11 @@ export function CombatPanel() {
           cache: 'no-store',
         });
         const payload = await response.json();
-        if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+        if (
+          !response.ok ||
+          payload?.code !== 0 ||
+          !Array.isArray(payload?.data)
+        ) {
           return;
         }
 
@@ -131,57 +177,6 @@ export function CombatPanel() {
     return relationMap[`${selfElement}-${targetElement}`] || '无克/普通';
   }, [playerSetup.element, combatTarget.element]);
 
-  const damage = useMemo(() => {
-    const physicalDamage = Math.max(
-      0,
-      combatStats.damage +
-        baseAttributes.strength * 0.8 -
-        combatTarget.defense * 0.6
-    );
-    const magicDamage = Math.max(
-      0,
-      combatStats.magicDamage +
-        baseAttributes.magic * 0.9 -
-        combatTarget.magicDefense * 0.5
-    );
-
-    let skillDamage = 0;
-    if (selectedSkill) {
-      const baseDamage =
-        selectedSkill.type === 'physical' ? physicalDamage : magicDamage;
-      const cultivationBonus =
-        selectedSkill.type === 'physical'
-          ? (cultivation.physicalAttack || 0) / 10
-          : (cultivation.magicAttack || 0) / 10;
-      skillDamage = Math.floor(
-        (baseDamage *
-          (1 + cultivationBonus) *
-          selectedSkill.targets *
-          selectedSkill.level) /
-          10
-      );
-    }
-
-    return {
-      physical: Math.floor(physicalDamage),
-      magic: Math.floor(magicDamage),
-      skillDamage,
-    };
-  }, [
-    baseAttributes.strength,
-    baseAttributes.magic,
-    combatStats.damage,
-    combatStats.magicDamage,
-    cultivation.physicalAttack,
-    cultivation.magicAttack,
-    combatTarget.defense,
-    combatTarget.magicDefense,
-    selectedSkill?.name,
-    selectedSkill?.level,
-    selectedSkill?.targets,
-    selectedSkill?.type,
-  ]);
-
   useEffect(() => {
     // 移除默认选中逻辑，因为现在是多选，且不强制选中
   }, [selectedDungeonIds]);
@@ -196,36 +191,18 @@ export function CombatPanel() {
     }
   };
 
-  const handleDungeonTargetSelect = (
-    target: Dungeon['targets'][0],
-    dungeonName: string
-  ) => {
-    updateCombatTarget({
-      templateId: (target as any).templateId || target.id,
-      name: target.name,
-      level: target.level,
-      hp: target.hp,
-      defense: target.defense,
-      magicDefense: target.magicDefense,
-      element: target.element,
-      formation: target.formation,
-      dungeonName: dungeonName,
-    });
-    setSelectedDungeonTarget(target);
-    setSearchQuery('');
-  };
-
   const updatePlayerSetup = (updates: Partial<typeof playerSetup>) => {
     useGameStore.setState((state) => ({
       playerSetup: { ...state.playerSetup, ...updates },
     }));
   };
 
-  const handleRefreshDamage = () => {
-    // 强制重新计算伤害 - 如果有选中的技能，重新选择它来刷新
-    if (selectedSkill) {
-      selectSkill(selectedSkill);
-    }
+  const updateTargetNumericStat = <K extends keyof EnemyTarget>(
+    id: string,
+    key: K,
+    value: EnemyTarget[K]
+  ) => {
+    updateManualTarget(id, { [key]: value } as Partial<EnemyTarget>);
   };
 
   const handleSaveBattleContext = async () => {
@@ -254,6 +231,7 @@ export function CombatPanel() {
           targetHp: combatTarget.hp || 0,
           targetDefense: combatTarget.defense || 0,
           targetMagicDefense: combatTarget.magicDefense || 0,
+          targetSpeed: combatTarget.speed || 0,
           targetMagicDefenseCultivation: 0,
           targetElement: combatTarget.element || '',
           targetFormation: combatTarget.formation || '普通阵',
@@ -279,42 +257,6 @@ export function CombatPanel() {
     }
   };
 
-  const selectedDungeonTags = useMemo(() => {
-    return selectedDungeonIds
-      .map((id) => {
-        let foundTarget: any = null;
-        let foundDungeon: any = null;
-        for (const d of targetDungeons) {
-          const t = d.targets.find((target: any) => target.id === id);
-          if (t) {
-            foundTarget = t;
-            foundDungeon = d;
-            break;
-          }
-        }
-        if (!foundTarget) return null;
-        return { id, foundTarget, foundDungeon };
-      })
-      .filter(Boolean);
-  }, [selectedDungeonIds]);
-
-  const selectedDungeonGroups = useMemo(() => {
-    const selectedDungeonsMap = new Map<string, any>();
-    selectedDungeonIds.forEach((targetId) => {
-      for (const dungeon of targetDungeons) {
-        const target = dungeon.targets.find((t) => t.id === targetId);
-        if (target) {
-          if (!selectedDungeonsMap.has(dungeon.id)) {
-            selectedDungeonsMap.set(dungeon.id, { dungeon, targets: [] });
-          }
-          selectedDungeonsMap.get(dungeon.id).targets.push(target);
-          break;
-        }
-      }
-    });
-    return Array.from(selectedDungeonsMap.values());
-  }, [selectedDungeonIds]);
-
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
@@ -334,13 +276,19 @@ export function CombatPanel() {
           <div className="flex rounded-lg border border-yellow-800/40 bg-slate-900/80 p-1">
             <button
               className={`rounded-md px-3 py-1.5 text-xs transition-colors ${activeTab === 'manual' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
-              onClick={() => setActiveTab('manual')}
+              onClick={() => {
+                setActiveTab('manual');
+                setCombatTab('manual');
+              }}
             >
               手动目标
             </button>
             <button
               className={`rounded-md px-3 py-1.5 text-xs transition-colors ${activeTab === 'dungeon' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
-              onClick={() => setActiveTab('dungeon')}
+              onClick={() => {
+                setActiveTab('dungeon');
+                setCombatTab('dungeon');
+              }}
             >
               副本目标
             </button>
@@ -391,13 +339,20 @@ export function CombatPanel() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <Label className="mb-2 block text-xs text-yellow-100">
+                      <Label
+                        id="player-element-label"
+                        className="mb-2 block text-xs text-yellow-100"
+                      >
                         我方五行
                       </Label>
                       <SimpleSelect
+                        triggerId="player-element-select"
+                        ariaLabelledBy="player-element-label"
                         value={playerSetup.element}
                         onValueChange={(val) =>
-                          updatePlayerSetup({ element: val as any })
+                          updatePlayerSetup({
+                            element: val as typeof playerSetup.element,
+                          })
                         }
                         className="h-9 py-1 text-sm"
                       >
@@ -410,10 +365,15 @@ export function CombatPanel() {
                     </div>
 
                     <div>
-                      <Label className="mb-2 block text-xs text-yellow-100">
+                      <Label
+                        id="player-formation-label"
+                        className="mb-2 block text-xs text-yellow-100"
+                      >
                         我方阵法
                       </Label>
                       <SimpleSelect
+                        triggerId="player-formation-select"
+                        ariaLabelledBy="player-formation-label"
                         value={playerSetup.formation}
                         onValueChange={(val) =>
                           updatePlayerSetup({ formation: val })
@@ -554,14 +514,19 @@ export function CombatPanel() {
                             {/* 五行和阵法 */}
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <Label className="mb-1.5 block text-xs text-yellow-100">
+                                <Label
+                                  id={`manual-target-element-label-${target.id}`}
+                                  className="mb-1.5 block text-xs text-yellow-100"
+                                >
                                   五行
                                 </Label>
                                 <SimpleSelect
+                                  triggerId={`manual-target-element-select-${target.id}`}
+                                  ariaLabelledBy={`manual-target-element-label-${target.id}`}
                                   value={target.element}
                                   onValueChange={(val) =>
                                     updateManualTarget(target.id, {
-                                      element: val as any,
+                                      element: val as EnemyTarget['element'],
                                     })
                                   }
                                   className="h-8 py-1 text-xs"
@@ -574,10 +539,15 @@ export function CombatPanel() {
                                 </SimpleSelect>
                               </div>
                               <div>
-                                <Label className="mb-1.5 block text-xs text-yellow-100">
+                                <Label
+                                  id={`manual-target-formation-label-${target.id}`}
+                                  className="mb-1.5 block text-xs text-yellow-100"
+                                >
                                   阵法
                                 </Label>
                                 <SimpleSelect
+                                  triggerId={`manual-target-formation-select-${target.id}`}
+                                  ariaLabelledBy={`manual-target-formation-label-${target.id}`}
                                   value={target.formation}
                                   onValueChange={(val) =>
                                     updateManualTarget(target.id, {
@@ -610,61 +580,33 @@ export function CombatPanel() {
                                 攻击属性
                               </div>
                               <div className="grid grid-cols-2 gap-2">
-                                {[
-                                  {
-                                    key: 'magicDamage',
-                                    label: '法术伤害',
-                                    max: 2000,
-                                  },
-                                  {
-                                    key: 'spiritualPower',
-                                    label: '灵力',
-                                    max: 1000,
-                                  },
-                                  {
-                                    key: 'magicCritLevel',
-                                    label: '法术暴击等级',
-                                    max: 500,
-                                  },
-                                  { key: 'speed', label: '速度', max: 1500 },
-                                  { key: 'hit', label: '命中', max: 2000 },
-                                  {
-                                    key: 'fixedDamage',
-                                    label: '固定伤害',
-                                    max: 500,
-                                  },
-                                  {
-                                    key: 'pierceLevel',
-                                    label: '穿刺等级',
-                                    max: 500,
-                                  },
-                                  {
-                                    key: 'elementalMastery',
-                                    label: '五行克制能力',
-                                    max: 300,
-                                  },
-                                ].map(({ key, label, max }) => (
-                                  <div key={key}>
-                                    <Label className="mb-1 flex justify-between text-[10px] text-yellow-100/80">
-                                      <span>{label}</span>
-                                      <span className="font-bold text-yellow-400">
-                                        {(target as any)[key]}
-                                      </span>
-                                    </Label>
-                                    <Slider
-                                      value={[(target as any)[key]]}
-                                      onValueChange={([val]) =>
-                                        updateManualTarget(target.id, {
-                                          [key]: val,
-                                        })
-                                      }
-                                      min={0}
-                                      max={max}
-                                      step={10}
-                                      className="mt-0.5"
-                                    />
-                                  </div>
-                                ))}
+                                {MANUAL_ATTACK_STAT_FIELDS.map(
+                                  ({ key, label, max }) => (
+                                    <div key={key}>
+                                      <Label className="mb-1 flex justify-between text-[10px] text-yellow-100/80">
+                                        <span>{label}</span>
+                                        <span className="font-bold text-yellow-400">
+                                          {target[key]}
+                                        </span>
+                                      </Label>
+                                      <Slider
+                                        value={[target[key]]}
+                                        onValueChange={([val]) =>
+                                          updateTargetNumericStat(
+                                            target.id,
+                                            key,
+                                            val
+                                          )
+                                        }
+                                        min={0}
+                                        max={max}
+                                        step={10}
+                                        aria-label={`${target.name} ${label}`}
+                                        className="mt-0.5"
+                                      />
+                                    </div>
+                                  )
+                                )}
                               </div>
                             </div>
 
@@ -675,57 +617,33 @@ export function CombatPanel() {
                                 防御属性
                               </div>
                               <div className="grid grid-cols-2 gap-2">
-                                {[
-                                  { key: 'hp', label: '气血', max: 200000 },
-                                  {
-                                    key: 'magicDefense',
-                                    label: '法术防御',
-                                    max: 3000,
-                                  },
-                                  {
-                                    key: 'defense',
-                                    label: '物理防御',
-                                    max: 3000,
-                                  },
-                                  { key: 'block', label: '格挡值', max: 1000 },
-                                  {
-                                    key: 'antiCritLevel',
-                                    label: '暴击等级',
-                                    max: 500,
-                                  },
-                                  {
-                                    key: 'sealResistLevel',
-                                    label: '抵抗封印等级',
-                                    max: 500,
-                                  },
-                                  { key: 'dodge', label: '躲避', max: 1500 },
-                                  {
-                                    key: 'elementalResistance',
-                                    label: '五行克制抵御能力',
-                                    max: 300,
-                                  },
-                                ].map(({ key, label, max }) => (
-                                  <div key={key}>
-                                    <Label className="mb-1 flex justify-between text-[10px] text-yellow-100/80">
-                                      <span>{label}</span>
-                                      <span className="font-bold text-yellow-400">
-                                        {(target as any)[key]}
-                                      </span>
-                                    </Label>
-                                    <Slider
-                                      value={[(target as any)[key]]}
-                                      onValueChange={([val]) =>
-                                        updateManualTarget(target.id, {
-                                          [key]: val,
-                                        })
-                                      }
-                                      min={0}
-                                      max={max}
-                                      step={key === 'hp' ? 1000 : 10}
-                                      className="mt-0.5"
-                                    />
-                                  </div>
-                                ))}
+                                {MANUAL_DEFENSE_STAT_FIELDS.map(
+                                  ({ key, label, max }) => (
+                                    <div key={key}>
+                                      <Label className="mb-1 flex justify-between text-[10px] text-yellow-100/80">
+                                        <span>{label}</span>
+                                        <span className="font-bold text-yellow-400">
+                                          {target[key]}
+                                        </span>
+                                      </Label>
+                                      <Slider
+                                        value={[target[key]]}
+                                        onValueChange={([val]) =>
+                                          updateTargetNumericStat(
+                                            target.id,
+                                            key,
+                                            val
+                                          )
+                                        }
+                                        min={0}
+                                        max={max}
+                                        step={key === 'hp' ? 1000 : 10}
+                                        aria-label={`${target.name} ${label}`}
+                                        className="mt-0.5"
+                                      />
+                                    </div>
+                                  )
+                                )}
                               </div>
                             </div>
                           </div>
@@ -800,7 +718,27 @@ export function CombatPanel() {
                             return (
                               <div
                                 key={target.id}
-                                className="rounded-lg border border-yellow-800/30 bg-slate-900/60 p-3"
+                                onClick={() => {
+                                  updateCombatTarget({
+                                    templateId: target.templateId || target.id,
+                                    name: target.name,
+                                    defense: currentDefense.defense,
+                                    magicDefense: currentDefense.magicDefense,
+                                    speed: target.speed || 0,
+                                    hp: target.hp,
+                                    level: target.level,
+                                    element: target.element,
+                                    formation: target.formation,
+                                    dungeonName: dungeon.name,
+                                  });
+                                  setCombatTab('dungeon');
+                                }}
+                                className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                                  combatTarget.dungeonName === dungeon.name &&
+                                  combatTarget.name === target.name
+                                    ? 'border-yellow-500 bg-yellow-900/10'
+                                    : 'border-yellow-800/30 bg-slate-900/60 hover:border-yellow-600/50 hover:bg-slate-900/80'
+                                }`}
                               >
                                 <div className="mb-2 flex items-center justify-between">
                                   <div className="flex items-center gap-2">
@@ -842,6 +780,7 @@ export function CombatPanel() {
                                       min={0}
                                       max={3000}
                                       step={10}
+                                      aria-label={`${dungeon.name} ${target.name} 物理防御`}
                                       className="mt-0.5"
                                     />
                                   </div>
@@ -868,6 +807,7 @@ export function CombatPanel() {
                                       min={0}
                                       max={3000}
                                       step={10}
+                                      aria-label={`${dungeon.name} ${target.name} 法术防御`}
                                       className="mt-0.5"
                                     />
                                   </div>

@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/shared/components/ui/card';
+import { Label } from '@/shared/components/ui/label';
 import type {
   DamageRuleVersionDetail,
   DamageRuleVersionListItem,
@@ -32,6 +33,12 @@ function formatDate(value: Date | number | string | null | undefined) {
 
 function stringifyPretty(value: unknown) {
   return JSON.stringify(value ?? [], null, 2);
+}
+
+function buildFieldId(...parts: Array<string | number>) {
+  return parts
+    .map((part) => String(part).replace(/[^a-zA-Z0-9_-]+/g, '-'))
+    .join('-');
 }
 
 export function RuleCenterPanel({
@@ -245,7 +252,7 @@ export function RuleCenterPanel({
                       ACTIVE
                     </span>
                   ) : (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground">
                       {version.status}
                     </span>
                   )}
@@ -321,8 +328,15 @@ export function RuleCenterPanel({
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-2">
-                    <div className="text-sm font-medium">修正项 JSON</div>
+                    <Label
+                      htmlFor={buildFieldId('rule-center', detail.version.id, 'modifier-draft')}
+                      className="text-sm font-medium"
+                    >
+                      修正项 JSON
+                    </Label>
                     <textarea
+                      id={buildFieldId('rule-center', detail.version.id, 'modifier-draft')}
+                      name={buildFieldId('rule-center', detail.version.id, 'modifier-draft')}
                       className="min-h-[320px] w-full rounded-lg border bg-background p-3 font-mono text-xs outline-none"
                       value={modifierDraft}
                       onChange={(event) => setModifierDraft(event.target.value)}
@@ -330,8 +344,15 @@ export function RuleCenterPanel({
                     />
                   </div>
                   <div className="space-y-2">
-                    <div className="text-sm font-medium">技能加成 JSON</div>
+                    <Label
+                      htmlFor={buildFieldId('rule-center', detail.version.id, 'skill-bonus-draft')}
+                      className="text-sm font-medium"
+                    >
+                      技能加成 JSON
+                    </Label>
                     <textarea
+                      id={buildFieldId('rule-center', detail.version.id, 'skill-bonus-draft')}
+                      name={buildFieldId('rule-center', detail.version.id, 'skill-bonus-draft')}
                       className="min-h-[320px] w-full rounded-lg border bg-background p-3 font-mono text-xs outline-none"
                       value={skillBonusDraft}
                       onChange={(event) => setSkillBonusDraft(event.target.value)}

@@ -52,6 +52,7 @@ export type LabValuationRequest = {
     name?: string;
     magicDefense: number;
     magicDefenseCultivation?: number;
+    speed?: number;
   };
   skillCode?: string;
   skillName?: string;
@@ -108,46 +109,136 @@ function parseJsonRecord(value: string | null | undefined) {
   }
 }
 
-function extractActiveEquipmentStats(equipment: Record<string, unknown>) {
+function toOptionalNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function toOptionalStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const values = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  return values.length > 0 ? values : undefined;
+}
+
+function extractEquipmentBaseStats(equipment: Record<string, unknown>) {
   const totals: Record<string, number> = {};
 
-  const appendStats = (stats: unknown) => {
-    if (!isRecord(stats)) {
-      return;
-    }
+  if (!isRecord(equipment.stats)) {
+    return totals;
+  }
 
-    for (const [key, value] of Object.entries(stats)) {
-      const numericValue = toFiniteNumber(value, Number.NaN);
-      if (!Number.isFinite(numericValue)) {
-        continue;
-      }
-
-      totals[key] = (totals[key] ?? 0) + numericValue;
-    }
-  };
-
-  appendStats(equipment.stats);
-
-  const activeRuneIndex = Math.max(
-    0,
-    Math.floor(toFiniteNumber(equipment.activeRuneStoneSet, 0))
-  );
-  const runeStoneSets = Array.isArray(equipment.runeStoneSets)
-    ? equipment.runeStoneSets
-    : [];
-  const activeRuneSet = Array.isArray(runeStoneSets[activeRuneIndex])
-    ? runeStoneSets[activeRuneIndex]
-    : [];
-
-  for (const runeStone of activeRuneSet) {
-    if (!isRecord(runeStone)) {
+  for (const [key, value] of Object.entries(equipment.stats)) {
+    const numericValue = toFiniteNumber(value, Number.NaN);
+    if (!Number.isFinite(numericValue)) {
       continue;
     }
 
-    appendStats(runeStone.stats);
+    totals[key] = numericValue;
   }
 
   return totals;
+}
+
+function buildLabEquipmentSpecialEffectMeta(
+  equipment: Record<string, unknown>
+) {
+  const meta: Record<string, unknown> = {};
+  const highlights = toOptionalStringArray(equipment.highlights);
+  const specialEffect = toOptionalString(equipment.specialEffect);
+  const refinementEffect = toOptionalString(equipment.refinementEffect);
+
+  if (highlights) {
+    meta.highlights = highlights;
+  }
+  if (specialEffect) {
+    meta.specialEffect = specialEffect;
+  }
+  if (refinementEffect) {
+    meta.refinementEffect = refinementEffect;
+  }
+
+  return meta;
+}
+
+function buildLabEquipmentSetEffectMeta(equipment: Record<string, unknown>) {
+  const meta: Record<string, unknown> = {};
+  const runeSetEffect = toOptionalString(equipment.runeSetEffect);
+  const setName = toOptionalString(equipment.setName);
+
+  if (runeSetEffect) {
+    meta.runeSetEffect = runeSetEffect;
+  }
+  if (setName) {
+    meta.setName = setName;
+  }
+
+  return meta;
+}
+
+function buildLabEquipmentNotesMeta(equipment: Record<string, unknown>) {
+  const meta: Record<string, unknown> = {};
+  const crossServerFee = toOptionalNumber(equipment.crossServerFee);
+  const activeRuneStoneSet = toOptionalNumber(equipment.activeRuneStoneSet);
+  const runeStoneSetsNames = toOptionalStringArray(
+    equipment.runeStoneSetsNames
+  );
+
+  if (crossServerFee !== undefined) {
+    meta.crossServerFee = crossServerFee;
+  }
+  if (Array.isArray(equipment.runeStoneSets)) {
+    meta.runeStoneSets = equipment.runeStoneSets;
+  }
+  if (runeStoneSetsNames) {
+    meta.runeStoneSetsNames = runeStoneSetsNames;
+  }
+  if (activeRuneStoneSet !== undefined) {
+    meta.activeRuneStoneSet = Math.max(0, Math.floor(activeRuneStoneSet));
+  }
+  if (Array.isArray(equipment.effectModifiers)) {
+    meta.effectModifiers = JSON.parse(JSON.stringify(equipment.effectModifiers));
+  }
+
+  for (const key of [
+    'extraStat',
+    'description',
+    'equippableRoles',
+    'element',
+    'luckyHoles',
+    'starPosition',
+    'starAlignment',
+    'factionRequirement',
+    'positionRequirement',
+    'manufacturer',
+    'imageUrl',
+    'gemstone',
+    'quality',
+  ] as const) {
+    const value = toOptionalString(equipment[key]);
+    if (value) {
+      meta[key] = value;
+    }
+  }
+
+  const durability = toOptionalNumber(equipment.durability);
+  if (durability !== undefined) {
+    meta.durability = durability;
+  }
+
+  return meta;
 }
 
 function toSimulatorEquipments(
@@ -156,11 +247,17 @@ function toSimulatorEquipments(
 ): SimulatorEquipment[] {
   const now = new Date();
   const rows: SimulatorEquipment[] = equipmentList.map((equipment, index) => {
-    const stats = extractActiveEquipmentStats(equipment);
+    const stats = extractEquipmentBaseStats(equipment);
     const equipmentId =
       typeof equipment.id === 'string' && equipment.id
         ? equipment.id
         : `lab_eq_${index + 1}`;
+    const runeStoneSets = Array.isArray(equipment.runeStoneSets)
+      ? equipment.runeStoneSets
+      : [];
+    const firstRuneStoneSet = Array.isArray(runeStoneSets[0])
+      ? runeStoneSets[0]
+      : [];
 
     return {
       id: equipmentId,
@@ -182,7 +279,27 @@ function toSimulatorEquipments(
       isLocked: false,
       createdAt: now,
       updatedAt: now,
-      build: null,
+      build: {
+        equipmentId,
+        holeCount: Math.max(
+          0,
+          Math.floor(
+            toFiniteNumber(equipment.luckyHoles, firstRuneStoneSet.length)
+          )
+        ),
+        gemLevelTotal: 0,
+        refineLevel: Math.max(
+          0,
+          Math.floor(toFiniteNumber(equipment.forgeLevel))
+        ),
+        specialEffectJson: JSON.stringify(
+          buildLabEquipmentSpecialEffectMeta(equipment)
+        ),
+        setEffectJson: JSON.stringify(
+          buildLabEquipmentSetEffectMeta(equipment)
+        ),
+        notesJson: JSON.stringify(buildLabEquipmentNotesMeta(equipment)),
+      },
       attrs: Object.entries(stats).map(([key, value], attrIndex) => ({
         id: `${equipmentId}_attr_${attrIndex + 1}`,
         equipmentId,

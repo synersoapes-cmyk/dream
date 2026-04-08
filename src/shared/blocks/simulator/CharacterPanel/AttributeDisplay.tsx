@@ -1,7 +1,7 @@
-// @ts-nocheck
-"use client";
+'use client';
+
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import { useState, useRef, useEffect } from 'react';
 
 interface AttributeDisplayProps {
   label: string;
@@ -11,19 +11,19 @@ interface AttributeDisplayProps {
   editable?: boolean; // 是否可编辑
 }
 
-export function AttributeDisplay({ 
-  label, 
-  value, 
+export function AttributeDisplay({
+  label,
+  value,
   statKey,
   onValueChange,
-  editable = true
+  editable = true,
 }: AttributeDisplayProps) {
   const previewMode = useGameStore((state) => state.previewMode);
   const calculateStatsDiff = useGameStore((state) => state.calculateStatsDiff);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value.toString());
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
   // 获取属性差异
   let diff = 0;
   if (previewMode && statKey) {
@@ -70,7 +70,7 @@ export function AttributeDisplay({
     setIsEditing(false);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSave();
     } else if (e.key === 'Escape') {
@@ -79,9 +79,11 @@ export function AttributeDisplay({
   };
 
   return (
-    <div className="flex items-center justify-between py-2 px-3 bg-slate-900/40 border border-yellow-800/30 rounded-lg">
-      <span className="text-sm text-yellow-100/90 font-medium min-w-[80px]">{label}</span>
-      
+    <div className="flex items-center justify-between rounded-lg border border-yellow-800/30 bg-slate-900/40 px-3 py-2">
+      <span className="min-w-[80px] text-sm font-medium text-yellow-100/90">
+        {label}
+      </span>
+
       <div className="flex items-center gap-2">
         <div className="relative flex items-center gap-3">
           {isEditing ? (
@@ -92,12 +94,14 @@ export function AttributeDisplay({
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={handleSave}
               onKeyDown={handleKeyDown}
-              className="min-w-[64px] text-center bg-yellow-900/40 border border-yellow-600/60 text-yellow-100 text-sm rounded px-3 py-1 outline-none focus:border-yellow-500"
+              className="min-w-[64px] rounded border border-yellow-600/60 bg-yellow-900/40 px-3 py-1 text-center text-sm text-yellow-100 outline-none focus:border-yellow-500"
             />
           ) : (
-            <div 
-              className={`min-w-[64px] text-center bg-slate-900/60 text-yellow-100 text-sm rounded px-3 py-1 ${
-                editable ? 'cursor-pointer hover:bg-slate-800/80 hover:border hover:border-yellow-600/40 transition-colors' : ''
+            <div
+              className={`min-w-[64px] rounded bg-slate-900/60 px-3 py-1 text-center text-sm text-yellow-100 ${
+                editable
+                  ? 'cursor-pointer transition-colors hover:border hover:border-yellow-600/40 hover:bg-slate-800/80'
+                  : ''
               }`}
               onClick={handleStartEdit}
               title={editable ? '点击编辑' : ''}
@@ -106,10 +110,13 @@ export function AttributeDisplay({
             </div>
           )}
           {diff !== 0 && !isEditing && (
-            <div className={`text-xs font-bold whitespace-nowrap ${
-              diff > 0 ? 'text-green-400' : 'text-red-400'
-            }`}>
-              {diff > 0 ? '+' : ''}{diff}
+            <div
+              className={`text-xs font-bold whitespace-nowrap ${
+                diff > 0 ? 'text-green-400' : 'text-red-400'
+              }`}
+            >
+              {diff > 0 ? '+' : ''}
+              {diff}
             </div>
           )}
         </div>

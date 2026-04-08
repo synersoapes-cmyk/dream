@@ -396,7 +396,9 @@ export const createHistoryAndLogActions = (set: StoreSet, get: StoreGet) => ({
 export const createStatActions = (set: StoreSet, get: StoreGet) => ({
   updateTreasure: (treasure: GameState['treasure']) => {
     set({ treasure });
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
   toggleTreasure: () => {
     const state = get();
@@ -404,7 +406,9 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
     set({
       treasure: { ...state.treasure, isActive: !state.treasure.isActive },
     });
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
   recalculateCombatStats: () => {
     const { baseAttributes, equipment, treasure } = get();
@@ -428,7 +432,9 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
     set((state) => ({
       baseAttributes: { ...state.baseAttributes, [key]: value },
     }));
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
   updateCombatStat: (key: keyof GameState['combatStats'], value: number) => {
     set((state) => ({
@@ -439,6 +445,8 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
     set((state) => ({
       cultivation: { ...state.cultivation, [key]: value },
     }));
-    get().recalculateCombatStats();
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
   },
 });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 function toText(value: unknown): string | null {

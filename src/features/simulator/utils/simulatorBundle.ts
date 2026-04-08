@@ -7,53 +7,29 @@ import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   AccountData,
   BaseAttributes,
+  CharacterStatMap,
   CombatStats,
   Cultivation,
   Equipment,
+  EquipmentEffectModifier,
   EquipmentSet,
   Faction,
   GameState,
   Skill,
+  SyncedCloudState,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
+import {
+  extractSimulatorEquipmentSlotNumber,
+  normalizeSimulatorEquipmentType,
+} from '@/shared/lib/simulator-equipment';
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 
 const FALLBACK_FACTION: Faction = '龙宫';
 type NumericStatKey = Exclude<keyof (CombatStats & BaseAttributes), 'faction'>;
-
-const slotTypeMap: Record<string, Equipment['type']> = {
-  weapon: 'weapon',
-  arms: 'weapon',
-  helmet: 'helmet',
-  head: 'helmet',
-  necklace: 'necklace',
-  armor: 'armor',
-  cloth: 'armor',
-  belt: 'belt',
-  shoes: 'shoes',
-  trinket: 'trinket',
-  ring: 'trinket',
-  jade: 'jade',
-  runestone: 'runeStone',
-  rune_stone: 'runeStone',
-  rune: 'rune',
-  武器: 'weapon',
-  头盔: 'helmet',
-  项链: 'necklace',
-  衣服: 'armor',
-  腰带: 'belt',
-  鞋子: 'shoes',
-  灵饰: 'trinket',
-  戒指: 'trinket',
-  耳饰: 'trinket',
-  佩饰: 'trinket',
-  手镯: 'trinket',
-  玉佩: 'jade',
-  玉魄: 'jade',
-  符石: 'runeStone',
-};
 
 const cultivationTypeMap: Record<string, keyof Cultivation> = {
   physicalAttack: 'physicalAttack',
@@ -113,34 +89,6 @@ function toFaction(value: string | null | undefined): Faction {
     : FALLBACK_FACTION;
 }
 
-function toEquipmentType(slot: string): Equipment['type'] {
-  const normalized = slot.trim().toLowerCase();
-  if (slotTypeMap[slot]) return slotTypeMap[slot];
-  if (slotTypeMap[normalized]) return slotTypeMap[normalized];
-  if (normalized.startsWith('trinket') || normalized.startsWith('ring'))
-    return 'trinket';
-  if (normalized.startsWith('jade')) return 'jade';
-  if (normalized.startsWith('weapon')) return 'weapon';
-  if (normalized.startsWith('helmet') || normalized.startsWith('head'))
-    return 'helmet';
-  if (normalized.startsWith('necklace')) return 'necklace';
-  if (normalized.startsWith('armor') || normalized.startsWith('cloth'))
-    return 'armor';
-  if (normalized.startsWith('belt')) return 'belt';
-  if (normalized.startsWith('shoes')) return 'shoes';
-  return 'weapon';
-}
-
-function toTrinketSlot(slot: string): number | undefined {
-  const match = slot.match(/(\d+)/);
-  return match ? Number(match[1]) : undefined;
-}
-
-function toEquipmentSlotNumber(slot: string): number | undefined {
-  const match = slot.match(/(\d+)/);
-  return match ? Number(match[1]) : undefined;
-}
-
 function toNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -163,7 +111,44 @@ function toStringArray(value: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-function toStatRecord(value: unknown): Partial<CombatStats & BaseAttributes> {
+function toEffectModifiers(
+  value: unknown
+): EquipmentEffectModifier[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items: EquipmentEffectModifier[] = [];
+
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const parsedValue =
+      typeof item.value === 'number' && Number.isFinite(item.value)
+        ? item.value
+        : Number(item.value);
+    if (
+      typeof item.code !== 'string' ||
+      item.code.trim().length === 0 ||
+      !Number.isFinite(parsedValue)
+    ) {
+      continue;
+    }
+
+    items.push({
+      code: item.code.trim(),
+      value: parsedValue,
+      label: typeof item.label === 'string' ? item.label : undefined,
+      source: typeof item.source === 'string' ? item.source : undefined,
+    });
+  }
+
+  return items.length > 0 ? items : undefined;
+}
+
+function toStatRecord(value: unknown): CharacterStatMap {
   if (!isRecord(value)) {
     return {};
   }
@@ -173,7 +158,7 @@ function toStatRecord(value: unknown): Partial<CombatStats & BaseAttributes> {
       ([, entryValue]) =>
         typeof entryValue === 'number' && Number.isFinite(entryValue)
     )
-  ) as Partial<CombatStats & BaseAttributes>;
+  ) as CharacterStatMap;
 }
 
 function toRuneStoneSets(value: unknown): Equipment['runeStoneSets'] {
@@ -218,26 +203,10 @@ function buildAttrMap(
     attrMap[key] = current + toNumber(attr.attrValue, 0);
   }
 
-  return attrMap as Partial<CombatStats & BaseAttributes>;
+  return attrMap as CharacterStatMap;
 }
 
-function formatMainStat(attrMap: Partial<CombatStats & BaseAttributes>) {
-  const labels: Record<string, string> = {
-    damage: '伤害',
-    magicDamage: '法伤',
-    defense: '防御',
-    magicDefense: '法防',
-    hp: '气血',
-    magic: '魔力',
-    hit: '命中',
-    speed: '速度',
-    agility: '敏捷',
-    physique: '体质',
-    strength: '力量',
-    endurance: '耐力',
-    magicPower: '灵力',
-  };
-
+function formatMainStat(attrMap: CharacterStatMap) {
   const entries = Object.entries(attrMap).filter(
     ([, value]) => typeof value === 'number' && value !== 0
   );
@@ -248,7 +217,8 @@ function formatMainStat(attrMap: Partial<CombatStats & BaseAttributes>) {
   return entries
     .slice(0, 2)
     .map(
-      ([key, value]) => `${labels[key] ?? key} +${Math.round(Number(value))}`
+      ([key, value]) =>
+        `${getSimulatorStatLabel(key, 'mainStat')} +${Math.round(Number(value))}`
     )
     .join(' ');
 }
@@ -317,7 +287,17 @@ function mapCombatStats(bundle: SimulatorCharacterBundle): CombatStats {
     magicDefense: Math.round(bundle.profile?.magicDefense ?? 0),
     speed: Math.round(bundle.profile?.speed ?? 0),
     dodge: Math.round(toNumber(rawBody.dodge)),
-  } as CombatStats;
+    sealHit: Math.round(bundle.profile?.sealHit ?? 0),
+    spiritualPower: Math.round(toNumber(rawBody.spiritualPower)),
+    magicCritLevel: Math.round(toNumber(rawBody.magicCritLevel)),
+    fixedDamage: Math.round(toNumber(rawBody.fixedDamage)),
+    pierceLevel: Math.round(toNumber(rawBody.pierceLevel)),
+    elementalMastery: Math.round(toNumber(rawBody.elementalMastery)),
+    block: Math.round(toNumber(rawBody.block)),
+    antiCritLevel: Math.round(toNumber(rawBody.antiCritLevel)),
+    sealResistLevel: Math.round(toNumber(rawBody.sealResistLevel)),
+    elementalResistance: Math.round(toNumber(rawBody.elementalResistance)),
+  };
 }
 
 function mapCombatTarget(
@@ -335,6 +315,7 @@ function mapCombatTarget(
     magicDefense: Math.round(
       ctx?.targetMagicDefense || template?.magicDefense || 0
     ),
+    speed: Math.round(ctx?.targetSpeed ?? template?.speed ?? 0),
     dungeonName: template?.dungeonName || undefined,
     element: (ctx?.targetElement || template?.element || undefined) as any,
     formation: ctx?.targetFormation || template?.formation || undefined,
@@ -374,17 +355,31 @@ function mapSkills(bundle: SimulatorCharacterBundle): Skill[] {
 
 function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
   return bundle.equipments.map((item) => {
-    const type = toEquipmentType(item.snapshotSlot ?? item.slot);
+    const type = normalizeSimulatorEquipmentType(
+      item.snapshotSlot ?? item.slot
+    );
     const attrMap = buildAttrMap(item);
     const buildMeta = parseJsonRecord(item.build?.specialEffectJson);
     const setMeta = parseJsonRecord(item.build?.setEffectJson);
+    const notesMeta = parseJsonRecord(item.build?.notesJson);
 
-    const highlights = [...Object.values(buildMeta), ...Object.values(setMeta)]
-      .filter(
+    const legacyHighlights = [
+      ...(toStringArray(buildMeta.highlights) ?? []),
+      ...Object.values(buildMeta).filter(
         (value): value is string =>
           typeof value === 'string' && value.trim().length > 0
-      )
-      .slice(0, 3);
+      ),
+      ...Object.values(setMeta).filter(
+        (value): value is string =>
+          typeof value === 'string' && value.trim().length > 0
+      ),
+    ];
+    const highlights = Array.from(
+      new Set([
+        ...(toStringArray(notesMeta.highlights) ?? []),
+        ...legacyHighlights,
+      ])
+    ).slice(0, 3);
 
     return {
       id: item.id,
@@ -392,7 +387,7 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       type,
       slot:
         type === 'trinket' || type === 'jade'
-          ? toEquipmentSlotNumber(item.snapshotSlot ?? item.slot)
+          ? extractSimulatorEquipmentSlotNumber(item.snapshotSlot ?? item.slot)
           : undefined,
       mainStat: formatMainStat(attrMap),
       baseStats: attrMap,
@@ -401,7 +396,73 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       imageUrl: getEquipmentDefaultImage(type),
       level: item.level,
       quality: item.quality,
+      setName:
+        typeof notesMeta.setName === 'string' ? notesMeta.setName : undefined,
       forgeLevel: item.build?.refineLevel ?? 0,
+      crossServerFee: toOptionalNumber(notesMeta.crossServerFee),
+      runeStoneSets: toRuneStoneSets(notesMeta.runeStoneSets),
+      runeStoneSetsNames: toStringArray(notesMeta.runeStoneSetsNames),
+      activeRuneStoneSet: toOptionalNumber(notesMeta.activeRuneStoneSet),
+      runeSetEffect:
+        typeof notesMeta.runeSetEffect === 'string'
+          ? notesMeta.runeSetEffect
+          : typeof setMeta.runeSetEffect === 'string'
+            ? setMeta.runeSetEffect
+            : undefined,
+      extraStat:
+        typeof notesMeta.extraStat === 'string'
+          ? notesMeta.extraStat
+          : undefined,
+      effectModifiers: toEffectModifiers(notesMeta.effectModifiers),
+      description:
+        typeof notesMeta.description === 'string'
+          ? notesMeta.description
+          : undefined,
+      equippableRoles:
+        typeof notesMeta.equippableRoles === 'string'
+          ? notesMeta.equippableRoles
+          : undefined,
+      element:
+        typeof notesMeta.element === 'string' ? notesMeta.element : undefined,
+      durability: toOptionalNumber(notesMeta.durability),
+      gemstone:
+        typeof notesMeta.gemstone === 'string' ? notesMeta.gemstone : undefined,
+      luckyHoles:
+        typeof notesMeta.luckyHoles === 'string'
+          ? notesMeta.luckyHoles
+          : undefined,
+      starPosition:
+        typeof notesMeta.starPosition === 'string'
+          ? notesMeta.starPosition
+          : undefined,
+      starAlignment:
+        typeof notesMeta.starAlignment === 'string'
+          ? notesMeta.starAlignment
+          : undefined,
+      factionRequirement:
+        typeof notesMeta.factionRequirement === 'string'
+          ? notesMeta.factionRequirement
+          : undefined,
+      positionRequirement:
+        typeof notesMeta.positionRequirement === 'string'
+          ? notesMeta.positionRequirement
+          : undefined,
+      specialEffect:
+        typeof notesMeta.specialEffect === 'string'
+          ? notesMeta.specialEffect
+          : typeof buildMeta.specialEffect === 'string'
+            ? buildMeta.specialEffect
+            : undefined,
+      manufacturer:
+        typeof notesMeta.manufacturer === 'string'
+          ? notesMeta.manufacturer
+          : undefined,
+      refinementEffect:
+        typeof notesMeta.refinementEffect === 'string'
+          ? notesMeta.refinementEffect
+          : typeof buildMeta.refinementEffect === 'string'
+            ? buildMeta.refinementEffect
+            : undefined,
       highlights: highlights.length ? highlights : undefined,
     };
   });
@@ -420,7 +481,7 @@ function toPersistedEquipment(
     return null;
   }
 
-  const type = toEquipmentType(rawType);
+  const type = normalizeSimulatorEquipmentType(rawType);
   const baseStats = toStatRecord(value.baseStats);
   const stats = toStatRecord(value.stats);
 
@@ -434,7 +495,7 @@ function toPersistedEquipment(
     slot:
       toOptionalNumber(value.slot) ??
       (type === 'trinket' || type === 'jade'
-        ? toEquipmentSlotNumber(rawType)
+        ? extractSimulatorEquipmentSlotNumber(rawType)
         : undefined),
     mainStat:
       typeof value.mainStat === 'string'
@@ -442,6 +503,7 @@ function toPersistedEquipment(
         : formatMainStat(baseStats),
     extraStat:
       typeof value.extraStat === 'string' ? value.extraStat : undefined,
+    effectModifiers: toEffectModifiers(value.effectModifiers),
     highlights: toStringArray(value.highlights),
     baseStats,
     stats: Object.keys(stats).length > 0 ? stats : baseStats,
@@ -456,6 +518,7 @@ function toPersistedEquipment(
     activeRuneStoneSet: toOptionalNumber(value.activeRuneStoneSet),
     runeSetEffect:
       typeof value.runeSetEffect === 'string' ? value.runeSetEffect : undefined,
+    setName: typeof value.setName === 'string' ? value.setName : undefined,
     description:
       typeof value.description === 'string' ? value.description : undefined,
     equippableRoles:
@@ -602,8 +665,7 @@ export function applySimulatorBundleToStore(
     treasure: null,
   };
 
-  useGameStore.setState((state: GameState) => ({
-    ...state,
+  const syncedCloudState: SyncedCloudState = {
     accounts: [account],
     activeAccountId: account.id,
     baseAttributes,
@@ -617,7 +679,7 @@ export function applySimulatorBundleToStore(
     combatTarget,
     formation: selfFormation,
     playerSetup: {
-      ...state.playerSetup,
+      ...useGameStore.getState().playerSetup,
       level: baseAttributes.level,
       faction: baseAttributes.faction,
       baseStats: baseAttributes,
@@ -627,6 +689,12 @@ export function applySimulatorBundleToStore(
       element: selfElement,
       formation: selfFormation,
     },
+  };
+
+  useGameStore.setState((state: GameState) => ({
+    ...state,
+    ...syncedCloudState,
+    syncedCloudState,
     experimentSeats: preserveWorkbenchState
       ? state.experimentSeats
       : createInitialExperimentSeats(),

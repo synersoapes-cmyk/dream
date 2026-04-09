@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
-import type { AdminSimulatorLabSessionItem } from '@/shared/models/simulator';
+import type { AdminSimulatorLabSessionItem } from '@/shared/models/simulator-types';
 
 type Props = {
   initialItems: AdminSimulatorLabSessionItem[];

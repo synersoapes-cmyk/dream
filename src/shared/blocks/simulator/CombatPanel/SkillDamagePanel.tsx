@@ -47,6 +47,23 @@ type MatchedBonusRule = {
   bonusValue: number;
 };
 
+type StarBonusEntry = {
+  equipmentId: string;
+  slot: string;
+  label: string;
+  targetKey: string;
+  value: number;
+};
+
+type StarBonusesBreakdown = {
+  panelStatBonuses?: Record<string, number>;
+  attributeSourceBonuses?: Record<string, number>;
+  fullSetActive?: boolean;
+  fullSetAttributeBonus?: number;
+  starPositionBonuses?: StarBonusEntry[];
+  starAlignmentBonuses?: StarBonusEntry[];
+};
+
 type DamageTargetDetails = {
   baseItem: string;
   splitRatio: string;
@@ -63,6 +80,7 @@ type DamageTargetDetails = {
   matchedBonusRules: MatchedBonusRule[];
   rawBreakdown: Record<string, unknown> & {
     panelMagicDamageBreakdown?: PanelMagicDamageBreakdown;
+    starBonuses?: StarBonusesBreakdown;
   };
 };
 
@@ -241,6 +259,7 @@ const mapTargetResult = (
     formulaExpression?: string;
     matchedBonusRules?: MatchedBonusRule[];
     panelMagicDamageBreakdown?: PanelMagicDamageBreakdown;
+    starBonuses?: StarBonusesBreakdown;
   };
   const baseTerm = toNumber(breakdown.baseTerm);
   const splitFactor = toNumber(breakdown.splitFactor, 0.5);
@@ -1100,6 +1119,104 @@ export function SkillDamagePanel({
                         {rule.skillName} +{rule.bonusValue}
                       </span>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {!!modalSkillDetails.details.rawBreakdown?.starBonuses && (
+                <div className="rounded-xl border border-cyan-800/30 bg-slate-900/50 p-4 shadow-inner">
+                  <div className="mb-2 text-sm font-bold text-cyan-300">
+                    星石 / 星相互合加成
+                  </div>
+
+                  {Array.isArray(
+                    modalSkillDetails.details.rawBreakdown.starBonuses
+                      ?.starPositionBonuses
+                  ) &&
+                    modalSkillDetails.details.rawBreakdown.starBonuses
+                      .starPositionBonuses!.length > 0 && (
+                      <div className="mb-3">
+                        <div className="mb-1.5 text-xs text-cyan-200/80">
+                          单件星位加成
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {modalSkillDetails.details.rawBreakdown.starBonuses.starPositionBonuses!.map(
+                            (item) => (
+                              <span
+                                key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
+                                className="rounded-full border border-cyan-700/30 bg-cyan-900/20 px-2.5 py-1 text-xs text-cyan-100"
+                              >
+                                {item.slot}: {item.label}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  {Array.isArray(
+                    modalSkillDetails.details.rawBreakdown.starBonuses
+                      ?.starAlignmentBonuses
+                  ) &&
+                    modalSkillDetails.details.rawBreakdown.starBonuses
+                      .starAlignmentBonuses!.length > 0 && (
+                      <div className="mb-3">
+                        <div className="mb-1.5 text-xs text-cyan-200/80">
+                          单件互合属性
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {modalSkillDetails.details.rawBreakdown.starBonuses.starAlignmentBonuses!.map(
+                            (item) => (
+                              <span
+                                key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
+                                className="rounded-full border border-sky-700/30 bg-sky-900/20 px-2.5 py-1 text-xs text-sky-100"
+                              >
+                                {item.slot}: {item.label}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                  <div className="space-y-1.5 text-xs text-cyan-100/90">
+                    <div>
+                      六件全套：
+                      <span className="ml-2 font-semibold text-cyan-300">
+                        {modalSkillDetails.details.rawBreakdown.starBonuses
+                          ?.fullSetActive
+                          ? `已生效（全基础属性 +${modalSkillDetails.details.rawBreakdown.starBonuses?.fullSetAttributeBonus ?? 0}）`
+                          : '未生效'}
+                      </span>
+                    </div>
+                    {modalSkillDetails.details.rawBreakdown.starBonuses
+                      ?.attributeSourceBonuses && (
+                      <div className="text-cyan-200/75">
+                        基础属性加成：
+                        {Object.entries(
+                          modalSkillDetails.details.rawBreakdown.starBonuses
+                            .attributeSourceBonuses
+                        )
+                          .map(([key, value]) => `${key} +${value}`)
+                          .join(' / ')}
+                      </div>
+                    )}
+                    {modalSkillDetails.details.rawBreakdown.starBonuses
+                      ?.panelStatBonuses &&
+                      Object.keys(
+                        modalSkillDetails.details.rawBreakdown.starBonuses
+                          .panelStatBonuses
+                      ).length > 0 && (
+                        <div className="text-cyan-200/75">
+                          面板直加：
+                          {Object.entries(
+                            modalSkillDetails.details.rawBreakdown.starBonuses
+                              .panelStatBonuses
+                          )
+                            .map(([key, value]) => `${key} +${value}`)
+                            .join(' / ')}
+                        </div>
+                      )}
                   </div>
                 </div>
               )}

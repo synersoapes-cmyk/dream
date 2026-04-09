@@ -214,57 +214,12 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
   };
   const cloudEquipment = [createEquipment('cloud_weapon', 'weapon', 120)];
   const cloudState: SyncedCloudState = {
-    accounts: [
-      {
-        id: 'cloud_1',
-        name: 'Cloud Character',
-        baseAttributes: {
-          level: 89,
-          hp: 3850,
-          magic: 210,
-          physique: 40,
-          strength: 20,
-          endurance: 30,
-          agility: 25,
-          magicPower: 0,
-          faction: '龙宫',
-        },
-        combatStats: {
-          hp: 3850,
-          magic: 2200,
-          hit: 990,
-          damage: 0,
-          magicDamage: 1460,
-          defense: 920,
-          magicDefense: 1180,
-          speed: 540,
-          dodge: 180,
-        },
-        equipment: cloneEquipment(cloudEquipment),
-        equipmentSets: [
-          {
-            id: 'set_1',
-            name: '当前方案',
-            items: cloneEquipment(cloudEquipment),
-            isActive: true,
-          },
-        ],
-        activeSetIndex: 0,
-        skills: [],
-        cultivation: {
-          physicalAttack: 0,
-          physicalDefense: 0,
-          magicAttack: 0,
-          magicDefense: 0,
-          petPhysicalAttack: 0,
-          petPhysicalDefense: 0,
-          petMagicAttack: 0,
-          petMagicDefense: 0,
-        },
-        treasure: null,
-      },
-    ],
-    activeAccountId: 'cloud_1',
+    currentCharacter: {
+      id: 'cloud_1',
+      name: 'Cloud Character',
+      school: '龙宫',
+      level: 89,
+    },
     baseAttributes: {
       level: 89,
       hp: 3850,

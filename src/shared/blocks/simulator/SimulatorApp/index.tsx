@@ -16,6 +16,11 @@ import { EquipmentReplaceDialog } from '@/features/simulator/overlays/EquipmentR
 import { AiChat } from '@/features/simulator/shell/AiChat';
 import { AccountSwitcher } from '@/features/simulator/shell/AccountSwitcher';
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import {
+  clearSelectedSimulatorCharacterId,
+  getSelectedSimulatorCharacterId,
+  setSelectedSimulatorCharacterId,
+} from '@/features/simulator/utils/characterSelection';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
@@ -88,6 +93,7 @@ export default function SimulatorApp() {
 
       try {
         let payload: any = null;
+        const selectedCharacterId = getSelectedSimulatorCharacterId();
 
         for (let attempt = 1; attempt <= BOOTSTRAP_RETRY_COUNT; attempt += 1) {
           controller = new AbortController();
@@ -106,17 +112,51 @@ export default function SimulatorApp() {
           );
 
           try {
-            const response = await fetch('/api/simulator/current', {
-              method: 'GET',
-              cache: 'no-store',
-              signal: activeController.signal,
-            });
+            const params = new URLSearchParams();
+            if (selectedCharacterId) {
+              params.set('characterId', selectedCharacterId);
+            }
+
+            let response = await fetch(
+              `/api/simulator/current${params.size > 0 ? `?${params.toString()}` : ''}`,
+              {
+                method: 'GET',
+                cache: 'no-store',
+                signal: activeController.signal,
+              },
+            );
+
+            if (
+              selectedCharacterId &&
+              response.ok
+            ) {
+              const nextPayload = await response.clone().json().catch(() => null);
+              if (nextPayload?.code !== 0) {
+                clearSelectedSimulatorCharacterId();
+                response = await fetch('/api/simulator/current', {
+                  method: 'GET',
+                  cache: 'no-store',
+                  signal: activeController.signal,
+                });
+              }
+            }
+
+            if (response.ok && !selectedCharacterId) {
+              const nextPayload = await response.clone().json().catch(() => null);
+              if (nextPayload?.code === 0 && nextPayload?.data?.character?.id) {
+                setSelectedSimulatorCharacterId(nextPayload.data.character.id);
+              }
+            }
 
             if (!response.ok) {
               throw new Error(`request failed with status: ${response.status}`);
             }
 
             payload = await response.json();
+
+            if (payload?.code === 0 && payload?.data?.character?.id) {
+              setSelectedSimulatorCharacterId(payload.data.character.id);
+            }
             break;
           } catch (error) {
             if (attempt === BOOTSTRAP_RETRY_COUNT || !shouldRetryBootstrapRequest(error)) {

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 function createBundle(): SimulatorCharacterBundle {
   return {
@@ -134,7 +134,8 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
 
   const state = useGameStore.getState();
 
-  assert.equal(state.activeAccountId, 'char_1');
+  assert.equal(state.currentCharacter?.id, 'char_1');
+  assert.equal(state.currentCharacter?.name, '测试龙宫');
   assert.equal(state.baseAttributes.faction, '龙宫');
   assert.equal(state.baseAttributes.hp, 716);
   assert.equal(state.combatStats.hp, 4200);
@@ -298,7 +299,7 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
   assert.equal(state.equipmentSets[0]?.items[0]?.name, '常规武器');
   assert.equal(state.equipmentSets[1]?.name, '爆发方案');
   assert.equal(state.equipmentSets[1]?.items[0]?.name, '当前云端武器');
-  assert.equal(state.accounts[0]?.activeSetIndex, 1);
+  assert.equal(state.syncedCloudState?.activeSetIndex, 1);
   assert.equal(state.equipment[0]?.runeStoneSets?.[0]?.[0]?.name, '黑符石');
   assert.equal(state.equipment[0]?.runeStoneSetsNames?.[0], '腾蛟');
   assert.equal(state.equipment[0]?.extraStat, '魔力 +28');

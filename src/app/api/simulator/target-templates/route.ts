@@ -1,5 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import { listSimulatorBattleTargetTemplates } from '@/shared/models/simulator';
+import { listSimulatorBattleTargetTemplates } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 export async function GET(req: Request) {

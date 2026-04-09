@@ -14,8 +14,6 @@ import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/ut
 import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simulatorLabSession';
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
 import {
-  ChevronRight,
-  Minus,
   Package,
   Plus,
   RefreshCcw,
@@ -24,13 +22,10 @@ import {
   Target,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
-import { UploadPopover } from '@/shared/blocks/simulator/CharacterPanel/UploadPopover';
-import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
 import { formatDateTimeValue } from '@/shared/lib/date';
 import {
   getDefaultSimulatorSecondaryCategory,
@@ -52,11 +47,15 @@ import {
   getSeatDisplayName,
 } from './laboratory-utils';
 import { LaboratoryComparisonTable } from './LaboratoryComparisonTable';
+import {
+  LaboratoryBulkDeleteDialog,
+  LaboratoryOverwriteConfirmDialog,
+} from './LaboratoryDialogs';
 import { LaboratoryEquipmentDetailModal } from './LaboratoryEquipmentDetailModal';
 import { LaboratorySeatCard } from './LaboratorySeatCard';
-import { LibraryEquipmentCard } from './LibraryEquipmentCard';
-import { PendingEquipmentCard } from './PendingEquipmentCard';
 import { PendingEquipmentDetailModal } from './PendingEquipmentDetailModal';
+import { LaboratorySlotSelectorModal } from './LaboratorySlotSelectorModal';
+import { LaboratoryTargetSelectorModal } from './LaboratoryTargetSelectorModal';
 
 type EquipmentRollbackSnapshot = {
   id: string;
@@ -88,7 +87,6 @@ export function LaboratoryPanel() {
   const [selectedLibEquip, setSelectedLibEquip] = useState<Equipment | null>(
     null
   );
-  const [deletingSeatId, setDeletingSeatId] = useState<string | null>(null);
   const [showTargetSelector, setShowTargetSelector] = useState(false);
   const [selectedPendingItem, setSelectedPendingItem] =
     useState<PendingEquipment | null>(null);
@@ -133,9 +131,6 @@ export function LaboratoryPanel() {
   const equipmentSets = useGameStore((state) => state.equipmentSets);
   const activeSetIndex = useGameStore((state) => state.activeSetIndex);
   const addExperimentSeat = useGameStore((state) => state.addExperimentSeat);
-  const removeExperimentSeat = useGameStore(
-    (state) => state.removeExperimentSeat
-  );
   const confirmPendingEquipment = useGameStore(
     (state) => state.confirmPendingEquipment
   );
@@ -158,8 +153,10 @@ export function LaboratoryPanel() {
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
 
-  // 样本席位装备组合选择
-  const [selectedSampleSetIndex, setSelectedSampleSetIndex] = useState(0);
+  // 样本席位默认跟随当前状态页正在查看的装备方案，避免两个视图默认落到不同方案。
+  const [selectedSampleSetIndex, setSelectedSampleSetIndex] = useState(
+    activeSetIndex
+  );
 
   // 战队目标选择器中的技能和秒几选项
   const [selectedSkillName, setSelectedSkillName] = useState<string>('');
@@ -213,6 +210,22 @@ export function LaboratoryPanel() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (equipmentSets.length === 0) {
+      setSelectedSampleSetIndex(0);
+      return;
+    }
+
+    const nextIndex = Math.min(
+      Math.max(activeSetIndex, 0),
+      equipmentSets.length - 1
+    );
+
+    setSelectedSampleSetIndex((current) =>
+      current === nextIndex ? current : nextIndex
+    );
+  }, [activeSetIndex, equipmentSets.length]);
 
   const pendingList = pendingEquipments.filter((e) => e.status === 'pending');
   const libraryList = pendingEquipments.filter((e) => e.status === 'confirmed');
@@ -1438,451 +1451,54 @@ export function LaboratoryPanel() {
           />
         )}
 
-        {/* 切换战队目标弹窗 */}
         {showTargetSelector && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-            <div className="flex max-h-[80%] w-full max-w-md flex-col rounded-xl border border-yellow-800/60 bg-slate-900 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-yellow-800/30 p-4">
-                <h3 className="flex items-center gap-2 font-bold text-yellow-100">
-                  <Target className="h-4 w-4 text-yellow-500" /> 选择战队目标
-                </h3>
-                <button
-                  onClick={() => setShowTargetSelector(false)}
-                  className="text-slate-400 hover:text-slate-300"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* 技能和秒几选择器 */}
-              <div className="space-y-3 border-b border-yellow-800/30 bg-slate-800/30 p-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-yellow-600">
-                    技能选择
-                  </label>
-                  <select
-                    id="target-skill-select"
-                    name="target-skill-select"
-                    value={selectedSkillName}
-                    onChange={(e) => setSelectedSkillName(e.target.value)}
-                    className="w-full rounded-lg border border-yellow-800/40 bg-slate-800 px-3 py-2 text-sm text-yellow-100 focus:border-yellow-600 focus:outline-none"
-                  >
-                    {skills.map((skill) => (
-                      <option key={skill.name} value={skill.name}>
-                        {skill.name} (Lv.{skill.level})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-yellow-600">
-                    秒几
-                  </label>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map((num) => (
-                      <button
-                        key={num}
-                        onClick={() => setSelectedTargetCount(num)}
-                        className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-                          selectedTargetCount === num
-                            ? 'border border-yellow-500 bg-yellow-600 text-slate-900'
-                            : 'border border-yellow-800/40 bg-slate-800 text-yellow-100 hover:border-yellow-600/60'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
-                {/* 手动目标列表 */}
-                {manualTargets.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-xs font-bold text-yellow-600">
-                      手动目标
-                    </div>
-                    <div className="space-y-2">
-                      {manualTargets.map((target) => (
-                        <div
-                          key={target.id}
-                          onClick={() => {
-                            updateCombatTarget({
-                              templateId: undefined,
-                              name: target.name,
-                              defense: target.defense,
-                              magicDefense: target.magicDefense,
-                              speed: target.speed,
-                              hp: target.hp,
-                              level: 175,
-                              dungeonName: undefined,
-                            });
-                            setShowTargetSelector(false);
-                          }}
-                          className={`cursor-pointer rounded-lg border bg-slate-800/80 p-3 transition-colors hover:bg-slate-700/80 ${
-                            combatTarget.name === target.name &&
-                            !combatTarget.dungeonName
-                              ? 'border-yellow-600 bg-yellow-900/10'
-                              : 'border-slate-700'
-                          }`}
-                        >
-                          <div className="text-sm font-bold text-yellow-100">
-                            {target.name}
-                          </div>
-                          <div className="mt-1.5 flex gap-4 text-xs text-slate-400">
-                            <span>物防: {target.defense}</span>
-                            <span>法防: {target.magicDefense}</span>
-                            <span>气血: {target.hp}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 副本列表 */}
-                <div>
-                  <div className="mb-2 text-xs font-bold text-yellow-600">
-                    副本
-                  </div>
-                  <div className="space-y-2">
-                    {targetDungeons.map((dungeon) => (
-                      <div key={dungeon.id} className="space-y-1">
-                        <div className="rounded bg-slate-800/40 px-2 py-1 text-xs font-medium text-slate-400">
-                          {dungeon.name} - {dungeon.description}
-                        </div>
-                        {dungeon.targets.map((target) => (
-                          <div
-                            key={target.id}
-                            onClick={() => {
-                              updateCombatTarget({
-                                templateId: target.templateId || target.id,
-                                name: target.name,
-                                defense: target.defense,
-                                magicDefense: target.magicDefense,
-                                speed: target.speed || 0,
-                                hp: target.hp,
-                                level: target.level,
-                                element: target.element,
-                                formation: target.formation,
-                                dungeonName: dungeon.name,
-                              });
-                              setShowTargetSelector(false);
-                            }}
-                            className={`ml-2 cursor-pointer rounded-lg border bg-slate-800/80 p-3 transition-colors hover:bg-slate-700/80 ${
-                              combatTarget.name === target.name &&
-                              combatTarget.dungeonName === dungeon.name
-                                ? 'border-yellow-600 bg-yellow-900/10'
-                                : 'border-slate-700'
-                            }`}
-                          >
-                            <div className="flex justify-between text-sm font-bold text-yellow-100">
-                              <span>{target.name}</span>
-                              <span className="text-xs text-slate-500">
-                                Lv.{target.level}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 flex gap-4 text-xs text-slate-400">
-                              <span>物防: {target.defense}</span>
-                              <span>法防: {target.magicDefense}</span>
-                              <span>气血: {target.hp}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <LaboratoryTargetSelectorModal
+            combatTarget={combatTarget}
+            manualTargets={manualTargets}
+            skills={skills}
+            selectedSkillName={selectedSkillName}
+            selectedTargetCount={selectedTargetCount}
+            targetDungeons={targetDungeons}
+            onClose={() => setShowTargetSelector(false)}
+            onSelectedSkillNameChange={setSelectedSkillName}
+            onSelectedTargetCountChange={setSelectedTargetCount}
+            onCombatTargetChange={updateCombatTarget}
+          />
         )}
 
-        {/* 删除确认弹窗 */}
-        {deletingSeatId && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-            <div className="w-72 rounded-xl border border-red-800/60 bg-slate-900 p-5 shadow-2xl">
-              <h3 className="mb-2 text-center text-lg font-bold text-red-400">
-                确认删除
-              </h3>
-              <p className="mb-6 text-center text-sm text-slate-300">
-                您确定要删除这个对比席位吗？该操作无法撤。
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setDeletingSeatId(null)}
-                  className="flex-1 rounded-lg bg-slate-800 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => {
-                    removeExperimentSeat(deletingSeatId);
-                    setDeletingSeatId(null);
-                  }}
-                  className="flex-1 rounded-lg border border-red-600/50 bg-red-600/20 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-600/40"
-                >
-                  确认删除
-                </button>
-              </div>
-            </div>
-          </div>
+        {selectedSlot && (
+          <LaboratorySlotSelectorModal
+            libraryEquipments={libraryEquipments}
+            selectedSlot={selectedSlot}
+            formatPrice={formatPrice}
+            onClose={() => setSelectedSlot(null)}
+            onClearEquipment={removeExperimentSeatEquipment}
+            onSelectEquipment={updateExperimentSeatEquipment}
+          />
         )}
-
-        {/* 栏位选择器弹窗 */}
-        {selectedSlot &&
-          (() => {
-            // 获取装备库中匹配的装备
-            const availableEquipments = libraryEquipments.filter((eq) => {
-              if (eq.type !== selectedSlot.slotType) return false;
-              if (
-                selectedSlot.slotSlot !== undefined &&
-                eq.slot !== selectedSlot.slotSlot
-              )
-                return false;
-              return true;
-            });
-
-            return (
-              <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="font-bold text-yellow-100">
-                    选择装备 - {selectedSlot.slotLabel}
-                  </h3>
-                  <button
-                    onClick={() => setSelectedSlot(null)}
-                    className="text-sm text-yellow-400 hover:text-yellow-300"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div className="custom-scrollbar mb-4 flex-1 overflow-y-auto">
-                  {/* 删除选项（如果当前有装备） */}
-                  {selectedSlot.currentEquip && (
-                    <div
-                      onClick={() => {
-                        removeExperimentSeatEquipment(
-                          selectedSlot.seatId,
-                          selectedSlot.slotType,
-                          selectedSlot.slotSlot
-                        );
-                        setSelectedSlot(null);
-                      }}
-                      className="mb-2 cursor-pointer rounded-lg border border-red-600/40 bg-red-900/20 p-3 transition-all hover:border-red-600/60 hover:bg-red-900/30"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Trash2 className="h-4 w-4 text-red-400" />
-                        <span className="text-sm font-medium text-red-400">
-                          删除装备（恢复到"当前装备"）
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 装备列表 - 网格布局 */}
-                  {availableEquipments.length > 0 ? (
-                    <div className="grid grid-cols-3 gap-2">
-                      {availableEquipments.map((equip) => {
-                        const totalPrice =
-                          (equip.price || 0) + (equip.crossServerFee || 0);
-                        const isCurrentlyEquipped =
-                          selectedSlot.currentEquip?.id === equip.id;
-
-                        return (
-                          <div
-                            key={equip.id}
-                            onClick={() => {
-                              if (!isCurrentlyEquipped) {
-                                updateExperimentSeatEquipment(
-                                  selectedSlot.seatId,
-                                  equip
-                                );
-                              }
-                              setSelectedSlot(null);
-                            }}
-                            className={`rounded-lg border bg-slate-900/60 p-3 transition-all ${
-                              isCurrentlyEquipped
-                                ? 'border-green-600/60 bg-green-900/20'
-                                : 'cursor-pointer border-yellow-800/40 hover:border-yellow-600/60 hover:bg-slate-900/80'
-                            }`}
-                          >
-                            <div className="flex gap-3">
-                              <EquipmentImage equipment={equip} size="md" />
-                              <div className="min-w-0 flex-1">
-                                <div className="mb-1 flex items-center gap-2">
-                                  <span className="text-sm font-bold text-yellow-100">
-                                    {equip.name}
-                                  </span>
-                                  {isCurrentlyEquipped && (
-                                    <span className="rounded border border-green-600/50 bg-green-900/20 px-1.5 py-0.5 text-[10px] font-medium text-green-400">
-                                      当前装备
-                                    </span>
-                                  )}
-                                </div>
-
-                                {equip.mainStat && (
-                                  <div className="text-xs leading-snug text-slate-300">
-                                    {equip.mainStat}
-                                  </div>
-                                )}
-
-                                {equip.extraStat && (
-                                  <div className="mt-0.5 text-xs leading-snug text-red-400">
-                                    {equip.extraStat}
-                                  </div>
-                                )}
-
-                                {equip.highlights &&
-                                  equip.highlights.length > 0 && (
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
-                                      {equip.highlights.map((hl, j) => (
-                                        <span
-                                          key={j}
-                                          className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
-                                        >
-                                          {hl}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                              </div>
-
-                              <div className="shrink-0 text-right">
-                                <div className="mb-0.5 text-[10px] text-slate-500">
-                                  总价
-                                </div>
-                                <div className="text-sm font-bold text-[#fff064]">
-                                  ¥ {formatPrice(totalPrice)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center text-slate-500">
-                      装备库中没有可用的{selectedSlot.slotLabel}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
       </div>
 
-      {/* 批量删除确认对话框 */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div
-            className="mx-4 w-full max-w-md rounded-xl border-2 border-red-600/60 bg-slate-900 p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-start gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-red-600/20">
-                <Trash2 className="h-5 w-5 text-red-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="mb-1 text-lg font-bold text-red-400">
-                  确认删除
-                </h3>
-                <p className="text-sm text-slate-300">
-                  确定要删除选中的{' '}
-                  <span className="font-bold text-red-400">
-                    {selectedItemIds.length}
-                  </span>{' '}
-                  件装备吗？此操作无法撤销。
-                </p>
-              </div>
-            </div>
+      <LaboratoryBulkDeleteDialog
+        open={showDeleteConfirm}
+        selectedCount={selectedItemIds.length}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => {
+          selectedItemIds.forEach((id) => removePendingEquipment(id));
+          void handleSaveCandidateEquipment(true);
+          toast.success(`已删除 ${selectedItemIds.length} 件装备`);
+          setSelectedItemIds([]);
+          setIsSelectionMode(false);
+          setShowDeleteConfirm(false);
+        }}
+      />
 
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 font-medium text-slate-300 transition-colors hover:bg-slate-700"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  selectedItemIds.forEach((id) => removePendingEquipment(id));
-                  void handleSaveCandidateEquipment(true);
-                  toast.success(`已删除 ${selectedItemIds.length} 件装备`);
-                  setSelectedItemIds([]);
-                  setIsSelectionMode(false);
-                  setShowDeleteConfirm(false);
-                }}
-                className="flex-1 rounded-lg border border-red-500 bg-red-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-red-500"
-              >
-                确认删除
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirmOverwriteDialog && (
+        <LaboratoryOverwriteConfirmDialog
+          equipmentSetName={confirmOverwriteDialog.equipmentSetName}
+          onClose={() => setConfirmOverwriteDialog(null)}
+          onConfirm={handleConfirmOverwrite}
+        />
       )}
-
-      {/* 覆盖当前装备确认弹窗 */}
-      <AnimatePresence>
-        {confirmOverwriteDialog && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-            onClick={() => setConfirmOverwriteDialog(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: 'spring', duration: 0.3 }}
-              className="mx-4 w-full max-w-md rounded-2xl border-2 border-yellow-600/60 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-4 flex items-start gap-3">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-yellow-600/20">
-                  <Upload className="h-5 w-5 text-yellow-400" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="mb-1 text-lg font-bold text-yellow-100">
-                    确认覆盖当前装备
-                  </h3>
-                  <p className="text-sm leading-relaxed text-slate-300">
-                    确认将{' '}
-                    <span className="font-bold text-yellow-400">
-                      {confirmOverwriteDialog.equipmentSetName}
-                    </span>{' '}
-                    的所有装备覆盖到【当前装备】吗？
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    此操作会将当前装备替换为对比席位中的装备配置
-                  </p>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setConfirmOverwriteDialog(null)}
-                  className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 font-medium text-slate-300 transition-colors hover:bg-slate-700"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleConfirmOverwrite}
-                  className="flex-1 rounded-lg border border-yellow-500 bg-yellow-600 px-4 py-2.5 font-medium text-slate-900 transition-colors hover:bg-yellow-500"
-                >
-                  确认覆盖
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -1128,7 +1128,7 @@ INSERT OR REPLACE INTO rule_version (
 `.trim();
 }
 
-function buildInsertAttributeConversionSql() {
+function buildInsertRuleAttributeSql() {
   const values = attributeConversions
     .map(
       (row) => `(
@@ -1150,7 +1150,7 @@ function buildInsertAttributeConversionSql() {
     .join(',\n');
 
   return `
-INSERT OR REPLACE INTO rule_attribute_conversion (
+INSERT OR REPLACE INTO rule_attribute (
   id, version_id, school, role_type, source_attr, target_attr, coefficient,
   value_type, condition_json, sort, enabled, created_at, updated_at
 ) VALUES
@@ -1283,7 +1283,7 @@ INSERT OR REPLACE INTO rule_publish_log (
 function buildSeedSql() {
   return [
     buildInsertRuleVersionSql(),
-    buildInsertAttributeConversionSql(),
+    buildInsertRuleAttributeSql(),
     buildInsertSkillFormulaSql(),
     buildInsertDamageModifierSql(),
     buildInsertSkillBonusSql(),

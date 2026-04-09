@@ -4,12 +4,12 @@ import {
   type SimulatorOcrEquipmentType,
 } from '@/shared/lib/simulator-equipment';
 import { getAllConfigs } from '@/shared/models/config';
-import {
-  listEnabledSimulatorOcrDictionaryEntries,
-  type SimulatorCharacterBundle,
-  type SimulatorEquipment,
-  type SimulatorOcrDictionary,
-} from '@/shared/models/simulator';
+import { listEnabledSimulatorOcrDictionaryEntries } from '@/shared/models/simulator-user';
+import type {
+  SimulatorCharacterBundle,
+  SimulatorEquipment,
+  SimulatorOcrDictionary,
+} from '@/shared/models/simulator-types';
 import { getStorageService } from '@/shared/services/storage';
 
 type SimulatorEquipmentLike = {

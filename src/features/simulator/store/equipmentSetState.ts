@@ -1,9 +1,4 @@
-import type {
-  AccountData,
-  Equipment,
-  EquipmentSet,
-  GameState,
-} from './gameTypes';
+import type { Equipment, EquipmentSet } from './gameTypes';
 
 const cloneRuneStoneSets = (equipment: Equipment): Equipment['runeStoneSets'] =>
   equipment.runeStoneSets?.map((set) =>
@@ -22,6 +17,17 @@ export const cloneEquipmentItem = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
   effectModifiers: cloneEffectModifiers(equipment),
+  starPositionConfig: equipment.starPositionConfig
+    ? { ...equipment.starPositionConfig }
+    : undefined,
+  starAlignmentConfig: equipment.starAlignmentConfig
+    ? {
+        ...equipment.starAlignmentConfig,
+        colors: equipment.starAlignmentConfig.colors
+          ? [...equipment.starAlignmentConfig.colors]
+          : undefined,
+      }
+    : undefined,
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
   runeStoneSets: cloneRuneStoneSets(equipment),
@@ -81,28 +87,13 @@ export const syncEquipmentSetsWithActiveEquipment = (
   }));
 };
 
-type SyncedAccountFields = Pick<
-  AccountData,
-  'equipment' | 'equipmentSets' | 'activeSetIndex'
->;
-
-export const syncActiveAccountCollections = (
-  accounts: AccountData[],
-  activeAccountId: string,
-  fields: SyncedAccountFields
-): AccountData[] =>
-  accounts.map((account) =>
-    account.id === activeAccountId ? { ...account, ...fields } : account
-  );
+type EquipmentSetStateFields = {
+  equipment: Equipment[];
+  equipmentSets: EquipmentSet[];
+  activeSetIndex: number;
+};
 
 export const buildEquipmentSetStatePatch = (
-  state: Pick<GameState, 'accounts' | 'activeAccountId'>,
-  fields: SyncedAccountFields
-) => ({
-  ...fields,
-  accounts: syncActiveAccountCollections(
-    state.accounts,
-    state.activeAccountId,
-    fields
-  ),
-});
+  _state: unknown,
+  fields: EquipmentSetStateFields
+) => fields;

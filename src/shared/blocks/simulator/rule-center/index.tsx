@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from '@/core/i18n/navigation';
 
 import { formatDateTimeValue } from '@/shared/lib/date';
 import { Button } from '@/shared/components/ui/button';
@@ -14,6 +15,7 @@ import {
 } from '@/shared/components/ui/card';
 import { Label } from '@/shared/components/ui/label';
 import type {
+  DamageRuleEquipmentExtensionConfig,
   DamageRuleVersionDetail,
   DamageRuleVersionListItem,
 } from '@/shared/models/damage-rules';
@@ -24,6 +26,82 @@ type RuleCenterPanelProps = {
   initialDetail: DamageRuleVersionDetail | null;
 };
 
+const EQUIPMENT_EXTENSION_SECTIONS = [
+  {
+    key: 'star_resonance_rules',
+    title: '星相互合规则 JSON',
+    description:
+      '建议维护部位、组合名、颜色清单、单件奖励和 6 件全局奖励。',
+    example: [
+      {
+        slot: 'helmet',
+        comboName: '九龙诀',
+        colors: ['白', '红', '黄', '蓝', '绿'],
+        singleBonus: {
+          attrType: 'magicDamage',
+          value: 2,
+        },
+        fullSetBonus: {
+          allBaseAttributes: 2,
+        },
+      },
+    ],
+  },
+  {
+    key: 'ornament_set_rules',
+    title: '灵饰套装档位规则 JSON',
+    description: '建议维护套装名、激活阈值、档位和每档位效果。',
+    example: [
+      {
+        setName: '163',
+        minTotalLevel: 8,
+        tiers: [
+          { level: 8, effect: '基础激活' },
+          { level: 16, effect: '中档强化' },
+          { level: 24, effect: '高档强化' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'jade_attribute_pool',
+    title: '玉魄属性池 JSON',
+    description: '建议维护部位、允许词条、固定值区间和百分比区间。',
+    example: [
+      {
+        slot: 'jade1',
+        allowedAttributes: [
+          {
+            code: 'spell_ignore_percent',
+            label: '法术忽视%',
+            valueType: 'percent',
+            min: 0.01,
+            max: 0.08,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'jade_percent_semantics',
+    title: '玉魄百分比语义 JSON',
+    description: '建议维护百分比词条在公式中的生效时机和解释口径。',
+    example: [
+      {
+        code: 'spell_damage_percent',
+        label: '基础法术伤害%',
+        applyStage: 'panel_magic_damage',
+        formula: 'panelMagicDamageBeforePercent * (1 + value)',
+      },
+    ],
+  },
+] as const;
+
+type EquipmentExtensionDraftState = Record<
+  (typeof EQUIPMENT_EXTENSION_SECTIONS)[number]['key'],
+  string
+>;
+
 function formatDate(value: Date | number | string | null | undefined) {
   return formatDateTimeValue(value, {
     locale: 'zh-CN',
@@ -33,6 +111,27 @@ function formatDate(value: Date | number | string | null | undefined) {
 
 function stringifyPretty(value: unknown) {
   return JSON.stringify(value ?? [], null, 2);
+}
+
+function buildEquipmentExtensionDrafts(
+  configs: DamageRuleEquipmentExtensionConfig[] | null | undefined,
+): EquipmentExtensionDraftState {
+  const configByKey = new Map(configs?.map((config) => [config.configKey, config]) ?? []);
+
+  return {
+    star_resonance_rules: stringifyPretty(
+      configByKey.get('star_resonance_rules')?.value ?? [],
+    ),
+    ornament_set_rules: stringifyPretty(
+      configByKey.get('ornament_set_rules')?.value ?? [],
+    ),
+    jade_attribute_pool: stringifyPretty(
+      configByKey.get('jade_attribute_pool')?.value ?? [],
+    ),
+    jade_percent_semantics: stringifyPretty(
+      configByKey.get('jade_percent_semantics')?.value ?? [],
+    ),
+  };
 }
 
 function buildFieldId(...parts: Array<string | number>) {
@@ -60,6 +159,9 @@ export function RuleCenterPanel({
   const [skillBonusDraft, setSkillBonusDraft] = useState(
     stringifyPretty(initialDetail?.skillBonuses ?? []),
   );
+  const [equipmentExtensionDrafts, setEquipmentExtensionDrafts] = useState(
+    buildEquipmentExtensionDrafts(initialDetail?.equipmentExtensionConfigs),
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
@@ -75,6 +177,9 @@ export function RuleCenterPanel({
   useEffect(() => {
     setModifierDraft(stringifyPretty(detail?.modifiers ?? []));
     setSkillBonusDraft(stringifyPretty(detail?.skillBonuses ?? []));
+    setEquipmentExtensionDrafts(
+      buildEquipmentExtensionDrafts(detail?.equipmentExtensionConfigs),
+    );
   }, [detail]);
 
   const loadDetail = async (versionId: string) => {
@@ -184,6 +289,12 @@ export function RuleCenterPanel({
     try {
       const modifiers = JSON.parse(modifierDraft);
       const skillBonuses = JSON.parse(skillBonusDraft);
+      const equipmentExtensionConfigs = EQUIPMENT_EXTENSION_SECTIONS.map(
+        (section) => ({
+          configKey: section.key,
+          value: JSON.parse(equipmentExtensionDrafts[section.key]),
+        }),
+      );
 
       const response = await fetch(
         `/api/admin/simulator/rule-versions/${selectedId}/editable-sections`,
@@ -195,6 +306,7 @@ export function RuleCenterPanel({
           body: JSON.stringify({
             modifiers,
             skillBonuses,
+            equipmentExtensionConfigs,
           }),
         },
       );
@@ -215,7 +327,7 @@ export function RuleCenterPanel({
             : item,
         ),
       );
-      setSuccess('修正项和技能加成规则已保存');
+      setSuccess('修正项、技能加成和装备扩展规则已保存');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存可编辑规则失败');
     } finally {
@@ -228,7 +340,7 @@ export function RuleCenterPanel({
       <CardHeader>
         <CardTitle>Damage Rule Center</CardTitle>
         <CardDescription>
-          查看规则版本、复制草稿、发布当前版本，并编辑第一期开放的修正项和技能加成规则。
+          查看规则版本、复制草稿、发布当前版本，并编辑修正项、技能加成以及装备扩展规则。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -358,6 +470,67 @@ export function RuleCenterPanel({
                       onChange={(event) => setSkillBonusDraft(event.target.value)}
                       disabled={!canEdit}
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm font-medium">装备扩展规则配置</div>
+                    <div className="text-xs text-muted-foreground">
+                      用于维护当前仍未完全沉淀到规则中心 UI 的星相互合、灵饰套装档位和玉魄属性池口径。
+                    </div>
+                    <div className="mt-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/admin/simulator/star-resonance-rules">
+                          打开星相互合规则工作台
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {EQUIPMENT_EXTENSION_SECTIONS.map((section) => (
+                      <div key={section.key} className="space-y-2 rounded-lg border p-3">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={buildFieldId(
+                              'rule-center',
+                              detail.version.id,
+                              section.key,
+                            )}
+                            className="text-sm font-medium"
+                          >
+                            {section.title}
+                          </Label>
+                          <div className="text-xs text-muted-foreground">
+                            {section.description}
+                          </div>
+                          <pre className="bg-muted/30 overflow-auto rounded-md p-2 text-[11px] leading-5 whitespace-pre-wrap">
+                            {stringifyPretty(section.example)}
+                          </pre>
+                        </div>
+                        <textarea
+                          id={buildFieldId(
+                            'rule-center',
+                            detail.version.id,
+                            section.key,
+                          )}
+                          name={buildFieldId(
+                            'rule-center',
+                            detail.version.id,
+                            section.key,
+                          )}
+                          className="min-h-[240px] w-full rounded-lg border bg-background p-3 font-mono text-xs outline-none"
+                          value={equipmentExtensionDrafts[section.key]}
+                          onChange={(event) =>
+                            setEquipmentExtensionDrafts((current) => ({
+                              ...current,
+                              [section.key]: event.target.value,
+                            }))
+                          }
+                          disabled={!canEdit}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
 

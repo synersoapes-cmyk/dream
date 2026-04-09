@@ -15,7 +15,7 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { getClientIp } from '@/shared/lib/ip';
 import { grantCreditsForNewUser } from '@/shared/models/credit';
-import { provisionDefaultSimulatorCharacterForUser } from '@/shared/models/simulator';
+import { provisionDefaultSimulatorCharacterForUser } from '@/shared/models/simulator-user';
 import { getEmailService } from '@/shared/services/email';
 import { grantRoleForNewUser } from '@/shared/services/rbac';
 

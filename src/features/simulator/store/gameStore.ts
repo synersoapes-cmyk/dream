@@ -9,7 +9,6 @@ import {
   syncEquipmentSetsWithActiveEquipment,
 } from './equipmentSetState';
 import {
-  createDefaultAccounts,
   createDefaultPhysicalCultivation,
   createDefaultPhysicalSkills,
   createDefaultPhysicalTreasure,
@@ -28,7 +27,6 @@ import {
   createInitialPendingEquipments,
 } from './gameRuntimeSeeds';
 import {
-  createAccountActions,
   createCombatActions,
   createExperimentSeatActions,
   createHistoryAndLogActions,
@@ -57,21 +55,11 @@ const initialCombatTarget = createCombatTargetFromManualTarget(
 const initialEquipmentSets: EquipmentSet[] =
   createInitialEquipmentSets(PRESET_EQUIPMENTS);
 
-const defaultSeed = {
-  baseAttributes: initialBaseAttributes,
-  combatStats: initialCombatStats,
-  equipment: initialEquipment,
-  equipmentSets: initialEquipmentSets,
-};
-
 const createEquipmentSetId = () =>
   `set_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 export const useGameStore = create<GameState>()((set, get) => ({
-  // Account state
-  accounts: createDefaultAccounts(defaultSeed),
-  activeAccountId: 'default_account_1',
-  ...createAccountActions(set, get, defaultSeed),
+  currentCharacter: null,
   baseAttributes: initialBaseAttributes,
   combatStats: initialCombatStats,
   equipment: initialEquipment,

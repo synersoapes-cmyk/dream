@@ -1,5 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import { updateSimulatorProfile } from '@/shared/models/simulator';
+import { updateSimulatorProfile } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 function toNumber(value: unknown, fallback = 0) {

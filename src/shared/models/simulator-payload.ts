@@ -156,6 +156,20 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
   if (Array.isArray(item.effectModifiers)) {
     meta.effectModifiers = cloneEquipmentJsonValue(item.effectModifiers);
   }
+  if (
+    item.starPositionConfig &&
+    typeof item.starPositionConfig === 'object' &&
+    !Array.isArray(item.starPositionConfig)
+  ) {
+    meta.starPositionConfig = cloneEquipmentJsonValue(item.starPositionConfig);
+  }
+  if (
+    item.starAlignmentConfig &&
+    typeof item.starAlignmentConfig === 'object' &&
+    !Array.isArray(item.starAlignmentConfig)
+  ) {
+    meta.starAlignmentConfig = cloneEquipmentJsonValue(item.starAlignmentConfig);
+  }
 
   for (const key of [
     'extraStat',

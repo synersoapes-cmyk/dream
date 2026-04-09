@@ -38,7 +38,7 @@ export const SIMULATOR_ADMIN_SECTIONS = [
     slug: 'ocr-jobs',
     title: 'OCR 任务',
     description:
-      '查看 OCR 上传任务的成功、失败与待审核分发情况，方便排查识别链路问题。',
+      '查看 OCR 上传任务的成功、失败以及草稿留痕、候选同步情况，方便排查识别链路问题。',
   },
   {
     slug: 'ocr-dictionary',
@@ -49,6 +49,12 @@ export const SIMULATOR_ADMIN_SECTIONS = [
     slug: 'target-templates',
     title: '目标模板',
     description: '维护副本怪物与目标模板，供伤害试算和实验室直接复用。',
+  },
+  {
+    slug: 'star-resonance-rules',
+    title: '星相互合规则',
+    description:
+      '维护部位、组合名、颜色清单、单件奖励与六件全套奖励，供星石链路复用。',
   },
   {
     slug: 'user-diagnostics',

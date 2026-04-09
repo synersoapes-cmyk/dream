@@ -1,6 +1,6 @@
 import type { PendingEquipment } from '@/features/simulator/store/gameTypes';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator';
+import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
 
 export function applySimulatorCandidateEquipmentToStore(
   items: SimulatorCandidateEquipmentItem[]

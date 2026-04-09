@@ -6,12 +6,12 @@ import {
   type DamageSkillBonusRule,
   type DamageSkillFormulaRule,
 } from '@/shared/models/damage-rules';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import {
   buildSimulatorCharacterDomain,
   type SimulatorCharacterDomain,
   type SimulatorNumericMap,
 } from '@/shared/models/simulator-domain';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 type JsonObject = Record<string, unknown>;
 
@@ -272,6 +272,58 @@ const RUNE_COLOR_ALIAS: Record<string, string> = {
   橙: '橙',
 };
 
+const PRIMARY_EQUIPMENT_SLOTS = new Set([
+  'weapon',
+  'helmet',
+  'necklace',
+  'armor',
+  'belt',
+  'shoes',
+]);
+
+const STAR_POSITION_STAT_ALIAS: Array<[string, string]> = [
+  ['法术伤害', 'magicDamage'],
+  ['法伤', 'magicDamage'],
+  ['气血', 'hp'],
+  ['速度', 'speed'],
+  ['法术防御', 'magicDefense'],
+  ['法防', 'magicDefense'],
+  ['防御', 'defense'],
+  ['伤害', 'damage'],
+  ['命中', 'hit'],
+  ['躲避', 'dodge'],
+  ['灵力', 'spirit'],
+];
+
+const STAR_ALIGNMENT_ATTR_ALIAS: Array<[string, string]> = [
+  ['体质', 'physique'],
+  ['魔力', 'magic'],
+  ['力量', 'strength'],
+  ['耐力', 'endurance'],
+  ['敏捷', 'agility'],
+];
+
+type StarBonusResolution = {
+  panelStatBonuses: Record<string, number>;
+  attributeSourceBonuses: Record<string, number>;
+  fullSetActive: boolean;
+  fullSetAttributeBonus: number;
+  starPositionBonuses: Array<{
+    equipmentId: string;
+    slot: string;
+    label: string;
+    targetKey: string;
+    value: number;
+  }>;
+  starAlignmentBonuses: Array<{
+    equipmentId: string;
+    slot: string;
+    label: string;
+    targetKey: string;
+    value: number;
+  }>;
+};
+
 function normalizeRuneColor(value: unknown) {
   if (typeof value !== 'string') {
     return null;
@@ -295,6 +347,124 @@ function normalizeRuneColor(value: unknown) {
   }
 
   return null;
+}
+
+function isDisabledStarBonus(value: unknown) {
+  if (typeof value !== 'string') {
+    return true;
+  }
+
+  const normalized = value.trim();
+  return !normalized || normalized === '无';
+}
+
+function parseStarBonusValue(value: string) {
+  const matched = value.match(/([+-]?\d+(?:\.\d+)?)/);
+  if (!matched) {
+    return null;
+  }
+
+  const parsed = Number(matched[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveStarPositionBonus(value: unknown) {
+  if (isDisabledStarBonus(value)) {
+    return null;
+  }
+
+  const label = String(value).trim();
+  const parsedValue = parseStarBonusValue(label);
+  if (parsedValue === null) {
+    return null;
+  }
+
+  for (const [alias, targetKey] of STAR_POSITION_STAT_ALIAS) {
+    if (label.includes(alias)) {
+      return { label, targetKey, value: parsedValue };
+    }
+  }
+
+  return null;
+}
+
+function resolveStarAlignmentBonus(value: unknown) {
+  if (isDisabledStarBonus(value)) {
+    return null;
+  }
+
+  const label = String(value).trim();
+  const parsedValue = parseStarBonusValue(label);
+  if (parsedValue === null) {
+    return null;
+  }
+
+  for (const [alias, targetKey] of STAR_ALIGNMENT_ATTR_ALIAS) {
+    if (label.includes(alias)) {
+      return { label, targetKey, value: parsedValue };
+    }
+  }
+
+  return null;
+}
+
+function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResolution {
+  const panelStatBonuses: Record<string, number> = {};
+  const attributeSourceBonuses: Record<string, number> = {};
+  const starPositionBonuses: StarBonusResolution['starPositionBonuses'] = [];
+  const starAlignmentBonuses: StarBonusResolution['starAlignmentBonuses'] = [];
+  const alignedPrimarySlots = new Set<string>();
+
+  for (const equipment of domain.equipment) {
+    if (!PRIMARY_EQUIPMENT_SLOTS.has(equipment.slot)) {
+      continue;
+    }
+
+    const notes = equipment.build?.notes ?? {};
+    const starPositionBonus = resolveStarPositionBonus(notes.starPosition);
+    if (starPositionBonus) {
+      panelStatBonuses[starPositionBonus.targetKey] =
+        (panelStatBonuses[starPositionBonus.targetKey] ?? 0) +
+        starPositionBonus.value;
+      starPositionBonuses.push({
+        equipmentId: equipment.id,
+        slot: equipment.slot,
+        ...starPositionBonus,
+      });
+    }
+
+    const starAlignmentBonus = resolveStarAlignmentBonus(notes.starAlignment);
+    if (starAlignmentBonus) {
+      attributeSourceBonuses[starAlignmentBonus.targetKey] =
+        (attributeSourceBonuses[starAlignmentBonus.targetKey] ?? 0) +
+        starAlignmentBonus.value;
+      starAlignmentBonuses.push({
+        equipmentId: equipment.id,
+        slot: equipment.slot,
+        ...starAlignmentBonus,
+      });
+      alignedPrimarySlots.add(equipment.slot);
+    }
+  }
+
+  const fullSetActive = PRIMARY_EQUIPMENT_SLOTS.size === alignedPrimarySlots.size;
+  const fullSetAttributeBonus = fullSetActive ? 2 : 0;
+
+  if (fullSetAttributeBonus > 0) {
+    for (const [, targetKey] of STAR_ALIGNMENT_ATTR_ALIAS) {
+      attributeSourceBonuses[targetKey] =
+        (attributeSourceBonuses[targetKey] ?? 0) + fullSetAttributeBonus;
+    }
+  }
+
+  return {
+    panelStatBonuses,
+    attributeSourceBonuses,
+    fullSetActive,
+    fullSetAttributeBonus,
+    starPositionBonuses,
+    starAlignmentBonuses,
+  };
 }
 
 function extractActiveRuneColors(
@@ -864,6 +1034,7 @@ export function calculateDamageFromRuleSet({
     skillCode: skill.skillCode,
     domain,
   };
+  const starBonuses = resolveStarBonuses(domain);
   const equipmentEffectModifiers = resolveEquipmentEffectModifiers(domain);
   const spellIgnorePercent = Math.max(
     0,
@@ -881,18 +1052,27 @@ export function calculateDamageFromRuleSet({
     ...modifierScope,
     modifierDomain: 'panel_stat_bonus',
   });
-  const panelStatBonuses = activePanelStatBonusModifiers.reduce<
+  const rulePanelStatBonuses = activePanelStatBonusModifiers.reduce<
     Record<string, number>
   >((totals, modifier) => {
     const statKey = modifier.targetKey || modifier.modifierKey;
     totals[statKey] = (totals[statKey] ?? 0) + toFiniteNumber(modifier.value);
     return totals;
   }, {});
+  const panelStatBonuses = {
+    ...starBonuses.panelStatBonuses,
+  };
+  for (const [key, value] of Object.entries(rulePanelStatBonuses)) {
+    panelStatBonuses[key] = (panelStatBonuses[key] ?? 0) + value;
+  }
 
   const ruleInputValues = buildRuleInputValues(
     domain,
     ruleSet.attributeConversions
   );
+  for (const [key, value] of Object.entries(starBonuses.attributeSourceBonuses)) {
+    ruleInputValues[key] = (ruleInputValues[key] ?? 0) + value;
+  }
   const derivedStats = computeAttributeConversions(
     ruleInputValues,
     ruleSet.attributeConversions
@@ -1255,6 +1435,29 @@ export function calculateDamageFromRuleSet({
             value: modifier.value,
           })
         ),
+        starBonuses: {
+          panelStatBonuses: Object.fromEntries(
+            Object.entries(starBonuses.panelStatBonuses).map(([key, value]) => [
+              key,
+              roundForBreakdown(value, 4),
+            ])
+          ),
+          attributeSourceBonuses: Object.fromEntries(
+            Object.entries(starBonuses.attributeSourceBonuses).map(
+              ([key, value]) => [key, roundForBreakdown(value, 4)]
+            )
+          ),
+          fullSetActive: starBonuses.fullSetActive,
+          fullSetAttributeBonus: starBonuses.fullSetAttributeBonus,
+          starPositionBonuses: starBonuses.starPositionBonuses.map((item) => ({
+            ...item,
+            value: roundForBreakdown(item.value, 4),
+          })),
+          starAlignmentBonuses: starBonuses.starAlignmentBonuses.map((item) => ({
+            ...item,
+            value: roundForBreakdown(item.value, 4),
+          })),
+        },
         equipmentEffectModifiers: equipmentEffectModifiers.map((modifier) => ({
           ...modifier,
           value: roundForBreakdown(modifier.value, 4),

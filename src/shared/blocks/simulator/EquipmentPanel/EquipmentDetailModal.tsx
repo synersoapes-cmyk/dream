@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   Equipment,
@@ -18,6 +18,8 @@ import {
   getSimulatorRuneSetOptions,
   isSimulatorPrimaryEquipment,
 } from '@/shared/lib/simulator-rune-editor';
+import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
+import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 
 const AVAILABLE_RUNES = [
@@ -32,24 +34,6 @@ const AVAILABLE_RUNES = [
   { id: '5', name: '白符石', type: 'white', stats: { magic: 2 } },
   { id: '6', name: '黑符石', type: 'black', stats: { magicDamage: 1.5 } },
   { id: '7', name: '紫符石', type: 'purple', stats: { dodge: 2 } },
-];
-
-const AVAILABLE_STAR_POSITIONS = [
-  '无',
-  '伤害 +2.5',
-  '气血 +10',
-  '速度 +1.5',
-  '防御 +2',
-  '法伤 +2.5',
-  '躲避 +2',
-];
-const AVAILABLE_STAR_ALIGNMENTS = [
-  '无',
-  '体质 +2',
-  '魔力 +2',
-  '力量 +2',
-  '耐力 +2',
-  '敏捷 +2',
 ];
 
 const AVAILABLE_RUNE_SET_EFFECTS = ['锐不可当', '破血狂攻', '弱点击破'];
@@ -119,10 +103,22 @@ export function EquipmentDetailModal({
   const isPrimaryEquipment = isSimulatorPrimaryEquipment(
     simulatedLibEquip.type
   );
+  const {
+    options: starAlignmentOptions,
+    isLoading: isLoadingStarRules,
+    isPrimarySlot: canSelectStarAlignment,
+  } = useSimulatorStarResonanceRules(
+    isPrimaryEquipment ? simulatedLibEquip.type : undefined
+  );
   const activeRuneSetIndex = getSimulatorActiveRuneSetIndex(simulatedLibEquip);
   const activeRuneSet =
     simulatedLibEquip.runeStoneSets?.[activeRuneSetIndex] ?? [];
   const runeSetOptions = getSimulatorRuneSetOptions(simulatedLibEquip);
+
+  useEffect(() => {
+    setSimulatedLibEquip(ensureSimulatorEquipmentRuneEditingState(equipment));
+    setRunePopover(null);
+  }, [equipment]);
 
   return (
     <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -441,20 +437,18 @@ export function EquipmentDetailModal({
                 ))}
 
                 <div className="relative">
-                  {simulatedLibEquip.starPosition && (
-                    <div
-                      ref={
-                        runePopover?.type === 'starPosition'
-                          ? setReferenceElement
-                          : null
-                      }
-                      className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                      onClick={() => setRunePopover({ type: 'starPosition' })}
-                    >
-                      星位：{simulatedLibEquip.starPosition}
-                      <Edit2 className="h-3 w-3 text-green-400/60" />
-                    </div>
-                  )}
+                  <div
+                    ref={
+                      runePopover?.type === 'starPosition'
+                        ? setReferenceElement
+                        : null
+                    }
+                    className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
+                    onClick={() => setRunePopover({ type: 'starPosition' })}
+                  >
+                    星位：{simulatedLibEquip.starPosition || '无'}
+                    <Edit2 className="h-3 w-3 text-green-400/60" />
+                  </div>
 
                   {/* 星位选择浮层 */}
                   {runePopover?.type === 'starPosition' && (
@@ -468,19 +462,28 @@ export function EquipmentDetailModal({
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                           选择星位属性
                         </div>
-                        {AVAILABLE_STAR_POSITIONS.map((sp, i) => (
+                        {STAR_POSITION_OPTIONS.map((option) => (
                           <div
-                            key={i}
-                            className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
+                            key={option.id}
+                            className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
                             onClick={() => {
                               setSimulatedLibEquip({
                                 ...simulatedLibEquip,
-                                starPosition: sp,
+                                starPosition: option.label,
+                                starPositionConfig:
+                                  option.id === 'none' ? undefined : { ...option },
                               });
                               setRunePopover(null);
                             }}
                           >
-                            {sp}
+                            <div className="text-sm text-green-400">
+                              {option.label}
+                            </div>
+                            {option.attrType && (
+                              <div className="mt-1 text-[11px] text-slate-400">
+                                {option.attrType} · {option.attrValue}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -489,7 +492,7 @@ export function EquipmentDetailModal({
                 </div>
 
                 <div className="relative">
-                  {simulatedLibEquip.starAlignment && (
+                  {canSelectStarAlignment && (
                     <div
                       ref={
                         runePopover?.type === 'starAlignment'
@@ -499,36 +502,62 @@ export function EquipmentDetailModal({
                       className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
                       onClick={() => setRunePopover({ type: 'starAlignment' })}
                     >
-                      星相互合：{simulatedLibEquip.starAlignment}
+                      星相互合：{simulatedLibEquip.starAlignment || '无'}
                       <Edit2 className="h-3 w-3 text-green-400/60" />
                     </div>
                   )}
 
                   {/* 星相互合选择浮层 */}
-                  {runePopover?.type === 'starAlignment' && (
+                  {runePopover?.type === 'starAlignment' && canSelectStarAlignment && (
                     <div
                       ref={setPopperElement}
                       style={{ ...styles.popper, zIndex: 9999 }}
                       {...attributes.popper}
-                      className="w-48 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
+                      className="w-72 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
                     >
                       <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                          选择星相互合属性
+                          选择星相互合规则
                         </div>
-                        {AVAILABLE_STAR_ALIGNMENTS.map((sa, i) => (
+                        {isLoadingStarRules && (
                           <div
-                            key={i}
-                            className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
+                            className="px-3 py-2 text-xs text-slate-400"
+                          >
+                            读取规则中...
+                          </div>
+                        )}
+                        {starAlignmentOptions.map((option) => (
+                          <div
+                            key={option.id}
+                            className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
                             onClick={() => {
                               setSimulatedLibEquip({
                                 ...simulatedLibEquip,
-                                starAlignment: sa,
+                                starAlignment: option.value,
+                                starAlignmentConfig:
+                                  option.id === 'none'
+                                    ? undefined
+                                    : {
+                                        id: option.id,
+                                        label: option.value,
+                                        attrType: option.attrType,
+                                        attrValue: option.attrValue,
+                                        comboName: option.title,
+                                        colors: option.colors,
+                                      },
                               });
                               setRunePopover(null);
                             }}
                           >
-                            {sa}
+                            <div className="text-sm text-green-400">
+                              {option.title}
+                              <span className="ml-2 text-xs text-slate-400">
+                                {option.value}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              {option.description}
+                            </div>
                           </div>
                         ))}
                       </div>

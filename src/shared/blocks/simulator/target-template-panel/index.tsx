@@ -16,7 +16,7 @@ import {
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
-import type { AdminBattleTargetTemplateItem } from '@/shared/models/simulator';
+import type { AdminBattleTargetTemplateItem } from '@/shared/models/simulator-types';
 
 type Props = {
   canEdit?: boolean;

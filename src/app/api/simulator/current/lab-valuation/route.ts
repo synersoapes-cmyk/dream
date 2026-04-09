@@ -1,6 +1,6 @@
 import { respData, respErr } from '@/shared/lib/resp';
 import { getDamageRuleSet } from '@/shared/models/damage-rules';
-import { getSimulatorCharacterBundle } from '@/shared/models/simulator';
+import { getSimulatorCharacterBundle } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 import { calculateLabValuationFromRuleSet } from '@/shared/services/lab-valuation';
 

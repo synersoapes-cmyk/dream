@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
-import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator';
+import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
 
 function createItems(): SimulatorCandidateEquipmentItem[] {
   return [

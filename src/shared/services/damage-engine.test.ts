@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { DamageRuleSet } from '@/shared/models/damage-rules';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
 import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 import { calculateDamageFromRuleSet } from '@/shared/services/damage-engine';
 
 function createBundle(): SimulatorCharacterBundle {
@@ -1388,4 +1388,153 @@ test('calculateDamageFromRuleSet applies persisted spell damage percent modifier
   assert.ok(
     (result.targets[0]?.damage ?? 0) > (baselineResult.targets[0]?.damage ?? 0)
   );
+});
+
+test('calculateDamageFromRuleSet applies star position panel bonuses from persisted notes', () => {
+  const baselineBundle = createBundle();
+  const baselineDomain = buildSimulatorCharacterDomain(baselineBundle);
+  assert.ok(baselineDomain);
+
+  const baselineResult = calculateDamageFromRuleSet({
+    bundle: baselineBundle,
+    domain: baselineDomain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const bundle = createBundle();
+  bundle.equipments[0] = {
+    ...bundle.equipments[0]!,
+    build: {
+      ...bundle.equipments[0]!.build!,
+      notesJson: JSON.stringify({
+        starPosition: '法伤 +2.5',
+      }),
+    },
+  };
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(result.panelStats.magicDamage, (baselineResult.panelStats.magicDamage ?? 0) + 2.5);
+  assert.equal(breakdown.starBonuses.panelStatBonuses.magicDamage, 2.5);
+  assert.equal(breakdown.starBonuses.starPositionBonuses[0]?.targetKey, 'magicDamage');
+});
+
+test('calculateDamageFromRuleSet applies full star alignment attribute bonus when six primary slots are active', () => {
+  const createPrimaryPlaceholder = (
+    id: string,
+    slot: string,
+    starAlignment?: string
+  ) => ({
+    id,
+    characterId: 'char_1',
+    slot,
+    name: `主装备-${slot}`,
+    level: 90,
+    quality: '普通',
+    price: 0,
+    source: 'manual',
+    status: 'equipped',
+    isLocked: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    build: {
+      equipmentId: id,
+      holeCount: 0,
+      gemLevelTotal: 0,
+      refineLevel: 0,
+      specialEffectJson: '{}',
+      setEffectJson: '{}',
+      notesJson: JSON.stringify(
+        starAlignment
+          ? {
+              starAlignment,
+            }
+          : {}
+      ),
+    },
+    attrs: [],
+    snapshotSlot: slot,
+  });
+
+  const baselineBundle = createBundle();
+  baselineBundle.equipments = [
+    createPrimaryPlaceholder('eq_weapon', 'weapon'),
+    createPrimaryPlaceholder('eq_helmet', 'helmet'),
+    createPrimaryPlaceholder('eq_necklace', 'necklace'),
+    createPrimaryPlaceholder('eq_armor', 'armor'),
+    createPrimaryPlaceholder('eq_belt', 'belt'),
+    createPrimaryPlaceholder('eq_shoes', 'shoes'),
+  ];
+  const baselineDomain = buildSimulatorCharacterDomain(baselineBundle);
+  assert.ok(baselineDomain);
+
+  const baselineResult = calculateDamageFromRuleSet({
+    bundle: baselineBundle,
+    domain: baselineDomain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const bundle = createBundle();
+  bundle.equipments = [
+    createPrimaryPlaceholder('eq_weapon', 'weapon', '力量 +2'),
+    createPrimaryPlaceholder('eq_helmet', 'helmet', '体质 +2'),
+    createPrimaryPlaceholder('eq_necklace', 'necklace', '魔力 +2'),
+    createPrimaryPlaceholder('eq_armor', 'armor', '耐力 +2'),
+    createPrimaryPlaceholder('eq_belt', 'belt', '敏捷 +2'),
+    createPrimaryPlaceholder('eq_shoes', 'shoes', '力量 +2'),
+  ];
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+    },
+  });
+
+  const breakdown = result.targets[0]?.breakdown as Record<string, any>;
+
+  assert.equal(result.panelStats.magicDamage, (baselineResult.panelStats.magicDamage ?? 0) + 20);
+  assert.equal(result.panelStats.hp, (baselineResult.panelStats.hp ?? 0) + 64);
+  assert.equal(result.panelStats.speed, (baselineResult.panelStats.speed ?? 0) + 16);
+  assert.equal(result.panelStats.damage, (baselineResult.panelStats.damage ?? 0) + 48);
+  assert.equal(result.panelStats.defense, (baselineResult.panelStats.defense ?? 0) + 24);
+  assert.equal(result.panelStats.hit, (baselineResult.panelStats.hit ?? 0) + 12);
+  assert.equal(result.panelStats.dodge, (baselineResult.panelStats.dodge ?? 0) + 8);
+  assert.equal(result.panelStats.magicDefense, (baselineResult.panelStats.magicDefense ?? 0) + 8);
+  assert.ok(
+    Math.abs(result.panelStats.mp - ((baselineResult.panelStats.mp ?? 0) + 6.4)) < 1e-9
+  );
+  assert.equal(breakdown.starBonuses.fullSetActive, true);
+  assert.equal(breakdown.starBonuses.fullSetAttributeBonus, 2);
+  assert.equal(breakdown.starBonuses.attributeSourceBonuses.strength, 6);
+  assert.equal(breakdown.starBonuses.attributeSourceBonuses.magic, 4);
+  assert.equal(breakdown.starBonuses.attributeSourceBonuses.physique, 4);
+  assert.equal(breakdown.starBonuses.attributeSourceBonuses.endurance, 4);
+  assert.equal(breakdown.starBonuses.attributeSourceBonuses.agility, 4);
 });

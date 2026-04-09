@@ -2,7 +2,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { SimulatorTargetTemplatePanel } from '@/shared/blocks/simulator/target-template-panel';
-import { listAdminBattleTargetTemplates } from '@/shared/models/simulator';
+import { listAdminBattleTargetTemplates } from '@/shared/models/simulator-admin';
 
 import {
   getSimulatorAdminCrumbs,

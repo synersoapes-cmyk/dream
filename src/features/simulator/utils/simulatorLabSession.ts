@@ -4,7 +4,7 @@ import type {
   GameState,
 } from '@/features/simulator/store/gameTypes';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import type { SimulatorLabSessionBundle } from '@/shared/models/simulator';
+import type { SimulatorLabSessionBundle } from '@/shared/models/simulator-types';
 
 function cloneEquipmentItem(equipment: Equipment): Equipment {
   return {

@@ -1,6 +1,6 @@
 import { createPerfTimer } from '@/shared/lib/perf';
 import { respData, respErr } from '@/shared/lib/resp';
-import { updateSimulatorEquipment } from '@/shared/models/simulator';
+import { updateSimulatorEquipment } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 function getErrorMessages(error: unknown): string[] {

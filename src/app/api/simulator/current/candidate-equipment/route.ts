@@ -3,7 +3,7 @@ import { createPerfTimer } from '@/shared/lib/perf';
 import {
   getSimulatorCandidateEquipment,
   updateSimulatorCandidateEquipment,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 export async function GET() {

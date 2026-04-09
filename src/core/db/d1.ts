@@ -35,6 +35,19 @@ type WranglerModule = {
   }>;
 };
 
+function isRemoteProxyAuthError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('failed to start the remote proxy session')
+    || message.includes('failed to create a preview token')
+    || message.includes('authentication error')
+  );
+}
+
 export async function resetD1DevBindingCache() {
   d1DbInstance = null;
   d1ContextInitPromise = null;
@@ -88,11 +101,31 @@ async function initD1BindingFromWranglerForDev() {
       ) as (specifier: string) => Promise<WranglerModule>;
       const { getPlatformProxy } = await dynamicImport('wrangler');
 
-      const proxy = await getPlatformProxy({
-        configPath: 'wrangler.toml',
-        envFiles: [],
-        remoteBindings: true,
-      });
+      let proxy: Awaited<ReturnType<WranglerModule['getPlatformProxy']>> | null = null;
+      try {
+        proxy = await getPlatformProxy({
+          configPath: 'wrangler.toml',
+          envFiles: [],
+          remoteBindings: true,
+        });
+      } catch (error) {
+        if (!isRemoteProxyAuthError(error)) {
+          throw error;
+        }
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn(
+            '[d1] failed to initialize remote Wrangler D1 binding, falling back to local binding:',
+            error
+          );
+        }
+
+        proxy = await getPlatformProxy({
+          configPath: 'wrangler.toml',
+          envFiles: [],
+          remoteBindings: false,
+        });
+      }
 
       const binding = (proxy.env as CloudflareEnvLike | undefined)?.DB;
       if (!isD1Database(binding)) {

@@ -1,5 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import { getSimulatorCharacterBundle } from '@/shared/models/simulator';
+import { getSimulatorCharacterBundle } from '@/shared/models/simulator-user';
 import { calculateDamageWithRules } from '@/shared/services/damage-engine';
 import { getUserInfo } from '@/shared/models/user';
 

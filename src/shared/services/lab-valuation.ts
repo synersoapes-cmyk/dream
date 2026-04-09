@@ -3,7 +3,7 @@ import type {
   SimulatorCharacterBundle,
   SimulatorEquipment,
   SimulatorProfile,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-types';
 import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
 import { calculateDamageFromRuleSet } from '@/shared/services/damage-engine';
 

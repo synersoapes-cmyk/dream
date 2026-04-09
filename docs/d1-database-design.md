@@ -8,7 +8,7 @@
 
 - 角色档案与当前状态
 - 装备、灵饰、玉魄、星石、符石组合
-- OCR 识别与入库审核
+- OCR 识别与待确认 / 审计流
 - 实验室换装推演
 - 战斗参数与目标模板
 - 伤害预估与性价比分析
@@ -31,7 +31,7 @@
 ### 2.2 业务原则
 
 - 当前状态和实验状态必须分离
-- OCR 识别结果不能直接进入正式装备库，必须经过审核
+- OCR 识别结果不能直接进入正式装备库，必须先进入待确认 / 审计链
 - 规则定义和角色实例分离
 - 角色快照必须保留版本，不能只保留最后一份
 - 计算结果可以缓存，但不能替代原始输入数据
@@ -87,7 +87,7 @@
   - 战斗参数，当前落在 `snapshot_battle_context`
   - 候选装备库，当前落在 `candidate_equipment`
 - `ocr_job` 产生多个 `ocr_draft_item`
-- `ocr_draft_item` 审核通过后可落入：
+- `ocr_draft_item` 在待确认 / 审计链完成后可继续沉淀到：
   - `inventory_equipment_asset`
   - `equipment_item`
   - `ornament_item`
@@ -580,15 +580,26 @@
 
 用途：星石主表
 
+当前实现补充：
+
+- 已新增 D1 正式表，见迁移 `0012_star_stone_and_resonance.sql`
+- 当前表结构先按“角色 / 装备 / 部位”三层关系落地，便于后续把前台临时的 `starPosition / starAlignment` 录入方式逐步替换成正式星石结构
+- 目前规则链路已经先消费前台已有的 `starPosition / starAlignment` 元数据；正式 `star_stone_item` 数据回填和后台配置仍属于下一阶段
+
 | 字段             | 类型      | 说明           |
 | ---------------- | --------- | -------------- |
 | `id`             | `TEXT PK` | 星石 ID        |
+| `character_id`   | `TEXT`    | 所属角色       |
 | `equipment_id`   | `TEXT`    | 所属装备       |
+| `slot`           | `TEXT`    | 部位           |
 | `name`           | `TEXT`    | 星石名         |
 | `star_type`      | `TEXT`    | 部位型星石     |
 | `color`          | `TEXT`    | 星石颜色       |
 | `yin_yang_state` | `TEXT`    | `yin` / `yang` |
 | `level`          | `INTEGER` | 星石等级       |
+| `notes_json`     | `TEXT`    | 扩展备注       |
+| `created_at`     | `INTEGER` | 创建时间       |
+| `updated_at`     | `INTEGER` | 更新时间       |
 
 ### `star_stone_attr`
 
@@ -600,24 +611,41 @@
 | `star_stone_id` | `TEXT`    | 星石 ID |
 | `attr_type`     | `TEXT`    | 属性名  |
 | `attr_value`    | `REAL`    | 属性值  |
+| `display_order` | `INTEGER` | 展示顺序 |
 
 ### `star_resonance_rule`
 
 用途：星相互合规则
 
+当前实现补充：
+
+- 已新增 D1 正式表，作为后续后台规则中心维护星相互合的落点
+- 当前 migration 里预留了单件奖励和全局奖励字段，兼容文档里的“单件触发 + 六件全套 +2”规则
+
 | 字段                   | 类型      | 说明         |
 | ---------------------- | --------- | ------------ |
 | `id`                   | `TEXT PK` | 规则 ID      |
-| `slot`                 | `TEXT`    | 装备部位     |
-| `combo_name`           | `TEXT`    | 对应符石组合 |
-| `required_colors_json` | `TEXT`    | 所需颜色列表 |
-| `bonus_attr_type`      | `TEXT`    | 奖励属性     |
-| `bonus_attr_value`     | `REAL`    | 奖励值       |
-| `enabled`              | `INTEGER` | 0/1          |
+| `scope`                | `TEXT`    | `system` / `custom` |
+| `slot`                 | `TEXT`    | 装备部位            |
+| `combo_name`           | `TEXT`    | 对应符石组合        |
+| `required_colors_json` | `TEXT`    | 所需颜色列表        |
+| `bonus_attr_type`      | `TEXT`    | 单件奖励属性        |
+| `bonus_attr_value`     | `REAL`    | 单件奖励值          |
+| `global_bonus_json`    | `TEXT`    | 全局奖励 JSON       |
+| `sort`                 | `INTEGER` | 排序                |
+| `enabled`              | `INTEGER` | 0/1                 |
+| `notes`                | `TEXT`    | 备注                |
+| `created_at`           | `INTEGER` | 创建时间            |
+| `updated_at`           | `INTEGER` | 更新时间            |
 
 ### `character_star_resonance`
 
 用途：角色当前星相互合命中状态
+
+当前实现补充：
+
+- 已新增 D1 正式表，用于把“快照时刻的命中情况”和“实际奖励”持久化下来，方便后续排障与历史回放
+- 当前前台伤害试算已经先把 `starBonuses` 输出到 breakdown；后续可再把这份结果写回本表
 
 | 字段          | 类型      | 说明     |
 | ------------- | --------- | -------- |
@@ -627,6 +655,8 @@
 | `rule_id`     | `TEXT`    | 命中规则 |
 | `matched`     | `INTEGER` | 0/1      |
 | `bonus_json`  | `TEXT`    | 奖励详情 |
+| `created_at`  | `INTEGER` | 创建时间 |
+| `updated_at`  | `INTEGER` | 更新时间 |
 
 ## 5.5 灵饰
 
@@ -814,7 +844,7 @@
 | `draft_body_json`  | `TEXT`    | 解析后的结构化草稿                             |
 | `confidence_score` | `REAL`    | 识别置信度                                     |
 | `review_status`    | `TEXT`    | `pending` / `approved` / `rejected` / `edited` |
-| `review_note`      | `TEXT`    | 审核备注                                       |
+| `review_note`      | `TEXT`    | 审计备注                                       |
 | `created_at`       | `INTEGER` | 创建时间                                       |
 | `updated_at`       | `INTEGER` | 更新时间                                       |
 
@@ -822,7 +852,7 @@
 
 - 当前实现里，这张表主要承担 OCR 审计链和结构化草稿留痕
 - 前台 OCR 成功后会自动把草稿标记为 `approved`，并同步写入 `candidate_equipment.pending`
-- 当前不再依赖后台人工审核才能进入候选装备库；是否确认入正式资产，仍由候选装备后续流程决定
+- 当前不再依赖后台逐条人工处理才能进入候选装备库；是否确认入正式资产，仍由候选装备后续流程决定
 
 ### `inventory_equipment_asset`
 
@@ -911,7 +941,7 @@
 - 所以继承策略需要单独落字段，不能只靠前端临时传参
 - 当前版本已覆盖常规装备、灵饰、玉魄三套独立持久化链路
 - 灵饰套装快照摘要已落地到 `ornament_set_effect`
-- 灵饰套装数值如何进入规则中心、玉魄属性池如何配置化，仍属于后续增强项
+- 规则中心现已补充扩展装备规则配置区，可集中维护灵饰套装档位、玉魄属性池和百分比语义；后续仍需要继续把这些规则更深地接入完整伤害链路
 
 ### `snapshot_battle_context`
 
@@ -1349,11 +1379,11 @@
 
 `ocr_job.pending`
 -> `ocr_job.success`
--> `ocr_draft_item.pending`
--> 用户审核
--> `ocr_draft_item.approved`
--> 写入正式资产表
--> 写入 `inventory_entry`
+-> 写入 `ocr_draft_item`
+-> 自动同步 `candidate_equipment.pending`
+-> 用户确认 / 编辑 / 驳回
+-> `candidate_equipment.confirmed` 时写入正式资产表
+-> 同步写入 `inventory_entry`
 
 ### 7.2 实验室状态流
 

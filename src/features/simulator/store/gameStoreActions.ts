@@ -2,10 +2,9 @@ import {
   buildEquipmentSetStatePatch,
   syncEquipmentSetsWithActiveEquipment,
 } from './equipmentSetState';
-import { createNewMagicAccount } from './gameDefaults';
 import { computeDerivedStats } from './gameLogic';
 import { createDefaultManualTarget } from './gameRuntimeSeeds';
-import type { AccountData, Equipment, GameState } from './gameTypes';
+import type { Equipment, GameState } from './gameTypes';
 
 type StoreSet = (
   updater:
@@ -13,101 +12,6 @@ type StoreSet = (
     | ((state: GameState) => Partial<GameState> | GameState)
 ) => void;
 type StoreGet = () => GameState;
-
-type DefaultSeed = {
-  baseAttributes: GameState['baseAttributes'];
-  combatStats: GameState['combatStats'];
-  equipment: GameState['equipment'];
-  equipmentSets: GameState['equipmentSets'];
-};
-
-export const createAccountActions = (
-  set: StoreSet,
-  get: StoreGet,
-  defaultSeed: DefaultSeed
-) => ({
-  switchAccount: (id: string) => {
-    const state = get();
-    if (state.activeAccountId === id) return;
-
-    const currentAccountData: AccountData = {
-      id: state.activeAccountId,
-      name:
-        state.accounts.find((a) => a.id === state.activeAccountId)?.name ||
-        '未命名',
-      baseAttributes: state.baseAttributes,
-      combatStats: state.combatStats,
-      equipment: state.equipment,
-      equipmentSets: state.equipmentSets,
-      activeSetIndex: state.activeSetIndex,
-      skills: state.skills,
-      cultivation: state.cultivation,
-      treasure: state.treasure,
-    };
-
-    const updatedAccounts = state.accounts.map((a) =>
-      a.id === state.activeAccountId ? currentAccountData : a
-    );
-    const nextAccount = updatedAccounts.find((a) => a.id === id);
-    if (!nextAccount) return;
-
-    set({
-      accounts: updatedAccounts,
-      activeAccountId: id,
-      baseAttributes: nextAccount.baseAttributes,
-      combatStats: nextAccount.combatStats,
-      equipment: nextAccount.equipment,
-      equipmentSets: nextAccount.equipmentSets,
-      activeSetIndex: nextAccount.activeSetIndex,
-      skills: nextAccount.skills,
-      cultivation: nextAccount.cultivation,
-      treasure: nextAccount.treasure,
-    });
-    get().recalculateCombatStats();
-  },
-  addAccount: (name: string) => {
-    const newId = `account_${Date.now()}`;
-    const newAccount: AccountData = createNewMagicAccount(
-      newId,
-      name,
-      defaultSeed
-    );
-    set((state) => ({
-      accounts: [...state.accounts, newAccount],
-    }));
-    get().switchAccount(newId);
-  },
-  updateAccountName: (id: string, name: string) => {
-    set((state) => ({
-      accounts: state.accounts.map((a) => (a.id === id ? { ...a, name } : a)),
-    }));
-  },
-  deleteAccount: (id: string) => {
-    set((state) => {
-      const newAccounts = state.accounts.filter((a) => a.id !== id);
-      if (newAccounts.length === 0) return state;
-      if (state.activeAccountId === id) {
-        const nextAccount = newAccounts[0];
-        return {
-          accounts: newAccounts,
-          activeAccountId: nextAccount.id,
-          baseAttributes: nextAccount.baseAttributes,
-          combatStats: nextAccount.combatStats,
-          equipment: nextAccount.equipment,
-          equipmentSets: nextAccount.equipmentSets,
-          activeSetIndex: nextAccount.activeSetIndex,
-          skills: nextAccount.skills,
-          cultivation: nextAccount.cultivation,
-          treasure: nextAccount.treasure,
-        };
-      }
-      return { accounts: newAccounts };
-    });
-    if (get().activeAccountId !== id) {
-      get().recalculateCombatStats();
-    }
-  },
-});
 
 export const createExperimentSeatActions = (set: StoreSet) => ({
   syncSampleSeat: () => {

@@ -1,9 +1,8 @@
 import { respData, respErr } from '@/shared/lib/resp';
 import { createPerfTimer } from '@/shared/lib/perf';
 import {
-  getSimulatorCharacterBundle,
-  provisionDefaultSimulatorCharacterForUser,
-} from '@/shared/models/simulator';
+  getCurrentSimulatorCharacterBundle,
+} from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 export async function GET(req: Request) {
@@ -24,15 +23,12 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const characterId = searchParams.get('characterId') || undefined;
 
-    let bundle = await getSimulatorCharacterBundle(user.id, characterId);
-
-    if (!bundle && !characterId) {
-      bundle = await provisionDefaultSimulatorCharacterForUser({
-        userId: user.id,
-        userName: user.name,
-      });
-      timer.mark('provision_default');
-    }
+    const bundle = await getCurrentSimulatorCharacterBundle({
+      userId: user.id,
+      userName: user.name,
+      characterId,
+    });
+    timer.mark('bundle_lookup');
 
     if (!bundle) {
       logMeta = {

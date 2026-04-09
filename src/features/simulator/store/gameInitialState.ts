@@ -56,6 +56,9 @@ const cloneEquipment = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
   effectModifiers: cloneEffectModifiers(equipment),
+  starPositionConfig: equipment.starPositionConfig
+    ? { ...equipment.starPositionConfig }
+    : undefined,
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
   runeStoneSets: cloneRuneStoneSets(equipment),

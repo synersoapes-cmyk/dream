@@ -11,13 +11,14 @@ import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+import { isSimulatorPrimaryEquipment } from '@/shared/lib/simulator-rune-editor';
+import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
+import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 
 import {
   AVAILABLE_GEMSTONES,
   AVAILABLE_RUNE_SETS,
   AVAILABLE_RUNES,
-  AVAILABLE_STAR_ALIGNMENTS,
-  AVAILABLE_STAR_POSITIONS,
   cloneEquipmentForEditor,
   getSeatDisplayName,
 } from './laboratory-utils';
@@ -56,6 +57,15 @@ export function LaboratoryEquipmentDetailModal({
     null
   );
   const [popperElement, setPopperElement] = useState<HTMLElement | null>(null);
+  const {
+    options: starAlignmentOptions,
+    isLoading: isLoadingStarRules,
+    isPrimarySlot: canSelectStarAlignment,
+  } = useSimulatorStarResonanceRules(
+    isSimulatorPrimaryEquipment(draftEquipment.type)
+      ? draftEquipment.type
+      : undefined
+  );
   const { styles, attributes } = usePopper(referenceElement, popperElement, {
     placement: 'bottom-start',
     strategy: 'fixed',
@@ -438,20 +448,18 @@ export function LaboratoryEquipmentDetailModal({
                 )}
 
                 <div className="relative">
-                  {draftEquipment.starPosition && (
-                    <div
-                      ref={
-                        runePopover?.type === 'starPosition'
-                          ? setReferenceElement
-                          : null
-                      }
-                      className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
-                      onClick={() => setRunePopover({ type: 'starPosition' })}
-                    >
-                      星位：{draftEquipment.starPosition}
-                      <Edit2 className="h-3 w-3 text-green-400/60" />
-                    </div>
-                  )}
+                  <div
+                    ref={
+                      runePopover?.type === 'starPosition'
+                        ? setReferenceElement
+                        : null
+                    }
+                    className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
+                    onClick={() => setRunePopover({ type: 'starPosition' })}
+                  >
+                    星位：{draftEquipment.starPosition || '无'}
+                    <Edit2 className="h-3 w-3 text-green-400/60" />
+                  </div>
 
                   {runePopover?.type === 'starPosition' && (
                     <div
@@ -464,19 +472,28 @@ export function LaboratoryEquipmentDetailModal({
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                           选择星位属性
                         </div>
-                        {AVAILABLE_STAR_POSITIONS.map((starPosition, index) => (
+                        {STAR_POSITION_OPTIONS.map((option) => (
                           <div
-                            key={index}
-                            className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
+                            key={option.id}
+                            className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
                             onClick={() => {
                               setDraftEquipment({
                                 ...draftEquipment,
-                                starPosition,
+                                starPosition: option.label,
+                                starPositionConfig:
+                                  option.id === 'none' ? undefined : { ...option },
                               });
                               setRunePopover(null);
                             }}
                           >
-                            {starPosition}
+                            <div className="text-sm text-green-400">
+                              {option.label}
+                            </div>
+                            {option.attrType && (
+                              <div className="mt-1 text-[11px] text-slate-400">
+                                {option.attrType} · {option.attrValue}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -485,7 +502,7 @@ export function LaboratoryEquipmentDetailModal({
                 </div>
 
                 <div className="relative">
-                  {draftEquipment.starAlignment && (
+                  {canSelectStarAlignment && (
                     <div
                       ref={
                         runePopover?.type === 'starAlignment'
@@ -495,39 +512,61 @@ export function LaboratoryEquipmentDetailModal({
                       className="-mx-2 inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm text-green-400 transition-colors hover:bg-slate-800/80"
                       onClick={() => setRunePopover({ type: 'starAlignment' })}
                     >
-                      星相互合：{draftEquipment.starAlignment}
+                      星相互合：{draftEquipment.starAlignment || '无'}
                       <Edit2 className="h-3 w-3 text-green-400/60" />
                     </div>
                   )}
 
-                  {runePopover?.type === 'starAlignment' && (
+                  {runePopover?.type === 'starAlignment' && canSelectStarAlignment && (
                     <div
                       ref={setPopperElement}
                       style={{ ...styles.popper, zIndex: 9999 }}
                       {...attributes.popper}
-                      className="w-48 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
+                      className="w-72 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
                     >
                       <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                          选择星相互合属性
+                          选择星相互合规则
                         </div>
-                        {AVAILABLE_STAR_ALIGNMENTS.map(
-                          (starAlignment, index) => (
-                            <div
-                              key={index}
-                              className="cursor-pointer rounded px-3 py-2 text-sm text-green-400 transition-colors hover:bg-slate-700"
-                              onClick={() => {
-                                setDraftEquipment({
-                                  ...draftEquipment,
-                                  starAlignment,
-                                });
-                                setRunePopover(null);
-                              }}
-                            >
-                              {starAlignment}
-                            </div>
-                          )
+                        {isLoadingStarRules && (
+                          <div className="px-3 py-2 text-xs text-slate-400">
+                            读取规则中...
+                          </div>
                         )}
+                        {starAlignmentOptions.map((option) => (
+                          <div
+                            key={option.id}
+                            className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
+                            onClick={() => {
+                              setDraftEquipment({
+                                ...draftEquipment,
+                                starAlignment: option.value,
+                                starAlignmentConfig:
+                                  option.id === 'none'
+                                    ? undefined
+                                    : {
+                                        id: option.id,
+                                        label: option.value,
+                                        attrType: option.attrType,
+                                        attrValue: option.attrValue,
+                                        comboName: option.title,
+                                        colors: option.colors,
+                                      },
+                              });
+                              setRunePopover(null);
+                            }}
+                          >
+                            <div className="text-sm text-green-400">
+                              {option.title}
+                              <span className="ml-2 text-xs text-slate-400">
+                                {option.value}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">
+                              {option.description}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}

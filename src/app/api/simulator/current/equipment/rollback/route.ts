@@ -3,7 +3,7 @@ import { respData } from '@/shared/lib/resp';
 import {
   getLatestSimulatorEquipmentRollbackSnapshot,
   rollbackSimulatorEquipmentToLatestSnapshot,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
 function getErrorMessages(error: unknown): string[] {

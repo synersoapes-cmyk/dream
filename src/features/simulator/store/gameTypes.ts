@@ -69,6 +69,25 @@ export interface EquipmentEffectModifier {
   source?: string;
 }
 
+export interface StarPositionConfig {
+  id: string;
+  label: string;
+  attrType: string;
+  attrValue: number;
+  starType?: string;
+  color?: string;
+  yinYangState?: string;
+}
+
+export interface StarAlignmentConfig {
+  id: string;
+  label: string;
+  attrType: string;
+  attrValue: number;
+  comboName?: string;
+  colors?: string[];
+}
+
 export interface Equipment {
   id: string;
   name: string;
@@ -97,7 +116,9 @@ export interface Equipment {
   gemstone?: string;
   luckyHoles?: string;
   starPosition?: string;
+  starPositionConfig?: StarPositionConfig;
   starAlignment?: string;
+  starAlignmentConfig?: StarAlignmentConfig;
   factionRequirement?: string;
   positionRequirement?: string;
   specialEffect?: string;
@@ -286,22 +307,15 @@ export interface PendingEquipment {
   status: 'pending' | 'confirmed' | 'replaced';
 }
 
-export interface AccountData {
+export interface CurrentCharacter {
   id: string;
   name: string;
-  baseAttributes: BaseAttributes;
-  combatStats: CombatStats;
-  equipment: Equipment[];
-  equipmentSets: EquipmentSet[];
-  activeSetIndex: number;
-  skills: Skill[];
-  cultivation: Cultivation;
-  treasure: Treasure | null;
+  school: Faction;
+  level: number;
 }
 
 export interface SyncedCloudState {
-  accounts: AccountData[];
-  activeAccountId: string;
+  currentCharacter: CurrentCharacter | null;
   baseAttributes: BaseAttributes;
   combatStats: CombatStats;
   equipment: Equipment[];
@@ -316,12 +330,7 @@ export interface SyncedCloudState {
 }
 
 export interface GameState {
-  accounts: AccountData[];
-  activeAccountId: string;
-  switchAccount: (id: string) => void;
-  addAccount: (name: string) => void;
-  updateAccountName: (id: string, name: string) => void;
-  deleteAccount: (id: string) => void;
+  currentCharacter: CurrentCharacter | null;
   baseAttributes: BaseAttributes;
   combatStats: CombatStats;
   equipment: Equipment[];

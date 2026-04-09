@@ -1,6 +1,6 @@
 import { respData, respErr } from '@/shared/lib/resp';
 import { getUserInfo } from '@/shared/models/user';
-import { updateSimulatorCultivation } from '@/shared/models/simulator';
+import { updateSimulatorCultivation } from '@/shared/models/simulator-user';
 
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);

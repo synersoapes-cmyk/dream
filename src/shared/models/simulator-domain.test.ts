@@ -3,9 +3,9 @@ import test from 'node:test';
 
 import {
   resolveLabSessionEquipmentReferenceId,
-  type SimulatorCharacterBundle,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-payload';
 import { buildSimulatorCharacterDomain } from '@/shared/models/simulator-domain';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 function createBundle(): SimulatorCharacterBundle {
   return {

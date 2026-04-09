@@ -3,7 +3,7 @@ import { respData, respErr } from '@/shared/lib/resp';
 import {
   createAdminSimulatorOcrDictionary,
   listAdminSimulatorOcrDictionary,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-admin';
 import { getUserInfo } from '@/shared/models/user';
 import { hasAllPermissions } from '@/shared/services/rbac';
 

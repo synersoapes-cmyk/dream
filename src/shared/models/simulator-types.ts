@@ -21,13 +21,28 @@ import {
   ornamentItem,
   ornamentSubAttr,
   ruleAttribute,
+  characterStarResonance,
   snapshotBattleContext,
   snapshotEquipmentSlot,
   snapshotJadeSlot,
   snapshotOrnamentSlot,
+  starResonanceRule,
+  starStoneAttr,
+  starStoneItem,
 } from '@/config/db/schema';
 
 export type SimulatorCharacter = typeof gameCharacter.$inferSelect;
+export type SimulatorCharacterSummary = Pick<
+  SimulatorCharacter,
+  | 'id'
+  | 'name'
+  | 'school'
+  | 'roleType'
+  | 'level'
+  | 'serverName'
+  | 'updatedAt'
+  | 'createdAt'
+>;
 export type SimulatorSnapshot = typeof characterSnapshot.$inferSelect;
 export type SimulatorProfile = typeof characterProfile.$inferSelect;
 export type SimulatorSkill = typeof characterSkill.$inferSelect;
@@ -49,6 +64,11 @@ export type SimulatorInventoryEquipmentAsset =
 export type SimulatorInventoryEntry = typeof inventoryEntry.$inferSelect;
 export type SimulatorEquipmentPlan = typeof equipmentPlan.$inferSelect;
 export type SimulatorEquipmentPlanItem = typeof equipmentPlanItem.$inferSelect;
+export type SimulatorStarStoneItem = typeof starStoneItem.$inferSelect;
+export type SimulatorStarStoneAttr = typeof starStoneAttr.$inferSelect;
+export type SimulatorStarResonanceRule = typeof starResonanceRule.$inferSelect;
+export type SimulatorCharacterStarResonance =
+  typeof characterStarResonance.$inferSelect;
 
 export type SimulatorEquipmentBuild = {
   equipmentId: string;
@@ -261,6 +281,22 @@ export type AdminBattleTargetTemplateItem = {
   notes: string;
   payload: Record<string, unknown>;
   enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AdminSimulatorStarResonanceRuleItem = {
+  id: string;
+  scope: string;
+  slot: string;
+  comboName: string;
+  requiredColors: string[];
+  bonusAttrType: string;
+  bonusAttrValue: number;
+  globalBonus: Record<string, unknown>;
+  sort: number;
+  enabled: boolean;
+  notes: string;
   createdAt: number;
   updatedAt: number;
 };

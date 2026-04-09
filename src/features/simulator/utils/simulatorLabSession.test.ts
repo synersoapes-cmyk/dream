@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simulatorLabSession';
-import type { SimulatorLabSessionBundle } from '@/shared/models/simulator';
+import type { SimulatorLabSessionBundle } from '@/shared/models/simulator-types';
 
 function createSession(): SimulatorLabSessionBundle {
   return {

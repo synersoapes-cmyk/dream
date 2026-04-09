@@ -27,19 +27,19 @@ import {
   ornamentSubAttr,
   ruleAttribute,
   ruleVersion,
+  characterStarResonance,
   snapshotBattleContext,
   snapshotEquipmentSlot,
   snapshotJadeSlot,
   snapshotOrnamentSlot,
+  starResonanceRule,
+  starStoneAttr,
+  starStoneItem,
   user,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { createPerfTimer } from '@/shared/lib/perf';
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
-import {
-  toSimulatorJadeSlotKey,
-  toSimulatorTrinketSlotKey,
-} from '@/shared/lib/simulator-equipment';
 import { getRequiredSimulatorSeedConfig } from '@/shared/models/simulator-template';
 
 import {
@@ -55,6 +55,22 @@ import {
   parseJsonObject,
   withTransientD1Retry,
 } from './simulator-core';
+import {
+  buildJadeAttrRows,
+  buildOrnamentAttrRows,
+  buildOrnamentSetEffectRows,
+  buildStarStonePersistenceRows,
+  isJadeSlot,
+  isOrnamentSlot,
+  isPrimaryEquipmentSlot,
+  mergeStarStateIntoNotesJson,
+  resolveOrnamentMainAttr,
+  toGenericEquipmentBuild,
+  toGenericEquipmentRow,
+  toOrnamentSetEffectSource,
+  toPersistedJadeSlot,
+  toPersistedOrnamentSlot,
+} from './simulator-equipment-persistence';
 import { buildSimulatorLabSessionBundle } from './simulator-mappers';
 import {
   buildEquipmentNotesMeta,
@@ -66,6 +82,13 @@ import {
   toEquipmentAttrRows,
   toEquipmentSlotValue,
 } from './simulator-payload';
+import {
+  createEquipmentRollbackSnapshot,
+  deleteCurrentSnapshotEquipments,
+  findLatestEquipmentRollbackSnapshot,
+  insertSnapshotState,
+  type PersistedSnapshotState,
+} from './simulator-snapshots';
 import type {
   AdminBattleTargetTemplateItem,
   AdminSimulatorInventoryEntryItem,
@@ -80,6 +103,8 @@ import type {
   SimulatorCandidateEquipmentItem,
   SimulatorCharacter,
   SimulatorCharacterBundle,
+  SimulatorCharacterSummary,
+  SimulatorCharacterStarResonance,
   SimulatorCultivation,
   SimulatorEquipment,
   SimulatorEquipmentAttr,
@@ -104,6 +129,9 @@ import type {
   SimulatorRollbackSnapshotSummary,
   SimulatorRule,
   SimulatorSkill,
+  SimulatorStarResonanceRule,
+  SimulatorStarStoneAttr,
+  SimulatorStarStoneItem,
   SimulatorSnapshot,
   SimulatorSnapshotJadeSlot,
   SimulatorSnapshotOrnamentSlot,
@@ -228,6 +256,181 @@ function clearSimulatorCharacterBundleCache(
   }
 }
 
+function buildSimulatorCharacterBundle(params: {
+  character: SimulatorCharacter;
+  snapshot: SimulatorSnapshot;
+  profile: SimulatorProfile | null;
+  skills: SimulatorSkill[];
+  cultivations: SimulatorCultivation[];
+  battleContext: SimulatorBattleContext | null;
+  battleTargetTemplate: SimulatorBattleTargetTemplate | null;
+  rules: SimulatorRule[];
+  equipments: SimulatorEquipment[];
+  equipmentPlan: SimulatorEquipmentPlanState | null;
+}): SimulatorCharacterBundle {
+  return {
+    character: params.character,
+    snapshot: params.snapshot,
+    profile: params.profile,
+    skills: params.skills,
+    cultivations: params.cultivations,
+    battleContext: params.battleContext,
+    battleTargetTemplate: params.battleTargetTemplate,
+    rules: params.rules,
+    equipments: params.equipments,
+    equipmentPlan: params.equipmentPlan,
+  };
+}
+
+function primeSimulatorCharacterBundleAndReturn(
+  userId: string,
+  bundle: SimulatorCharacterBundle,
+  options?: { clearCharacterId?: string }
+) {
+  if (options?.clearCharacterId) {
+    clearSimulatorCharacterBundleCache(userId, options.clearCharacterId);
+  }
+
+  primeSimulatorCharacterBundleCache(userId, bundle);
+  return bundle;
+}
+
+type ActiveSimulatorContext = {
+  character: SimulatorCharacter;
+  snapshot: SimulatorSnapshot;
+  profile: SimulatorProfile | null;
+  skills: SimulatorSkill[];
+  cultivations: SimulatorCultivation[];
+  battleContext: SimulatorBattleContext | null;
+  equipments: SimulatorEquipment[];
+};
+
+async function loadActiveSimulatorContext(
+  userId: string,
+  options?: { includeEquipments?: boolean }
+): Promise<ActiveSimulatorContext | null> {
+  const character = await findActiveCharacter(userId);
+  if (!character) {
+    return null;
+  }
+
+  const snapshot = await findCurrentSnapshot(character);
+  if (!snapshot) {
+    return null;
+  }
+
+  const includeEquipments = options?.includeEquipments ?? true;
+  const [profileRows, skills, cultivations, battleContextRows, equipments] =
+    await Promise.all([
+      db()
+        .select()
+        .from(characterProfile)
+        .where(eq(characterProfile.snapshotId, snapshot.id))
+        .limit(1),
+      db()
+        .select()
+        .from(characterSkill)
+        .where(eq(characterSkill.snapshotId, snapshot.id))
+        .orderBy(desc(characterSkill.finalLevel), asc(characterSkill.skillName)),
+      db()
+        .select()
+        .from(characterCultivation)
+        .where(eq(characterCultivation.snapshotId, snapshot.id))
+        .orderBy(asc(characterCultivation.cultivationType)),
+      db()
+        .select()
+        .from(snapshotBattleContext)
+        .where(eq(snapshotBattleContext.snapshotId, snapshot.id))
+        .limit(1),
+      includeEquipments
+        ? loadPersistedBundleEquipments({
+            characterId: character.id,
+            snapshotId: snapshot.id,
+          })
+        : Promise.resolve([] as SimulatorEquipment[]),
+    ]);
+
+  return {
+    character,
+    snapshot,
+    profile: profileRows[0] ?? null,
+    skills,
+    cultivations,
+    battleContext: battleContextRows[0] ?? null,
+    equipments,
+  };
+}
+
+async function resolveSimulatorBundleDependencies(params: {
+  character: SimulatorCharacter;
+  profile: SimulatorProfile | null;
+  battleContext: SimulatorBattleContext | null;
+  schoolOverride?: string | null;
+  targetTemplateIdOverride?: string | null;
+  includeEquipmentPlan?: boolean;
+}) {
+  const targetTemplateId =
+    params.targetTemplateIdOverride === undefined
+      ? params.battleContext?.targetTemplateId
+      : params.targetTemplateIdOverride;
+
+  const [targetTemplate, rules, equipmentPlan] = await Promise.all([
+    findBattleTargetTemplateById(targetTemplateId),
+    findAttributeRules({
+      school:
+        params.schoolOverride ||
+        params.profile?.school ||
+        params.character.school,
+      roleType: params.character.roleType,
+    }),
+    params.includeEquipmentPlan === false
+      ? Promise.resolve(null)
+      : loadCharacterEquipmentPlanState(params.character.id),
+  ]);
+
+  return {
+    targetTemplate,
+    rules,
+    equipmentPlan,
+  };
+}
+
+async function writeSnapshotBattleContext(params: {
+  snapshotId: string;
+  existingContext: SimulatorBattleContext | null;
+  nextValue: Omit<SimulatorBattleContext, 'snapshotId' | 'createdAt' | 'updatedAt'>;
+  now: Date;
+}) {
+  const nextBattleContext: SimulatorBattleContext = params.existingContext
+    ? {
+        ...params.existingContext,
+        ...params.nextValue,
+        updatedAt: params.now,
+      }
+    : {
+        snapshotId: params.snapshotId,
+        ...params.nextValue,
+        createdAt: params.now,
+        updatedAt: params.now,
+      };
+
+  if (params.existingContext) {
+    await db()
+      .update(snapshotBattleContext)
+      .set(params.nextValue)
+      .where(eq(snapshotBattleContext.snapshotId, params.snapshotId));
+  } else {
+    await db()
+      .insert(snapshotBattleContext)
+      .values({
+        snapshotId: params.snapshotId,
+        ...params.nextValue,
+      });
+  }
+
+  return nextBattleContext;
+}
+
 function toOptionalInteger(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
@@ -238,248 +441,14 @@ const MANUAL_TARGETS_NOTES_KEY = 'manualTargets';
 const COMBAT_TAB_NOTES_KEY = 'combatTab';
 const SELECTED_DUNGEON_IDS_NOTES_KEY = 'selectedDungeonIds';
 const EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE = 'equipment_backup';
-const ORNAMENT_SET_TIERS = [32, 28, 24, 16, 8] as const;
-
-function isPrimaryEquipmentSlot(slot: string | null | undefined) {
-  const normalized = String(slot ?? '')
-    .trim()
-    .toLowerCase();
-
-  return ['weapon', 'helmet', 'necklace', 'armor', 'belt', 'shoes'].includes(
-    normalized
-  );
-}
-
-function isOrnamentSlot(slot: string | null | undefined) {
-  const normalized = String(slot ?? '')
-    .trim()
-    .toLowerCase();
-
-  return [
-    'trinket1',
-    'trinket2',
-    'trinket3',
-    'trinket4',
-    'ring',
-    'earring',
-    'bracelet',
-    'amulet',
-    'pendant',
-  ].includes(normalized);
-}
-
-function isJadeSlot(slot: string | null | undefined) {
-  const normalized = String(slot ?? '')
-    .trim()
-    .toLowerCase();
-
-  return ['jade1', 'jade2'].includes(normalized);
-}
-
-function toPersistedOrnamentSlot(slot: string | number | null | undefined) {
-  return toSimulatorTrinketSlotKey(slot);
-}
-
-function toPersistedJadeSlot(slot: string | number | null | undefined) {
-  return toSimulatorJadeSlotKey(slot);
-}
-
-function toGenericEquipmentBuild(params: {
-  equipmentId: string;
-  refineLevel?: number;
-  specialEffectJson?: string | null;
-  setEffectJson?: string | null;
-  notesJson?: string | null;
-}): SimulatorEquipmentBuild {
-  return {
-    equipmentId: params.equipmentId,
-    holeCount: 0,
-    gemLevelTotal: 0,
-    refineLevel: params.refineLevel ?? 0,
-    specialEffectJson: params.specialEffectJson ?? '{}',
-    setEffectJson: params.setEffectJson ?? '{}',
-    notesJson: params.notesJson ?? '{}',
-  };
-}
-
-function toGenericEquipmentRow(params: {
-  id: string;
-  characterId: string;
-  slot: string;
-  name: string;
-  level: number;
-  quality: string;
-  price: number;
-  source: string;
-  status: string;
-  isLocked?: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  build: SimulatorEquipmentBuild | null;
-  attrs: SimulatorEquipmentAttr[];
-  snapshotSlot: string | null;
-}): SimulatorEquipment {
-  return {
-    id: params.id,
-    characterId: params.characterId,
-    slot: params.slot,
-    name: params.name,
-    level: params.level,
-    quality: params.quality,
-    price: params.price,
-    source: params.source,
-    status: params.status,
-    isLocked: params.isLocked ?? false,
-    createdAt: params.createdAt,
-    updatedAt: params.updatedAt,
-    build: params.build,
-    attrs: params.attrs,
-    snapshotSlot: params.snapshotSlot,
-  };
-}
-
-function buildOrnamentAttrRows(params: {
-  ornament: Pick<SimulatorOrnamentRow, 'id' | 'mainAttrType' | 'mainAttrValue'>;
-  subAttrs: Array<
-    Pick<
-      SimulatorOrnamentSubAttrRow,
-      'id' | 'ornamentId' | 'attrType' | 'attrValue' | 'displayOrder'
-    >
-  >;
-}): SimulatorEquipmentAttr[] {
-  const rows: SimulatorEquipmentAttr[] = [];
-
-  if (params.ornament.mainAttrType) {
-    rows.push({
-      id: `${params.ornament.id}:main`,
-      equipmentId: params.ornament.id,
-      attrGroup: 'main',
-      attrType: params.ornament.mainAttrType,
-      valueType: 'flat',
-      attrValue: Number(params.ornament.mainAttrValue ?? 0),
-      displayOrder: 0,
-    });
-  }
-
-  rows.push(
-    ...params.subAttrs.map((attr) => ({
-      id: attr.id,
-      equipmentId: params.ornament.id,
-      attrGroup: 'extra',
-      attrType: attr.attrType,
-      valueType: 'flat',
-      attrValue: Number(attr.attrValue ?? 0),
-      displayOrder: Number(attr.displayOrder ?? 0) + 1,
-    }))
-  );
+async function loadEnabledStarResonanceRules() {
+  const rows = await db()
+    .select()
+    .from(starResonanceRule)
+    .where(eq(starResonanceRule.enabled, true))
+    .orderBy(asc(starResonanceRule.sort), asc(starResonanceRule.slot));
 
   return rows;
-}
-
-function buildJadeAttrRows(params: {
-  jade: Pick<SimulatorJadeRow, 'id'>;
-  attrs: Array<
-    Pick<
-      SimulatorJadeAttrRow,
-      'id' | 'jadeId' | 'attrType' | 'valueType' | 'attrValue' | 'displayOrder'
-    >
-  >;
-}): SimulatorEquipmentAttr[] {
-  return params.attrs.map((attr) => ({
-    id: attr.id,
-    equipmentId: params.jade.id,
-    attrGroup: 'base',
-    attrType: attr.attrType,
-    valueType: attr.valueType,
-    attrValue: Number(attr.attrValue ?? 0),
-    displayOrder: Number(attr.displayOrder ?? 0),
-  }));
-}
-
-function resolveOrnamentMainAttr(
-  attrRows: Array<{
-    attrType: string;
-    valueType: string;
-    attrValue: number;
-    displayOrder: number;
-  }>
-) {
-  const sorted = [...attrRows].sort(
-    (left, right) => left.displayOrder - right.displayOrder
-  );
-  const [mainAttr, ...subAttrs] = sorted;
-
-  return {
-    mainAttrType: mainAttr?.attrType ?? '',
-    mainAttrValue: mainAttr?.attrValue ?? 0,
-    subAttrs,
-  };
-}
-
-function parseEquipmentSetName(setEffectJson: string | null | undefined) {
-  const setName = parseJsonObject(setEffectJson).setName;
-  return typeof setName === 'string' ? setName.trim() : '';
-}
-
-function toOrnamentSetEffectSource(equipment: SimulatorEquipment) {
-  const slot = equipment.snapshotSlot ?? equipment.slot;
-
-  return {
-    type: isOrnamentSlot(slot)
-      ? 'trinket'
-      : isJadeSlot(slot)
-        ? 'jade'
-        : 'equipment',
-    setName: parseEquipmentSetName(equipment.build?.setEffectJson),
-    level: equipment.level,
-    slot,
-  };
-}
-
-function buildOrnamentSetEffectRows(params: {
-  snapshotId: string;
-  equipments: Array<Record<string, unknown>>;
-}) {
-  const grouped = new Map<
-    string,
-    { totalLevel: number; slotCount: number; slots: string[] }
-  >();
-
-  for (const item of params.equipments) {
-    const type = String(item.type || '').trim();
-    const setName =
-      typeof item.setName === 'string' && item.setName.trim().length > 0
-        ? item.setName.trim()
-        : '';
-
-    if (type !== 'trinket' || !setName) {
-      continue;
-    }
-
-    const current = grouped.get(setName) ?? {
-      totalLevel: 0,
-      slotCount: 0,
-      slots: [],
-    };
-    current.totalLevel += toOptionalInteger(item.level) ?? 0;
-    current.slotCount += 1;
-    if (item.slot !== undefined && item.slot !== null) {
-      current.slots.push(String(item.slot));
-    }
-    grouped.set(setName, current);
-  }
-
-  return Array.from(grouped.entries()).map(([setName, summary]) => ({
-    id: getUuid(),
-    snapshotId: params.snapshotId,
-    setName,
-    totalLevel: summary.totalLevel,
-    tier: ORNAMENT_SET_TIERS.find((tier) => summary.totalLevel >= tier) ?? 0,
-    effectJson: JSON.stringify({
-      slotCount: summary.slotCount,
-      slots: summary.slots,
-    }),
-  }));
 }
 
 type SimulatorEquipmentPlanNotes = SimulatorEquipmentPlanState;
@@ -952,6 +921,8 @@ async function loadPersistedBundleEquipments(params: {
     primaryAttrRows,
     ornamentAttrRows,
     jadeAttrRows,
+    starStoneRows,
+    starResonanceRows,
   ] = await Promise.all([
     linkedPrimaryIds.length
       ? database
@@ -1010,7 +981,44 @@ async function loadPersistedBundleEquipments(params: {
           .where(inArray(jadeAttr.jadeId, linkedJadeIds))
           .orderBy(asc(jadeAttr.displayOrder))
       : Promise.resolve([]),
+    linkedPrimaryIds.length
+      ? database
+          .select()
+          .from(starStoneItem)
+          .where(inArray(starStoneItem.equipmentId, linkedPrimaryIds))
+          .orderBy(asc(starStoneItem.slot), desc(starStoneItem.updatedAt))
+      : Promise.resolve([]),
+    database
+      .select()
+      .from(characterStarResonance)
+      .where(eq(characterStarResonance.snapshotId, params.snapshotId))
+      .orderBy(asc(characterStarResonance.slot)),
   ]);
+
+  const starStoneIds = starStoneRows.map(
+    (row: SimulatorStarStoneItem) => row.id
+  );
+  const starResonanceRuleIds = starResonanceRows
+    .map((row: SimulatorCharacterStarResonance) => row.ruleId)
+    .filter(
+      (ruleId: string | null): ruleId is string =>
+        typeof ruleId === 'string' && ruleId.length > 0
+    );
+  const starStoneAttrRows =
+    starStoneIds.length > 0
+      ? await database
+          .select()
+          .from(starStoneAttr)
+          .where(inArray(starStoneAttr.starStoneId, starStoneIds))
+          .orderBy(asc(starStoneAttr.displayOrder))
+      : [];
+  const starResonanceRuleRows: SimulatorStarResonanceRule[] =
+    starResonanceRuleIds.length > 0
+      ? await database
+          .select()
+          .from(starResonanceRule)
+          .where(inArray(starResonanceRule.id, starResonanceRuleIds))
+      : [];
 
   const buildByEquipmentId = new Map(
     buildRows.map(
@@ -1020,6 +1028,12 @@ async function loadPersistedBundleEquipments(params: {
   const primaryAttrsByEquipmentId = new Map<string, SimulatorEquipmentAttr[]>();
   const ornamentAttrsById = new Map<string, SimulatorOrnamentSubAttrRow[]>();
   const jadeAttrsById = new Map<string, SimulatorJadeAttrRow[]>();
+  const starStoneRowsByEquipmentId = new Map<string, SimulatorStarStoneItem[]>();
+  const starStoneAttrsById = new Map<string, SimulatorStarStoneAttr[]>();
+  const starResonanceBySlot = new Map<string, SimulatorCharacterStarResonance>();
+  const starResonanceRuleById = new Map<string, SimulatorStarResonanceRule>(
+    starResonanceRuleRows.map((row) => [row.id, row] as const)
+  );
 
   for (const attr of primaryAttrRows) {
     const current = primaryAttrsByEquipmentId.get(attr.equipmentId) ?? [];
@@ -1039,15 +1053,70 @@ async function loadPersistedBundleEquipments(params: {
     jadeAttrsById.set(attr.jadeId, current);
   }
 
+  for (const row of starStoneRows) {
+    const equipmentId = row.equipmentId ?? '';
+    if (!equipmentId) {
+      continue;
+    }
+
+    const current = starStoneRowsByEquipmentId.get(equipmentId) ?? [];
+    current.push(row);
+    starStoneRowsByEquipmentId.set(equipmentId, current);
+  }
+
+  for (const attr of starStoneAttrRows) {
+    const current = starStoneAttrsById.get(attr.starStoneId) ?? [];
+    current.push(attr);
+    starStoneAttrsById.set(attr.starStoneId, current);
+  }
+
+  for (const row of starResonanceRows) {
+    starResonanceBySlot.set(row.slot, row);
+  }
+
   const rowsByOrder = new Map<string, SimulatorEquipment>();
 
   for (const item of primaryRows) {
+    const primaryBuild = buildByEquipmentId.get(item.id) as
+      | SimulatorEquipmentBuild
+      | undefined;
+    const equipmentStarStoneRows = starStoneRowsByEquipmentId.get(item.id) ?? [];
+    const mergedNotesJson = mergeStarStateIntoNotesJson({
+      notesJson: primaryBuild?.notesJson ?? '{}',
+      starStoneRows: equipmentStarStoneRows,
+      starStoneAttrRows: equipmentStarStoneRows.flatMap(
+        (row: SimulatorStarStoneItem) => starStoneAttrsById.get(row.id) ?? []
+      ),
+      resonanceRow: (() => {
+        const slotKey =
+          primarySlotRows.find(
+            (row: SimulatorSnapshotSlot) => row.equipmentId === item.id
+          )?.slot ?? item.slot;
+        return starResonanceBySlot.get(slotKey) ?? null;
+      })(),
+      resonanceRule: (() => {
+        const slotKey =
+          primarySlotRows.find(
+            (row: SimulatorSnapshotSlot) => row.equipmentId === item.id
+          )?.slot ?? item.slot;
+        const resonance = starResonanceBySlot.get(slotKey) ?? null;
+        return resonance?.ruleId
+          ? starResonanceRuleById.get(resonance.ruleId) ?? null
+          : null;
+      })(),
+    });
+
     rowsByOrder.set(
       item.id,
       toGenericEquipmentRow({
         ...item,
         price: Number(item.price ?? 0),
-        build: buildByEquipmentId.get(item.id) ?? null,
+        build: primaryBuild
+          ? {
+              ...primaryBuild,
+              notesJson: mergedNotesJson,
+            }
+          : null,
         attrs: primaryAttrsByEquipmentId.get(item.id) ?? [],
         snapshotSlot:
           primarySlotRows.find(
@@ -1150,32 +1219,10 @@ async function loadPersistedBundleEquipments(params: {
     .filter((item): item is SimulatorEquipment => Boolean(item));
 }
 
-function formatEquipmentRollbackSnapshotName(date: Date) {
-  const pad = (value: number) => String(value).padStart(2, '0');
-
-  return `应用前快照 ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate()
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-async function getNextSnapshotVersionNo(characterId: string) {
-  const [latestSnapshot] = await db()
-    .select({ versionNo: characterSnapshot.versionNo })
-    .from(characterSnapshot)
-    .where(eq(characterSnapshot.characterId, characterId))
-    .orderBy(
-      desc(characterSnapshot.versionNo),
-      desc(characterSnapshot.createdAt)
-    )
-    .limit(1);
-
-  return (latestSnapshot?.versionNo ?? 0) + 1;
-}
-
 async function loadSnapshotState(params: {
   characterId: string;
   snapshotId: string;
-}) {
+}): Promise<PersistedSnapshotState> {
   const [profileRows, skills, cultivations, battleContextRows, equipments] =
     await Promise.all([
       db()
@@ -1214,637 +1261,6 @@ async function loadSnapshotState(params: {
     battleContext: battleContextRows[0] ?? null,
     equipments,
   };
-}
-
-type PersistedSnapshotState = {
-  profile: SimulatorProfile | null;
-  skills: SimulatorSkill[];
-  cultivations: SimulatorCultivation[];
-  battleContext: SimulatorBattleContext | null;
-  equipments: SimulatorEquipment[];
-};
-
-async function insertSnapshotState(params: {
-  snapshotId: string;
-  characterId: string;
-  profile: SimulatorProfile | null;
-  skills: SimulatorSkill[];
-  cultivations: SimulatorCultivation[];
-  battleContext: SimulatorBattleContext | null;
-  equipments: SimulatorEquipment[];
-  now: Date;
-}): Promise<PersistedSnapshotState> {
-  const database = db();
-  const batchQueries: any[] = [];
-  const nextProfile = params.profile
-    ? {
-        snapshotId: params.snapshotId,
-        school: params.profile.school,
-        level: params.profile.level,
-        physique: params.profile.physique,
-        magic: params.profile.magic,
-        strength: params.profile.strength,
-        endurance: params.profile.endurance,
-        agility: params.profile.agility,
-        potentialPoints: params.profile.potentialPoints,
-        hp: params.profile.hp,
-        mp: params.profile.mp,
-        damage: params.profile.damage,
-        defense: params.profile.defense,
-        magicDamage: params.profile.magicDamage,
-        magicDefense: params.profile.magicDefense,
-        speed: params.profile.speed,
-        hit: params.profile.hit,
-        sealHit: params.profile.sealHit,
-        rawBodyJson: params.profile.rawBodyJson,
-      }
-    : null;
-  const nextSkills = params.skills.map((skill) => ({
-    id: getUuid(),
-    snapshotId: params.snapshotId,
-    skillCode: skill.skillCode,
-    skillName: skill.skillName,
-    baseLevel: skill.baseLevel,
-    extraLevel: skill.extraLevel,
-    finalLevel: skill.finalLevel,
-    sourceDetailJson: skill.sourceDetailJson,
-  }));
-  const nextCultivations = params.cultivations.map((cultivation) => ({
-    id: getUuid(),
-    snapshotId: params.snapshotId,
-    cultivationType: cultivation.cultivationType,
-    level: cultivation.level,
-  }));
-  const nextBattleContext = params.battleContext
-    ? {
-        snapshotId: params.snapshotId,
-        ruleVersionId: params.battleContext.ruleVersionId ?? null,
-        selfFormation: params.battleContext.selfFormation,
-        selfElement: params.battleContext.selfElement,
-        formationCounterState: params.battleContext.formationCounterState,
-        elementRelation: params.battleContext.elementRelation,
-        transformCardFactor: params.battleContext.transformCardFactor,
-        splitTargetCount: params.battleContext.splitTargetCount,
-        shenmuValue: params.battleContext.shenmuValue,
-        magicResult: params.battleContext.magicResult,
-        targetTemplateId: params.battleContext.targetTemplateId ?? null,
-        targetName: params.battleContext.targetName,
-        targetLevel: params.battleContext.targetLevel,
-        targetHp: params.battleContext.targetHp,
-        targetDefense: params.battleContext.targetDefense,
-        targetMagicDefense: params.battleContext.targetMagicDefense,
-        targetSpeed: params.battleContext.targetSpeed,
-        targetMagicDefenseCultivation:
-          params.battleContext.targetMagicDefenseCultivation,
-        targetElement: params.battleContext.targetElement,
-        targetFormation: params.battleContext.targetFormation,
-        notesJson: params.battleContext.notesJson,
-        createdAt: params.now,
-        updatedAt: params.now,
-      }
-    : null;
-
-  if (nextProfile) {
-    batchQueries.push(database.insert(characterProfile).values(nextProfile));
-  }
-
-  if (nextSkills.length > 0) {
-    for (const chunk of chunkArray(nextSkills)) {
-      batchQueries.push(database.insert(characterSkill).values(chunk));
-    }
-  }
-
-  if (nextCultivations.length > 0) {
-    for (const chunk of chunkArray(nextCultivations)) {
-      batchQueries.push(database.insert(characterCultivation).values(chunk));
-    }
-  }
-
-  if (nextBattleContext) {
-    batchQueries.push(
-      database.insert(snapshotBattleContext).values(nextBattleContext)
-    );
-  }
-
-  if (params.equipments.length === 0) {
-    if (batchQueries.length > 0) {
-      if (typeof database.batch === 'function') {
-        await database.batch(batchQueries);
-      } else {
-        for (const query of batchQueries) {
-          await query;
-        }
-      }
-    }
-    return {
-      profile: nextProfile,
-      skills: nextSkills,
-      cultivations: nextCultivations,
-      battleContext: nextBattleContext,
-      equipments: [],
-    };
-  }
-
-  const primaryEquipmentValues: Array<typeof equipmentItem.$inferInsert> = [];
-  const primaryBuildValues: SimulatorEquipmentBuild[] = [];
-  const primaryAttrValues: SimulatorEquipmentAttr[] = [];
-  const primarySnapshotSlotValues: Array<
-    typeof snapshotEquipmentSlot.$inferInsert
-  > = [];
-  const ornamentValues: Array<typeof ornamentItem.$inferInsert> = [];
-  const ornamentAttrValues: Array<typeof ornamentSubAttr.$inferInsert> = [];
-  const ornamentSnapshotSlotValues: Array<
-    typeof snapshotOrnamentSlot.$inferInsert
-  > = [];
-  const jadeValues: Array<typeof jadeItem.$inferInsert> = [];
-  const jadeAttrValues: Array<typeof jadeAttr.$inferInsert> = [];
-  const jadeSnapshotSlotValues: Array<typeof snapshotJadeSlot.$inferInsert> =
-    [];
-  const nextEquipments: SimulatorEquipment[] = [];
-
-  for (const equipment of params.equipments) {
-    const nextId = getUuid();
-    const snapshotSlot = equipment.snapshotSlot ?? equipment.slot;
-    const createdAt = params.now;
-    const updatedAt = params.now;
-
-    if (isOrnamentSlot(snapshotSlot) || isOrnamentSlot(equipment.slot)) {
-      const persistedSlot = toPersistedOrnamentSlot(snapshotSlot);
-      const resolvedAttrs = resolveOrnamentMainAttr(
-        equipment.attrs.map((attr) => ({
-          attrType: attr.attrType,
-          valueType: attr.valueType,
-          attrValue: Number(attr.attrValue ?? 0),
-          displayOrder: Number(attr.displayOrder ?? 0),
-        }))
-      );
-      const nextOrnamentRow: typeof ornamentItem.$inferInsert = {
-        id: nextId,
-        characterId: params.characterId,
-        slot: persistedSlot,
-        name: equipment.name,
-        level: equipment.level,
-        quality: equipment.quality,
-        mainAttrType: resolvedAttrs.mainAttrType,
-        mainAttrValue: resolvedAttrs.mainAttrValue,
-        price: equipment.price,
-        source: equipment.source,
-        status: equipment.status,
-        specialEffectJson: equipment.build?.specialEffectJson ?? '{}',
-        setEffectJson: equipment.build?.setEffectJson ?? '{}',
-        notesJson: equipment.build?.notesJson ?? '{}',
-        createdAt,
-        updatedAt,
-      };
-      const nextOrnamentSubAttrs: SimulatorOrnamentSubAttrRow[] =
-        resolvedAttrs.subAttrs.map((attr) => ({
-          id: getUuid(),
-          ornamentId: nextId,
-          attrType: attr.attrType,
-          attrValue: attr.attrValue,
-          displayOrder: attr.displayOrder,
-        }));
-
-      ornamentValues.push(nextOrnamentRow);
-      ornamentAttrValues.push(...nextOrnamentSubAttrs);
-      ornamentSnapshotSlotValues.push({
-        id: getUuid(),
-        snapshotId: params.snapshotId,
-        slot: persistedSlot,
-        ornamentId: nextId,
-      });
-
-      nextEquipments.push(
-        toGenericEquipmentRow({
-          id: nextId,
-          characterId: params.characterId,
-          slot: persistedSlot,
-          name: equipment.name,
-          level: equipment.level,
-          quality: equipment.quality,
-          price: equipment.price,
-          source: equipment.source,
-          status: equipment.status,
-          isLocked: false,
-          createdAt,
-          updatedAt,
-          build: toGenericEquipmentBuild({
-            equipmentId: nextId,
-            specialEffectJson: equipment.build?.specialEffectJson,
-            setEffectJson: equipment.build?.setEffectJson,
-            notesJson: equipment.build?.notesJson,
-          }),
-          attrs: buildOrnamentAttrRows({
-            ornament: {
-              id: nextId,
-              mainAttrType: resolvedAttrs.mainAttrType,
-              mainAttrValue: resolvedAttrs.mainAttrValue,
-            },
-            subAttrs: nextOrnamentSubAttrs,
-          }),
-          snapshotSlot: persistedSlot,
-        })
-      );
-
-      continue;
-    }
-
-    if (isJadeSlot(snapshotSlot) || isJadeSlot(equipment.slot)) {
-      const persistedSlot = toPersistedJadeSlot(snapshotSlot);
-      const nextJadeAttrs: SimulatorEquipmentAttr[] = equipment.attrs.map(
-        (attr) => ({
-          id: getUuid(),
-          equipmentId: nextId,
-          attrGroup: attr.attrGroup,
-          attrType: attr.attrType,
-          valueType: attr.valueType,
-          attrValue: Number(attr.attrValue ?? 0),
-          displayOrder: Number(attr.displayOrder ?? 0),
-        })
-      );
-      const nextJadeRow: typeof jadeItem.$inferInsert = {
-        id: nextId,
-        characterId: params.characterId,
-        slot: persistedSlot,
-        name: equipment.name,
-        quality: equipment.quality,
-        fitLevel: equipment.level,
-        price: equipment.price,
-        source: equipment.source,
-        status: equipment.status,
-        specialEffectJson: equipment.build?.specialEffectJson ?? '{}',
-        setEffectJson: equipment.build?.setEffectJson ?? '{}',
-        notesJson: equipment.build?.notesJson ?? '{}',
-        createdAt,
-        updatedAt,
-      };
-
-      jadeValues.push(nextJadeRow);
-      jadeAttrValues.push(
-        ...nextJadeAttrs.map((attr) => ({
-          id: attr.id,
-          jadeId: nextId,
-          attrType: attr.attrType,
-          valueType: attr.valueType,
-          attrValue: attr.attrValue,
-          displayOrder: attr.displayOrder,
-        }))
-      );
-      jadeSnapshotSlotValues.push({
-        id: getUuid(),
-        snapshotId: params.snapshotId,
-        slot: persistedSlot,
-        jadeId: nextId,
-      });
-
-      nextEquipments.push(
-        toGenericEquipmentRow({
-          id: nextId,
-          characterId: params.characterId,
-          slot: persistedSlot,
-          name: equipment.name,
-          level: equipment.level,
-          quality: equipment.quality,
-          price: equipment.price,
-          source: equipment.source,
-          status: equipment.status,
-          isLocked: false,
-          createdAt,
-          updatedAt,
-          build: toGenericEquipmentBuild({
-            equipmentId: nextId,
-            specialEffectJson: equipment.build?.specialEffectJson,
-            setEffectJson: equipment.build?.setEffectJson,
-            notesJson: equipment.build?.notesJson,
-          }),
-          attrs: nextJadeAttrs,
-          snapshotSlot: persistedSlot,
-        })
-      );
-
-      continue;
-    }
-
-    const nextPrimaryBuild: SimulatorEquipmentBuild = {
-      equipmentId: nextId,
-      holeCount: equipment.build?.holeCount ?? 0,
-      gemLevelTotal: equipment.build?.gemLevelTotal ?? 0,
-      refineLevel: equipment.build?.refineLevel ?? 0,
-      specialEffectJson: equipment.build?.specialEffectJson ?? '{}',
-      setEffectJson: equipment.build?.setEffectJson ?? '{}',
-      notesJson: equipment.build?.notesJson ?? '{}',
-    };
-    const nextPrimaryAttrs: SimulatorEquipmentAttr[] = equipment.attrs.map(
-      (attr) => ({
-        id: getUuid(),
-        equipmentId: nextId,
-        attrGroup: attr.attrGroup,
-        attrType: attr.attrType,
-        valueType: attr.valueType,
-        attrValue: Number(attr.attrValue ?? 0),
-        displayOrder: Number(attr.displayOrder ?? 0),
-      })
-    );
-
-    primaryEquipmentValues.push({
-      id: nextId,
-      characterId: params.characterId,
-      slot: equipment.slot,
-      name: equipment.name,
-      level: equipment.level,
-      quality: equipment.quality,
-      price: equipment.price,
-      source: equipment.source,
-      status: equipment.status,
-      isLocked: equipment.isLocked,
-      createdAt,
-      updatedAt,
-    });
-    primaryBuildValues.push(nextPrimaryBuild);
-    primaryAttrValues.push(...nextPrimaryAttrs);
-    primarySnapshotSlotValues.push({
-      id: getUuid(),
-      snapshotId: params.snapshotId,
-      slot: snapshotSlot,
-      equipmentId: nextId,
-    });
-
-    nextEquipments.push(
-      toGenericEquipmentRow({
-        id: nextId,
-        characterId: params.characterId,
-        slot: equipment.slot,
-        name: equipment.name,
-        level: equipment.level,
-        quality: equipment.quality,
-        price: equipment.price,
-        source: equipment.source,
-        status: equipment.status,
-        isLocked: equipment.isLocked,
-        createdAt,
-        updatedAt,
-        build: nextPrimaryBuild,
-        attrs: nextPrimaryAttrs,
-        snapshotSlot,
-      })
-    );
-  }
-
-  for (const chunk of chunkArray(primaryEquipmentValues)) {
-    batchQueries.push(database.insert(equipmentItem).values(chunk));
-  }
-  for (const chunk of chunkArray(primaryBuildValues)) {
-    batchQueries.push(database.insert(equipmentBuild).values(chunk));
-  }
-  for (const chunk of chunkArray(primaryAttrValues)) {
-    batchQueries.push(database.insert(equipmentAttr).values(chunk));
-  }
-  for (const chunk of chunkArray(primarySnapshotSlotValues)) {
-    batchQueries.push(database.insert(snapshotEquipmentSlot).values(chunk));
-  }
-  for (const chunk of chunkArray(ornamentValues)) {
-    batchQueries.push(database.insert(ornamentItem).values(chunk));
-  }
-  for (const chunk of chunkArray(ornamentAttrValues)) {
-    batchQueries.push(database.insert(ornamentSubAttr).values(chunk));
-  }
-  for (const chunk of chunkArray(ornamentSnapshotSlotValues)) {
-    batchQueries.push(database.insert(snapshotOrnamentSlot).values(chunk));
-  }
-  for (const chunk of chunkArray(jadeValues)) {
-    batchQueries.push(database.insert(jadeItem).values(chunk));
-  }
-  for (const chunk of chunkArray(jadeAttrValues)) {
-    batchQueries.push(database.insert(jadeAttr).values(chunk));
-  }
-  for (const chunk of chunkArray(jadeSnapshotSlotValues)) {
-    batchQueries.push(database.insert(snapshotJadeSlot).values(chunk));
-  }
-  const ornamentSetEffectValues = buildOrnamentSetEffectRows({
-    snapshotId: params.snapshotId,
-    equipments: nextEquipments.map((item) => toOrnamentSetEffectSource(item)),
-  });
-  for (const chunk of chunkArray(ornamentSetEffectValues)) {
-    batchQueries.push(database.insert(ornamentSetEffect).values(chunk));
-  }
-
-  if (typeof database.batch === 'function') {
-    await database.batch(batchQueries);
-    return {
-      profile: nextProfile,
-      skills: nextSkills,
-      cultivations: nextCultivations,
-      battleContext: nextBattleContext,
-      equipments: nextEquipments,
-    };
-  }
-
-  for (const query of batchQueries) {
-    await query;
-  }
-
-  return {
-    profile: nextProfile,
-    skills: nextSkills,
-    cultivations: nextCultivations,
-    battleContext: nextBattleContext,
-    equipments: nextEquipments,
-  };
-}
-
-async function deleteRowsByIdInChunks(
-  database: ReturnType<typeof db>,
-  table: any,
-  column: any,
-  ids: string[]
-) {
-  if (ids.length === 0) {
-    return;
-  }
-
-  const queries = chunkArray(ids).map((chunk) =>
-    database.delete(table).where(inArray(column, chunk))
-  );
-
-  if (typeof database.batch === 'function') {
-    await database.batch(queries);
-    return;
-  }
-
-  for (const query of queries) {
-    await query;
-  }
-}
-
-async function deleteCurrentSnapshotEquipments(params: {
-  characterId: string;
-  snapshotId: string;
-}) {
-  const database = db();
-  const [equipmentRows, ornamentRows, jadeRows, snapshotRows] =
-    await Promise.all([
-      database
-        .select({ id: equipmentItem.id })
-        .from(equipmentItem)
-        .where(eq(equipmentItem.characterId, params.characterId)),
-      database
-        .select({ id: ornamentItem.id })
-        .from(ornamentItem)
-        .where(eq(ornamentItem.characterId, params.characterId)),
-      database
-        .select({ id: jadeItem.id })
-        .from(jadeItem)
-        .where(eq(jadeItem.characterId, params.characterId)),
-      database
-        .select({ id: characterSnapshot.id })
-        .from(characterSnapshot)
-        .where(eq(characterSnapshot.characterId, params.characterId)),
-    ]);
-
-  const protectedSnapshotIds = snapshotRows
-    .map((row: { id: string }) => row.id)
-    .filter((snapshotId: string) => snapshotId !== params.snapshotId);
-  const [protectedEquipmentRows, protectedOrnamentRows, protectedJadeRows] =
-    protectedSnapshotIds.length
-      ? await Promise.all([
-          database
-            .select({ equipmentId: snapshotEquipmentSlot.equipmentId })
-            .from(snapshotEquipmentSlot)
-            .where(
-              inArray(snapshotEquipmentSlot.snapshotId, protectedSnapshotIds)
-            ),
-          database
-            .select({ ornamentId: snapshotOrnamentSlot.ornamentId })
-            .from(snapshotOrnamentSlot)
-            .where(
-              inArray(snapshotOrnamentSlot.snapshotId, protectedSnapshotIds)
-            ),
-          database
-            .select({ jadeId: snapshotJadeSlot.jadeId })
-            .from(snapshotJadeSlot)
-            .where(inArray(snapshotJadeSlot.snapshotId, protectedSnapshotIds)),
-        ])
-      : [[], [], []];
-  const protectedEquipmentIds = new Set(
-    protectedEquipmentRows.map(
-      (row: { equipmentId: string }) => row.equipmentId
-    )
-  );
-  const protectedOrnamentIds = new Set(
-    protectedOrnamentRows.map((row: { ornamentId: string }) => row.ornamentId)
-  );
-  const protectedJadeIds = new Set(
-    protectedJadeRows.map((row: { jadeId: string }) => row.jadeId)
-  );
-  const deletableEquipmentIds = equipmentRows
-    .map((row: { id: string }) => row.id)
-    .filter((equipmentId: string) => !protectedEquipmentIds.has(equipmentId));
-  const deletableOrnamentIds = ornamentRows
-    .map((row: { id: string }) => row.id)
-    .filter((ornamentId: string) => !protectedOrnamentIds.has(ornamentId));
-  const deletableJadeIds = jadeRows
-    .map((row: { id: string }) => row.id)
-    .filter((jadeId: string) => !protectedJadeIds.has(jadeId));
-
-  await Promise.all([
-    database
-      .delete(snapshotEquipmentSlot)
-      .where(eq(snapshotEquipmentSlot.snapshotId, params.snapshotId)),
-    database
-      .delete(snapshotOrnamentSlot)
-      .where(eq(snapshotOrnamentSlot.snapshotId, params.snapshotId)),
-    database
-      .delete(snapshotJadeSlot)
-      .where(eq(snapshotJadeSlot.snapshotId, params.snapshotId)),
-    database
-      .delete(ornamentSetEffect)
-      .where(eq(ornamentSetEffect.snapshotId, params.snapshotId)),
-  ]);
-  await deleteRowsByIdInChunks(
-    database,
-    equipmentItem,
-    equipmentItem.id,
-    deletableEquipmentIds
-  );
-  await deleteRowsByIdInChunks(
-    database,
-    ornamentItem,
-    ornamentItem.id,
-    deletableOrnamentIds
-  );
-  await deleteRowsByIdInChunks(
-    database,
-    jadeItem,
-    jadeItem.id,
-    deletableJadeIds
-  );
-}
-
-async function createEquipmentRollbackSnapshot(params: {
-  character: SimulatorCharacter;
-  snapshot: SimulatorSnapshot;
-  name?: string;
-  notes?: string;
-  source?: string;
-}) {
-  const now = new Date();
-  const nextSnapshotId = getUuid();
-  const nextVersionNo = await getNextSnapshotVersionNo(params.character.id);
-  const snapshotState = await loadSnapshotState({
-    characterId: params.character.id,
-    snapshotId: params.snapshot.id,
-  });
-
-  await db()
-    .insert(characterSnapshot)
-    .values({
-      id: nextSnapshotId,
-      characterId: params.character.id,
-      snapshotType: 'history',
-      name: params.name ?? formatEquipmentRollbackSnapshotName(now),
-      versionNo: nextVersionNo,
-      source: params.source ?? EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE,
-      notes: params.notes ?? '',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-  await insertSnapshotState({
-    snapshotId: nextSnapshotId,
-    characterId: params.character.id,
-    profile: snapshotState.profile,
-    skills: snapshotState.skills,
-    cultivations: snapshotState.cultivations,
-    battleContext: snapshotState.battleContext,
-    equipments: snapshotState.equipments,
-    now,
-  });
-}
-
-async function findLatestEquipmentRollbackSnapshot(characterId: string) {
-  const [snapshot] = await db()
-    .select({
-      id: characterSnapshot.id,
-      name: characterSnapshot.name,
-      source: characterSnapshot.source,
-      notes: characterSnapshot.notes,
-      createdAt: characterSnapshot.createdAt,
-    })
-    .from(characterSnapshot)
-    .where(
-      and(
-        eq(characterSnapshot.characterId, characterId),
-        eq(characterSnapshot.snapshotType, 'history'),
-        eq(characterSnapshot.source, EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE)
-      )
-    )
-    .orderBy(
-      desc(characterSnapshot.createdAt),
-      desc(characterSnapshot.versionNo)
-    )
-    .limit(1);
-
-  return snapshot ?? null;
 }
 
 export async function getSimulatorCharacterBundle(
@@ -1976,6 +1392,390 @@ function getDefaultCharacterName(userName: string | null | undefined) {
   }
 
   return `${normalized}的龙宫号`.slice(0, 40);
+}
+
+function normalizeCharacterName(name: string | null | undefined) {
+  return String(name || '').trim().slice(0, 40);
+}
+
+async function findActiveCharacterByName(userId: string, name: string) {
+  const [character] = await db()
+    .select()
+    .from(gameCharacter)
+    .where(
+      and(
+        eq(gameCharacter.userId, userId),
+        eq(gameCharacter.name, name),
+        eq(gameCharacter.status, 'active')
+      )
+    )
+    .limit(1);
+
+  return character ?? null;
+}
+
+export async function listSimulatorCharacters(
+  userId: string
+): Promise<SimulatorCharacterSummary[]> {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('listSimulatorCharacters', async () => {
+    return db()
+      .select({
+        id: gameCharacter.id,
+        name: gameCharacter.name,
+        school: gameCharacter.school,
+        roleType: gameCharacter.roleType,
+        level: gameCharacter.level,
+        serverName: gameCharacter.serverName,
+        updatedAt: gameCharacter.updatedAt,
+        createdAt: gameCharacter.createdAt,
+      })
+      .from(gameCharacter)
+      .where(
+        and(
+          eq(gameCharacter.userId, userId),
+          eq(gameCharacter.status, 'active')
+        )
+      )
+      .orderBy(desc(gameCharacter.updatedAt), desc(gameCharacter.createdAt));
+  });
+}
+
+export async function selectSimulatorCharacter(userId: string, characterId: string) {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('selectSimulatorCharacter', async () => {
+    const character = await findActiveCharacter(userId, characterId);
+    if (!character) {
+      return false;
+    }
+
+    const now = new Date();
+    await db()
+      .update(gameCharacter)
+      .set({ updatedAt: now })
+      .where(eq(gameCharacter.id, characterId));
+
+    clearSimulatorCharacterBundleCache(userId, characterId);
+    return true;
+  });
+}
+
+export async function renameSimulatorCharacter(params: {
+  userId: string;
+  characterId: string;
+  name: string;
+}) {
+  await ensureSimulatorDbReady();
+
+  const normalizedName = normalizeCharacterName(params.name);
+  if (!normalizedName) {
+    throw new Error('character name is required');
+  }
+
+  return withTransientD1Retry('renameSimulatorCharacter', async () => {
+    const character = await findActiveCharacter(params.userId, params.characterId);
+    if (!character) {
+      return null;
+    }
+
+    const existing = await findActiveCharacterByName(params.userId, normalizedName);
+    if (existing && existing.id !== params.characterId) {
+      throw new Error('character name already exists');
+    }
+
+    const now = new Date();
+    await db()
+      .update(gameCharacter)
+      .set({
+        name: normalizedName,
+        updatedAt: now,
+      })
+      .where(eq(gameCharacter.id, params.characterId));
+
+    clearSimulatorCharacterBundleCache(params.userId, params.characterId);
+
+    return {
+      ...character,
+      name: normalizedName,
+      updatedAt: now,
+    } satisfies SimulatorCharacter;
+  });
+}
+
+export async function deleteSimulatorCharacter(params: {
+  userId: string;
+  characterId: string;
+}) {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('deleteSimulatorCharacter', async () => {
+    const character = await findActiveCharacter(params.userId, params.characterId);
+    if (!character) {
+      return null;
+    }
+
+    const characters = await listSimulatorCharacters(params.userId);
+    if (characters.length <= 1) {
+      throw new Error('at least one character must remain');
+    }
+
+    const nextCharacter =
+      characters.find((item) => item.id !== params.characterId) ?? null;
+
+    if (!nextCharacter) {
+      throw new Error('failed to select next character');
+    }
+
+    const now = new Date();
+    const nextUpdatedAt = new Date(now.getTime() + 1);
+
+    await db()
+      .update(gameCharacter)
+      .set({
+        status: 'deleted',
+        updatedAt: now,
+      })
+      .where(eq(gameCharacter.id, params.characterId));
+
+    await db()
+      .update(gameCharacter)
+      .set({
+        updatedAt: nextUpdatedAt,
+      })
+      .where(eq(gameCharacter.id, nextCharacter.id));
+
+    clearSimulatorCharacterBundleCache(params.userId, params.characterId);
+    clearSimulatorCharacterBundleCache(params.userId, nextCharacter.id);
+
+    return {
+      deletedCharacterId: params.characterId,
+      nextCharacterId: nextCharacter.id,
+      nextCharacterName: nextCharacter.name,
+    };
+  });
+}
+
+export async function createSimulatorCharacter(params: {
+  userId: string;
+  name: string;
+}) {
+  await ensureSimulatorDbReady();
+
+  const timer = createPerfTimer('createSimulatorCharacter', {
+    slowThresholdMs: 300,
+  });
+  const normalizedName = normalizeCharacterName(params.name);
+  if (!normalizedName) {
+    throw new Error('character name is required');
+  }
+
+  const existing = await findActiveCharacterByName(params.userId, normalizedName);
+  if (existing) {
+    throw new Error('character name already exists');
+  }
+
+  const seedConfig = await getRequiredSimulatorSeedConfig();
+  const characterId = getUuid();
+  const snapshotId = getUuid();
+  const database = db();
+  const now = new Date();
+
+  const characterValue: SimulatorCharacter = {
+    id: characterId,
+    userId: params.userId,
+    name: normalizedName,
+    serverName: seedConfig.characterMeta.serverName,
+    school: seedConfig.profile.school,
+    roleType: seedConfig.characterMeta.roleType,
+    level: seedConfig.profile.level,
+    race: seedConfig.characterMeta.race,
+    status: 'active',
+    currentSnapshotId: snapshotId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const snapshotValue: SimulatorSnapshot = {
+    id: snapshotId,
+    characterId,
+    snapshotType: 'current',
+    name: seedConfig.characterMeta.snapshotName,
+    versionNo: 1,
+    source: 'system_default',
+    notes: seedConfig.characterMeta.snapshotNotes,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const profileValue: SimulatorProfile = {
+    snapshotId,
+    ...seedConfig.profile,
+  };
+  const battleContextValue: SimulatorBattleContext = {
+    snapshotId,
+    selfFormation: seedConfig.battleContext.selfFormation,
+    selfElement: seedConfig.battleContext.selfElement,
+    formationCounterState: seedConfig.battleContext.formationCounterState,
+    elementRelation: seedConfig.battleContext.elementRelation,
+    transformCardFactor: seedConfig.battleContext.transformCardFactor,
+    splitTargetCount: seedConfig.battleContext.splitTargetCount,
+    shenmuValue: seedConfig.battleContext.shenmuValue,
+    magicResult: seedConfig.battleContext.magicResult,
+    targetName: seedConfig.battleContext.targetName,
+    targetLevel: seedConfig.battleContext.targetLevel,
+    targetHp: seedConfig.battleContext.targetHp,
+    targetDefense: seedConfig.battleContext.targetDefense,
+    targetMagicDefense: seedConfig.battleContext.targetMagicDefense,
+    targetSpeed: seedConfig.battleContext.targetSpeed,
+    targetMagicDefenseCultivation:
+      seedConfig.battleContext.targetMagicDefenseCultivation,
+    targetElement: seedConfig.battleContext.targetElement,
+    targetFormation: seedConfig.battleContext.targetFormation,
+    notesJson: '{}',
+    ruleVersionId: null,
+    targetTemplateId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const characterInsert = database.insert(gameCharacter).values(characterValue);
+  const snapshotInsert = database
+    .insert(characterSnapshot)
+    .values(snapshotValue);
+  const profileInsert = database.insert(characterProfile).values(profileValue);
+  const battleContextInsert = database
+    .insert(snapshotBattleContext)
+    .values(battleContextValue);
+  let skillValues: SimulatorSkill[] = [];
+  let cultivationValues: SimulatorCultivation[] = [];
+
+  const batchQueries = [
+    characterInsert,
+    snapshotInsert,
+    profileInsert,
+    battleContextInsert,
+  ];
+
+  if (seedConfig.skills.length > 0) {
+    skillValues = seedConfig.skills.map((skill) => ({
+      id: getUuid(),
+      snapshotId,
+      skillCode: skill.skillCode,
+      skillName: skill.skillName,
+      baseLevel: skill.baseLevel,
+      extraLevel: skill.extraLevel,
+      finalLevel: skill.finalLevel,
+      sourceDetailJson: '{}',
+    }));
+
+    for (const chunk of chunkArray(skillValues)) {
+      batchQueries.push(database.insert(characterSkill).values(chunk));
+    }
+  }
+
+  if (seedConfig.cultivations.length > 0) {
+    cultivationValues = seedConfig.cultivations.map((cultivation) => ({
+      id: getUuid(),
+      snapshotId,
+      cultivationType: cultivation.cultivationType,
+      level: cultivation.level,
+    }));
+
+    for (const chunk of chunkArray(cultivationValues)) {
+      batchQueries.push(database.insert(characterCultivation).values(chunk));
+    }
+  }
+
+  let seededEquipments: SimulatorEquipment[] = [];
+  let seededPersistableEquipments: SimulatorEquipment[] = [];
+  if (seedConfig.equipments.length > 0) {
+    seededPersistableEquipments = seedConfig.equipments.map((equipment) => {
+      const snapshotSlot = equipment.snapshotSlot || equipment.slot;
+      const attrs = equipment.attrs.map((attr, index) => ({
+        id: getUuid(),
+        equipmentId: 'seed',
+        attrGroup: attr.attrGroup,
+        attrType: attr.attrType,
+        valueType: 'flat',
+        attrValue: attr.attrValue,
+        displayOrder: index,
+      }));
+
+      return toGenericEquipmentRow({
+        id: getUuid(),
+        characterId,
+        slot: equipment.slot,
+        name: equipment.name,
+        level: equipment.level,
+        quality: equipment.quality,
+        price: equipment.price,
+        source: 'system_default',
+        status: 'equipped',
+        isLocked: false,
+        createdAt: now,
+        updatedAt: now,
+        build: {
+          equipmentId: 'seed',
+          holeCount: 0,
+          gemLevelTotal: 0,
+          refineLevel: equipment.refineLevel,
+          specialEffectJson: '{}',
+          setEffectJson: '{}',
+          notesJson: '{}',
+        },
+        attrs,
+        snapshotSlot,
+      });
+    });
+  }
+
+  if (typeof database.batch === 'function') {
+    await database.batch(batchQueries);
+  } else {
+    for (const query of batchQueries) {
+      await query;
+    }
+  }
+
+  if (seededPersistableEquipments.length > 0) {
+    const persistedState = await insertSnapshotState({
+      snapshotId,
+      characterId,
+      profile: null,
+      skills: [],
+      cultivations: [],
+      battleContext: null,
+      equipments: seededPersistableEquipments,
+      now,
+    });
+    seededEquipments = persistedState.equipments;
+  }
+
+  const rules = await findAttributeRules({
+    school: profileValue.school,
+    roleType: characterValue.roleType,
+  });
+  const equipmentPlan = await loadCharacterEquipmentPlanState(characterId);
+  timer.finish({
+    status: 'ok',
+    equipmentCount: seededEquipments.length,
+    ruleCount: rules.length,
+  });
+
+  return primeSimulatorCharacterBundleAndReturn(
+    params.userId,
+    buildSimulatorCharacterBundle({
+      character: characterValue,
+      snapshot: snapshotValue,
+      profile: profileValue,
+      skills: skillValues,
+      cultivations: cultivationValues,
+      battleContext: battleContextValue,
+      battleTargetTemplate: null,
+      rules,
+      equipments: seededEquipments,
+      equipmentPlan,
+    })
+  );
 }
 
 export async function provisionDefaultSimulatorCharacterForUser(params: {
@@ -2235,56 +2035,21 @@ export async function updateSimulatorProfile(
   const timer = createPerfTimer('updateSimulatorProfile:model', {
     slowThresholdMs: 250,
   });
-  const character = await findActiveCharacter(userId);
-  timer.mark('character');
-  if (!character) {
-    timer.finish({ status: 'missing_character' });
+  const context = await loadActiveSimulatorContext(userId);
+  timer.mark('load_context');
+  if (!context) {
+    timer.finish({ status: 'missing_character_or_snapshot' });
     return null;
   }
-
-  const snapshot = await findCurrentSnapshot(character);
-  timer.mark('snapshot');
-  if (!snapshot) {
-    timer.finish({ status: 'missing_snapshot' });
-    return null;
-  }
-
-  const [
-    existingProfileRows,
+  const {
+    character,
+    snapshot,
+    profile: existingProfile,
     skills,
     cultivations,
-    existingContextRows,
+    battleContext: existingContext,
     equipments,
-  ] = await Promise.all([
-    db()
-      .select()
-      .from(characterProfile)
-      .where(eq(characterProfile.snapshotId, snapshot.id))
-      .limit(1),
-    db()
-      .select()
-      .from(characterSkill)
-      .where(eq(characterSkill.snapshotId, snapshot.id))
-      .orderBy(desc(characterSkill.finalLevel), asc(characterSkill.skillName)),
-    db()
-      .select()
-      .from(characterCultivation)
-      .where(eq(characterCultivation.snapshotId, snapshot.id))
-      .orderBy(asc(characterCultivation.cultivationType)),
-    db()
-      .select()
-      .from(snapshotBattleContext)
-      .where(eq(snapshotBattleContext.snapshotId, snapshot.id))
-      .limit(1),
-    loadPersistedBundleEquipments({
-      characterId: character.id,
-      snapshotId: snapshot.id,
-    }),
-  ]);
-  timer.mark('load_relations');
-
-  const existingProfile = existingProfileRows[0] ?? null;
-  const existingContext = existingContextRows[0] ?? null;
+  } = context;
   const equipmentHpTotal = equipments.reduce((sum, item) => {
     const itemHp = item.attrs.reduce((itemSum, attr) => {
       if (attr.attrType !== 'hp') {
@@ -2321,6 +2086,7 @@ export async function updateSimulatorProfile(
     school: payload.faction,
     level: payload.level,
   };
+  const existingSealHit = existingProfile?.sealHit ?? 0;
   const nextProfile: SimulatorProfile = existingProfile
     ? {
         ...existingProfile,
@@ -2339,7 +2105,7 @@ export async function updateSimulatorProfile(
         magicDefense: payload.magicDefense,
         speed: payload.speed,
         hit: payload.hit,
-        sealHit: payload.sealHit ?? existingProfile.sealHit ?? 0,
+        sealHit: payload.sealHit ?? existingSealHit,
         rawBodyJson: nextRawBody,
       }
     : {
@@ -2360,17 +2126,17 @@ export async function updateSimulatorProfile(
         magicDefense: payload.magicDefense,
         speed: payload.speed,
         hit: payload.hit,
-        sealHit: payload.sealHit ?? existingProfile?.sealHit ?? 0,
+        sealHit: payload.sealHit ?? existingSealHit,
         rawBodyJson: nextRawBody,
       };
 
-  const [targetTemplate, rules] = await Promise.all([
-    findBattleTargetTemplateById(existingContext?.targetTemplateId),
-    findAttributeRules({
-      school: payload.faction || character.school,
-      roleType: character.roleType,
-    }),
-  ]);
+  const { targetTemplate, rules, equipmentPlan } =
+    await resolveSimulatorBundleDependencies({
+      character,
+      profile: existingProfile,
+      battleContext: existingContext,
+      schoolOverride: payload.faction,
+    });
   timer.mark('rules');
 
   await db()
@@ -2431,9 +2197,7 @@ export async function updateSimulatorProfile(
   }
   timer.mark('write_profile');
 
-  const equipmentPlan = await loadCharacterEquipmentPlanState(nextCharacter.id);
-
-  const bundle: SimulatorCharacterBundle = {
+  const bundle = buildSimulatorCharacterBundle({
     character: nextCharacter,
     snapshot,
     profile: nextProfile,
@@ -2444,7 +2208,7 @@ export async function updateSimulatorProfile(
     rules,
     equipments,
     equipmentPlan,
-  };
+  });
 
   timer.finish({
     status: 'ok',
@@ -2452,8 +2216,7 @@ export async function updateSimulatorProfile(
     ruleCount: rules.length,
   });
 
-  primeSimulatorCharacterBundleCache(userId, bundle);
-  return bundle;
+  return primeSimulatorCharacterBundleAndReturn(userId, bundle);
 }
 
 export async function updateSimulatorCultivation(
@@ -2474,56 +2237,26 @@ export async function updateSimulatorCultivation(
   const timer = createPerfTimer('updateSimulatorCultivation:model', {
     slowThresholdMs: 250,
   });
-  const character = await findActiveCharacter(userId);
-  timer.mark('character');
-  if (!character) {
-    timer.finish({ status: 'missing_character' });
+  const context = await loadActiveSimulatorContext(userId);
+  timer.mark('load_context');
+  if (!context) {
+    timer.finish({ status: 'missing_character_or_snapshot' });
     return null;
   }
-
-  const snapshot = await findCurrentSnapshot(character);
-  timer.mark('snapshot');
-  if (!snapshot) {
-    timer.finish({ status: 'missing_snapshot' });
-    return null;
-  }
-
-  const [profileRows, skills, existingContextRows, equipments] =
-    await Promise.all([
-      db()
-        .select()
-        .from(characterProfile)
-        .where(eq(characterProfile.snapshotId, snapshot.id))
-        .limit(1),
-      db()
-        .select()
-        .from(characterSkill)
-        .where(eq(characterSkill.snapshotId, snapshot.id))
-        .orderBy(
-          desc(characterSkill.finalLevel),
-          asc(characterSkill.skillName)
-        ),
-      db()
-        .select()
-        .from(snapshotBattleContext)
-        .where(eq(snapshotBattleContext.snapshotId, snapshot.id))
-        .limit(1),
-      loadPersistedBundleEquipments({
-        characterId: character.id,
-        snapshotId: snapshot.id,
-      }),
-    ]);
-  timer.mark('load_relations');
-
-  const profile = profileRows[0] ?? null;
-  const existingContext = existingContextRows[0] ?? null;
-  const [targetTemplate, rules] = await Promise.all([
-    findBattleTargetTemplateById(existingContext?.targetTemplateId),
-    findAttributeRules({
-      school: profile?.school ?? character.school,
-      roleType: character.roleType,
-    }),
-  ]);
+  const {
+    character,
+    snapshot,
+    profile,
+    skills,
+    battleContext: existingContext,
+    equipments,
+  } = context;
+  const { targetTemplate, rules, equipmentPlan } =
+    await resolveSimulatorBundleDependencies({
+      character,
+      profile,
+      battleContext: existingContext,
+    });
   timer.mark('rules');
 
   await db()
@@ -2555,9 +2288,7 @@ export async function updateSimulatorCultivation(
   await db().insert(characterCultivation).values(nextCultivations);
   timer.mark('write_cultivation');
 
-  const equipmentPlan = await loadCharacterEquipmentPlanState(character.id);
-
-  const bundle: SimulatorCharacterBundle = {
+  const bundle = buildSimulatorCharacterBundle({
     character,
     snapshot,
     profile,
@@ -2568,7 +2299,7 @@ export async function updateSimulatorCultivation(
     rules,
     equipments,
     equipmentPlan,
-  };
+  });
 
   timer.finish({
     status: 'ok',
@@ -2576,8 +2307,7 @@ export async function updateSimulatorCultivation(
     equipmentCount: equipments.length,
   });
 
-  primeSimulatorCharacterBundleCache(userId, bundle);
-  return bundle;
+  return primeSimulatorCharacterBundleAndReturn(userId, bundle);
 }
 
 export async function updateSimulatorBattleContext(
@@ -2611,54 +2341,21 @@ export async function updateSimulatorBattleContext(
   const timer = createPerfTimer('updateSimulatorBattleContext:model', {
     slowThresholdMs: 250,
   });
-  const character = await findActiveCharacter(userId);
-  timer.mark('character');
-  if (!character) {
-    timer.finish({ status: 'missing_character' });
+  const context = await loadActiveSimulatorContext(userId);
+  timer.mark('load_context');
+  if (!context) {
+    timer.finish({ status: 'missing_character_or_snapshot' });
     return null;
   }
-
-  const snapshot = await findCurrentSnapshot(character);
-  timer.mark('snapshot');
-  if (!snapshot) {
-    timer.finish({ status: 'missing_snapshot' });
-    return null;
-  }
-
-  const [profileRows, skills, cultivations, existingContextRows, equipments] =
-    await Promise.all([
-      db()
-        .select()
-        .from(characterProfile)
-        .where(eq(characterProfile.snapshotId, snapshot.id))
-        .limit(1),
-      db()
-        .select()
-        .from(characterSkill)
-        .where(eq(characterSkill.snapshotId, snapshot.id))
-        .orderBy(
-          desc(characterSkill.finalLevel),
-          asc(characterSkill.skillName)
-        ),
-      db()
-        .select()
-        .from(characterCultivation)
-        .where(eq(characterCultivation.snapshotId, snapshot.id))
-        .orderBy(asc(characterCultivation.cultivationType)),
-      db()
-        .select()
-        .from(snapshotBattleContext)
-        .where(eq(snapshotBattleContext.snapshotId, snapshot.id))
-        .limit(1),
-      loadPersistedBundleEquipments({
-        characterId: character.id,
-        snapshotId: snapshot.id,
-      }),
-    ]);
-  timer.mark('load_relations');
-
-  const profile = profileRows[0] ?? null;
-  const existingContext = existingContextRows[0] ?? null;
+  const {
+    character,
+    snapshot,
+    profile,
+    skills,
+    cultivations,
+    battleContext: existingContext,
+    equipments,
+  } = context;
 
   const targetTemplateId =
     payload.targetTemplateId === undefined
@@ -2666,13 +2363,13 @@ export async function updateSimulatorBattleContext(
       : payload.targetTemplateId || null;
   const now = new Date();
 
-  const [targetTemplate, rules] = await Promise.all([
-    findBattleTargetTemplateById(targetTemplateId),
-    findAttributeRules({
-      school: profile?.school ?? character.school,
-      roleType: character.roleType,
-    }),
-  ]);
+  const { targetTemplate, rules, equipmentPlan } =
+    await resolveSimulatorBundleDependencies({
+      character,
+      profile,
+      battleContext: existingContext,
+      targetTemplateIdOverride: targetTemplateId,
+    });
   timer.mark('rules');
 
   const nextValue = {
@@ -2705,37 +2402,15 @@ export async function updateSimulatorBattleContext(
       selectedDungeonIds: payload.selectedDungeonIds,
     }),
   };
-  const nextBattleContext: SimulatorBattleContext = existingContext
-    ? {
-        ...existingContext,
-        ...nextValue,
-        updatedAt: now,
-      }
-    : {
-        snapshotId: snapshot.id,
-        ...nextValue,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-  if (existingContext) {
-    await db()
-      .update(snapshotBattleContext)
-      .set(nextValue)
-      .where(eq(snapshotBattleContext.snapshotId, snapshot.id));
-  } else {
-    await db()
-      .insert(snapshotBattleContext)
-      .values({
-        snapshotId: snapshot.id,
-        ...nextValue,
-      });
-  }
+  const nextBattleContext = await writeSnapshotBattleContext({
+    snapshotId: snapshot.id,
+    existingContext,
+    nextValue,
+    now,
+  });
   timer.mark('write_context');
 
-  const equipmentPlan = await loadCharacterEquipmentPlanState(character.id);
-
-  const bundle: SimulatorCharacterBundle = {
+  const bundle = buildSimulatorCharacterBundle({
     character,
     snapshot,
     profile,
@@ -2746,7 +2421,7 @@ export async function updateSimulatorBattleContext(
     rules,
     equipments,
     equipmentPlan,
-  };
+  });
 
   timer.finish({
     status: 'ok',
@@ -2754,8 +2429,7 @@ export async function updateSimulatorBattleContext(
     hasTargetTemplate: Boolean(targetTemplate),
   });
 
-  primeSimulatorCharacterBundleCache(userId, bundle);
-  return bundle;
+  return primeSimulatorCharacterBundleAndReturn(userId, bundle);
 }
 
 export async function listAdminSimulatorUserDiagnostics(params?: {
@@ -2916,69 +2590,29 @@ export async function updateSimulatorEquipment(
     });
     const normalizedEquipment = normalizeEquipmentPayload(payload.equipment);
 
-    const character = await findActiveCharacter(userId);
-    timer.mark('character');
-    if (!character) {
-      timer.finish({ status: 'missing_character' });
+    const context = await loadActiveSimulatorContext(userId, {
+      includeEquipments: false,
+    });
+    timer.mark('load_context');
+    if (!context) {
+      timer.finish({ status: 'missing_character_or_snapshot' });
       return null;
     }
-
-    const snapshot = await findCurrentSnapshot(character);
-    timer.mark('snapshot');
-    if (!snapshot) {
-      timer.finish({ status: 'missing_snapshot' });
-      return null;
-    }
-
-    const [existingContextRows, profileRows, skills, cultivations] =
-      await Promise.all([
-        db()
-          .select()
-          .from(snapshotBattleContext)
-          .where(eq(snapshotBattleContext.snapshotId, snapshot.id))
-          .limit(1),
-        db()
-          .select()
-          .from(characterProfile)
-          .where(eq(characterProfile.snapshotId, snapshot.id))
-          .limit(1),
-        db()
-          .select()
-          .from(characterSkill)
-          .where(eq(characterSkill.snapshotId, snapshot.id))
-          .orderBy(
-            desc(characterSkill.finalLevel),
-            asc(characterSkill.skillName)
-          ),
-        db()
-          .select()
-          .from(characterCultivation)
-          .where(eq(characterCultivation.snapshotId, snapshot.id))
-          .orderBy(asc(characterCultivation.cultivationType)),
-      ]);
-    timer.mark('snapshot_relations');
-
-    const existingContext = existingContextRows[0] ?? null;
-    const profile = profileRows[0] ?? null;
-    const [targetTemplateRows, rules, existingPlanNotes] = await Promise.all([
-      existingContext?.targetTemplateId
-        ? db()
-            .select()
-            .from(battleTargetTemplate)
-            .where(
-              eq(battleTargetTemplate.id, existingContext.targetTemplateId)
-            )
-            .limit(1)
-        : Promise.resolve([]),
-      findAttributeRules({
-        school: profile?.school ?? character.school,
-        roleType: character.roleType,
-      }),
-      loadCharacterEquipmentPlanState(character.id),
-    ]);
+    const {
+      character,
+      snapshot,
+      profile,
+      skills,
+      cultivations,
+      battleContext: existingContext,
+    } = context;
+    const { targetTemplate, rules, equipmentPlan: existingPlanNotes } =
+      await resolveSimulatorBundleDependencies({
+        character,
+        profile,
+        battleContext: existingContext,
+      });
     timer.mark('rules');
-
-    const targetTemplate = targetTemplateRows[0] ?? null;
 
     const nextPlan = syncEquipmentPlanNotes(
       sanitizeEquipmentPlanNotes({
@@ -2997,9 +2631,13 @@ export async function updateSimulatorEquipment(
     let nextEquipments: SimulatorEquipment[] = [];
 
     if (payload.createHistorySnapshot) {
+      const snapshotState = await loadSnapshotState({
+        characterId: character.id,
+        snapshotId: snapshot.id,
+      });
       await createEquipmentRollbackSnapshot({
         character,
-        snapshot,
+        snapshotState,
         name: payload.historySnapshotName,
         notes: payload.historySnapshotNotes,
         source: payload.historySnapshotSource,
@@ -3015,12 +2653,18 @@ export async function updateSimulatorEquipment(
 
     if (normalizedEquipment.length > 0) {
       const database = db();
+      const availableStarResonanceRules = await loadEnabledStarResonanceRules();
       const primaryEquipmentValues: Array<typeof equipmentItem.$inferInsert> =
         [];
       const primaryBuildValues: SimulatorEquipmentBuild[] = [];
       const primaryAttrValues: SimulatorEquipmentAttr[] = [];
       const primarySnapshotSlotValues: Array<
         typeof snapshotEquipmentSlot.$inferInsert
+      > = [];
+      const starStoneValues: Array<typeof starStoneItem.$inferInsert> = [];
+      const starStoneAttrValues: Array<typeof starStoneAttr.$inferInsert> = [];
+      const starResonanceValues: Array<
+        typeof characterStarResonance.$inferInsert
       > = [];
       const ornamentValues: Array<typeof ornamentItem.$inferInsert> = [];
       const ornamentAttrValues: Array<typeof ornamentSubAttr.$inferInsert> = [];
@@ -3234,6 +2878,21 @@ export async function updateSimulatorEquipment(
           slot,
           equipmentId,
         });
+        const starPersistence = buildStarStonePersistenceRows({
+          snapshotId: snapshot.id,
+          characterId: character.id,
+          equipmentId,
+          slot,
+          notesJson: buildMeta.notesJson,
+          availableRules: availableStarResonanceRules,
+          createdAt: now,
+          updatedAt: now,
+        });
+        starStoneValues.push(...starPersistence.starStoneRows);
+        starStoneAttrValues.push(...starPersistence.starStoneAttrRows);
+        if (starPersistence.resonanceRow) {
+          starResonanceValues.push(starPersistence.resonanceRow);
+        }
 
         nextEquipments.push(
           toGenericEquipmentRow({
@@ -3267,6 +2926,13 @@ export async function updateSimulatorEquipment(
         database,
         snapshotEquipmentSlot,
         primarySnapshotSlotValues
+      );
+      await insertValuesInChunks(database, starStoneItem, starStoneValues);
+      await insertValuesInChunks(database, starStoneAttr, starStoneAttrValues);
+      await insertValuesInChunks(
+        database,
+        characterStarResonance,
+        starResonanceValues
       );
       await insertValuesInChunks(database, ornamentItem, ornamentValues);
       await insertValuesInChunks(database, ornamentSubAttr, ornamentAttrValues);
@@ -3329,35 +2995,15 @@ export async function updateSimulatorEquipment(
       notesJson: nextNotesJson,
     };
 
-    const nextBattleContext: SimulatorBattleContext = existingContext
-      ? {
-          ...existingContext,
-          ...nextBattleContextValue,
-          updatedAt: now,
-        }
-      : {
-          snapshotId: snapshot.id,
-          ...nextBattleContextValue,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-    if (existingContext) {
-      await db()
-        .update(snapshotBattleContext)
-        .set(nextBattleContextValue)
-        .where(eq(snapshotBattleContext.snapshotId, snapshot.id));
-    } else {
-      await db()
-        .insert(snapshotBattleContext)
-        .values({
-          snapshotId: snapshot.id,
-          ...nextBattleContextValue,
-        });
-    }
+    const nextBattleContext = await writeSnapshotBattleContext({
+      snapshotId: snapshot.id,
+      existingContext,
+      nextValue: nextBattleContextValue,
+      now,
+    });
     timer.mark('write_context');
 
-    const bundle: SimulatorCharacterBundle = {
+    const bundle = buildSimulatorCharacterBundle({
       character,
       snapshot,
       profile,
@@ -3368,7 +3014,7 @@ export async function updateSimulatorEquipment(
       rules,
       equipments: nextEquipments,
       equipmentPlan: persistedPlan,
-    };
+    });
 
     timer.finish({
       status: 'ok',
@@ -3378,8 +3024,7 @@ export async function updateSimulatorEquipment(
       ruleCount: rules.length,
     });
 
-    primeSimulatorCharacterBundleCache(userId, bundle);
-    return bundle;
+    return primeSimulatorCharacterBundleAndReturn(userId, bundle);
   });
 }
 
@@ -3494,7 +3139,7 @@ export async function rollbackSimulatorEquipmentToLatestSnapshot(
       const equipmentPlan = await loadCharacterEquipmentPlanState(character.id);
       timer.mark('reload_bundle');
 
-      const bundle: SimulatorCharacterBundle = {
+      const bundle = buildSimulatorCharacterBundle({
         character,
         snapshot: {
           ...currentSnapshot,
@@ -3510,17 +3155,16 @@ export async function rollbackSimulatorEquipmentToLatestSnapshot(
         rules,
         equipments: restoredState.equipments,
         equipmentPlan,
-      };
-
-      clearSimulatorCharacterBundleCache(userId, character.id);
-      primeSimulatorCharacterBundleCache(userId, bundle);
+      });
 
       timer.finish({
         status: 'ok',
         equipmentCount: bundle.equipments.length,
       });
 
-      return bundle;
+      return primeSimulatorCharacterBundleAndReturn(userId, bundle, {
+        clearCharacterId: character.id,
+      });
     }
   );
 }

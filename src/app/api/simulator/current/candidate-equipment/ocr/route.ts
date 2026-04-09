@@ -3,7 +3,7 @@ import {
   createSimulatorOcrJob,
   finalizeSimulatorEquipmentOcrJob,
   markSimulatorOcrJobFailed,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 import {
   recognizeSimulatorEquipmentFromImage,

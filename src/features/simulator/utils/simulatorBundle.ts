@@ -5,11 +5,11 @@ import {
 } from '@/features/simulator/store/gameRuntimeSeeds';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
-  AccountData,
   BaseAttributes,
   CharacterStatMap,
   CombatStats,
   Cultivation,
+  CurrentCharacter,
   Equipment,
   EquipmentEffectModifier,
   EquipmentSet,
@@ -26,7 +26,7 @@ import {
   normalizeSimulatorEquipmentType,
 } from '@/shared/lib/simulator-equipment';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 const FALLBACK_FACTION: Faction = '龙宫';
 type NumericStatKey = Exclude<keyof (CombatStats & BaseAttributes), 'faction'>;
@@ -236,6 +236,85 @@ function toEffectModifiers(
   }
 
   return items.length > 0 ? items : undefined;
+}
+
+function toStarPositionConfig(value: unknown): Equipment['starPositionConfig'] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id =
+    typeof value.id === 'string' && value.id.trim().length > 0
+      ? value.id.trim()
+      : '';
+  const label =
+    typeof value.label === 'string' && value.label.trim().length > 0
+      ? value.label.trim()
+      : '';
+  const attrType =
+    typeof value.attrType === 'string' && value.attrType.trim().length > 0
+      ? value.attrType.trim()
+      : '';
+  const attrValue = toOptionalNumber(value.attrValue);
+
+  if (!id || !label || !attrType || attrValue === undefined) {
+    return undefined;
+  }
+
+  return {
+    id,
+    label,
+    attrType,
+    attrValue,
+    starType:
+      typeof value.starType === 'string' ? value.starType.trim() : undefined,
+    color: typeof value.color === 'string' ? value.color.trim() : undefined,
+    yinYangState:
+      typeof value.yinYangState === 'string'
+        ? value.yinYangState.trim()
+        : undefined,
+  };
+}
+
+function toStarAlignmentConfig(value: unknown): Equipment['starAlignmentConfig'] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const id =
+    typeof value.id === 'string' && value.id.trim().length > 0
+      ? value.id.trim()
+      : '';
+  const label =
+    typeof value.label === 'string' && value.label.trim().length > 0
+      ? value.label.trim()
+      : '';
+  const attrType =
+    typeof value.attrType === 'string' && value.attrType.trim().length > 0
+      ? value.attrType.trim()
+      : '';
+  const attrValue = toOptionalNumber(value.attrValue);
+
+  if (!id || !label || !attrType || attrValue === undefined) {
+    return undefined;
+  }
+
+  return {
+    id,
+    label,
+    attrType,
+    attrValue,
+    comboName:
+      typeof value.comboName === 'string' && value.comboName.trim().length > 0
+        ? value.comboName.trim()
+        : undefined,
+    colors: Array.isArray(value.colors)
+      ? value.colors
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : undefined,
+  };
 }
 
 function toStatRecord(value: unknown): CharacterStatMap {
@@ -525,10 +604,12 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
         typeof notesMeta.starPosition === 'string'
           ? notesMeta.starPosition
           : undefined,
+      starPositionConfig: toStarPositionConfig(notesMeta.starPositionConfig),
       starAlignment:
         typeof notesMeta.starAlignment === 'string'
           ? notesMeta.starAlignment
           : undefined,
+      starAlignmentConfig: toStarAlignmentConfig(notesMeta.starAlignmentConfig),
       factionRequirement:
         typeof notesMeta.factionRequirement === 'string'
           ? notesMeta.factionRequirement
@@ -624,8 +705,10 @@ function toPersistedEquipment(
       typeof value.luckyHoles === 'string' ? value.luckyHoles : undefined,
     starPosition:
       typeof value.starPosition === 'string' ? value.starPosition : undefined,
+    starPositionConfig: toStarPositionConfig(value.starPositionConfig),
     starAlignment:
       typeof value.starAlignment === 'string' ? value.starAlignment : undefined,
+    starAlignmentConfig: toStarAlignmentConfig(value.starAlignmentConfig),
     factionRequirement:
       typeof value.factionRequirement === 'string'
         ? value.factionRequirement
@@ -719,6 +802,59 @@ type ApplySimulatorBundleOptions = {
   preserveWorkbenchState?: boolean;
 };
 
+function buildCurrentCharacter(
+  bundle: SimulatorCharacterBundle,
+  baseAttributes: BaseAttributes
+): CurrentCharacter {
+  return {
+    id: bundle.character.id,
+    name: bundle.character.name,
+    school: baseAttributes.faction,
+    level: baseAttributes.level,
+  };
+}
+
+function buildSyncedCloudState(params: {
+  currentCharacter: CurrentCharacter;
+  baseAttributes: BaseAttributes;
+  combatStats: CombatStats;
+  equipment: Equipment[];
+  equipmentSets: EquipmentSet[];
+  activeSetIndex: number;
+  skills: Skill[];
+  cultivation: Cultivation;
+  combatTarget: GameState['combatTarget'];
+  selfFormation: string;
+  selfElement: GameState['playerSetup']['element'];
+}): SyncedCloudState {
+  const currentPlayerSetup = useGameStore.getState().playerSetup;
+
+  return {
+    currentCharacter: params.currentCharacter,
+    baseAttributes: params.baseAttributes,
+    combatStats: params.combatStats,
+    equipment: params.equipment,
+    equipmentSets: params.equipmentSets,
+    activeSetIndex: params.activeSetIndex,
+    skills: params.skills,
+    cultivation: params.cultivation,
+    treasure: null,
+    combatTarget: params.combatTarget,
+    formation: params.selfFormation,
+    playerSetup: {
+      ...currentPlayerSetup,
+      level: params.baseAttributes.level,
+      faction: params.baseAttributes.faction,
+      baseStats: params.baseAttributes,
+      equipment: params.equipment,
+      skills: params.skills,
+      cultivation: params.cultivation,
+      element: params.selfElement,
+      formation: params.selfFormation,
+    },
+  };
+}
+
 export function applySimulatorBundleToStore(
   bundle: SimulatorCharacterBundle,
   options: ApplySimulatorBundleOptions = {}
@@ -747,10 +883,9 @@ export function applySimulatorBundleToStore(
   const persistedSelectedDungeonIds = toPersistedSelectedDungeonIds(
     battleNotes.selectedDungeonIds
   );
-
-  const account: AccountData = {
-    id: bundle.character.id,
-    name: bundle.character.name,
+  const currentCharacter = buildCurrentCharacter(bundle, baseAttributes);
+  const syncedCloudState = buildSyncedCloudState({
+    currentCharacter,
     baseAttributes,
     combatStats,
     equipment,
@@ -758,34 +893,10 @@ export function applySimulatorBundleToStore(
     activeSetIndex,
     skills,
     cultivation,
-    treasure: null,
-  };
-
-  const syncedCloudState: SyncedCloudState = {
-    accounts: [account],
-    activeAccountId: account.id,
-    baseAttributes,
-    combatStats,
-    equipment,
-    equipmentSets,
-    activeSetIndex,
-    skills,
-    cultivation,
-    treasure: null,
     combatTarget,
-    formation: selfFormation,
-    playerSetup: {
-      ...useGameStore.getState().playerSetup,
-      level: baseAttributes.level,
-      faction: baseAttributes.faction,
-      baseStats: baseAttributes,
-      equipment,
-      skills,
-      cultivation,
-      element: selfElement,
-      formation: selfFormation,
-    },
-  };
+    selfFormation,
+    selfElement,
+  });
 
   useGameStore.setState((state: GameState) => ({
     ...state,

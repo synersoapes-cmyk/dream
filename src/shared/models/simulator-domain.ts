@@ -3,7 +3,7 @@ import {
   normalizeSimulatorEquipmentSlot,
   type SimulatorEquipmentSlot,
 } from '@/shared/lib/simulator-equipment';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 type JsonObject = Record<string, unknown>;
 type RuneStoneView = {

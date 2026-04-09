@@ -2,7 +2,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { SimulatorInventoryAdminPanel } from '@/shared/blocks/simulator/inventory-admin-panel';
-import { listAdminSimulatorInventoryEntries } from '@/shared/models/simulator';
+import { listAdminSimulatorInventoryEntries } from '@/shared/models/simulator-admin';
 
 import {
   getSimulatorAdminCrumbs,

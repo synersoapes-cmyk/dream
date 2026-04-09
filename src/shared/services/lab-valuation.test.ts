@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { DamageRuleSet } from '@/shared/models/damage-rules';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 import { calculateLabValuationFromRuleSet } from '@/shared/services/lab-valuation';
 
 const attributeConversionSeeds: Array<{

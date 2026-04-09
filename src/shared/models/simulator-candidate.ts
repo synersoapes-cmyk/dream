@@ -544,7 +544,7 @@ export async function updateAdminSimulatorCandidateEquipment(params: {
             reviewNote:
               params.status === 'pending'
                 ? ''
-                : `候选装备审核状态同步为 ${params.status}`,
+                : `候选装备状态同步为 ${params.status}`,
           })
           .where(eq(ocrDraftItem.id, existing.ocrDraftItemId));
       }

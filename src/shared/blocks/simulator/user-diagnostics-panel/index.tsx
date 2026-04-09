@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
-import type { AdminSimulatorUserDiagnosticItem } from '@/shared/models/simulator';
+import type { AdminSimulatorUserDiagnosticItem } from '@/shared/models/simulator-types';
 
 type Props = {
   initialItems: AdminSimulatorUserDiagnosticItem[];

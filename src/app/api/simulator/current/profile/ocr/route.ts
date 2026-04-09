@@ -2,7 +2,7 @@ import { respData, respErr } from '@/shared/lib/resp';
 import {
   getSimulatorCharacterBundle,
   updateSimulatorProfile,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 import {
   mergeRecognizedProfileWithBundle,

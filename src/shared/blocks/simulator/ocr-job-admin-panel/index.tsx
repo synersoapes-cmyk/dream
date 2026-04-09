@@ -47,8 +47,44 @@ const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   pending: '排队中',
   success: '成功',
   failed: '失败',
-  reviewing: '待审核',
+  reviewing: '审计中',
 };
+
+const JOB_RESULT_STATUS_LABELS: Record<string, string> = {
+  pending: '排队中',
+  success: '成功',
+  failed: '失败',
+  reviewing: '审计中',
+};
+
+const DRAFT_STATUS_LABELS: Record<string, string> = {
+  pending: '待确认',
+  approved: '已同步候选',
+  rejected: '已驳回',
+  edited: '已编辑',
+};
+
+const CANDIDATE_STATUS_LABELS: Record<string, string> = {
+  pending: '待确认',
+  confirmed: '已确认',
+  replaced: '已替换',
+};
+
+function formatJobStatusLabel(status: string) {
+  return JOB_RESULT_STATUS_LABELS[status] ?? status;
+}
+
+function formatDraftStatusLabel(status: string) {
+  return DRAFT_STATUS_LABELS[status] ?? status;
+}
+
+function formatCandidateStatusLabel(status: string | null) {
+  if (!status) {
+    return null;
+  }
+
+  return CANDIDATE_STATUS_LABELS[status] ?? status;
+}
 
 function formatTimestamp(timestamp: number) {
   return formatDateTimeValue(timestamp, {
@@ -83,7 +119,11 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
         cache: 'no-store',
       });
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取 OCR 任务失败');
       }
 
@@ -102,26 +142,26 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
       <CardHeader>
         <CardTitle>OCR 任务链路</CardTitle>
         <CardDescription>
-          查看上传识图任务的成功率、失败原因、原图地址以及草稿分发情况。
+          查看上传识图任务的成功率、失败原因、原图地址，以及草稿留痕和候选同步情况。
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2 rounded-lg border p-3">
-            {(['all', 'pending', 'success', 'failed', 'reviewing'] as const).map(
-              (status) => (
-                <Button
-                  key={status}
-                  type="button"
-                  variant={activeStatus === status ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => void handleLoad(status)}
-                  disabled={isLoading}
-                >
-                  {JOB_STATUS_LABELS[status]}
-                </Button>
-              )
-            )}
+            {(
+              ['all', 'pending', 'success', 'failed', 'reviewing'] as const
+            ).map((status) => (
+              <Button
+                key={status}
+                type="button"
+                variant={activeStatus === status ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => void handleLoad(status)}
+                disabled={isLoading}
+              >
+                {JOB_STATUS_LABELS[status]}
+              </Button>
+            ))}
           </div>
 
           {items.length === 0 ? (
@@ -144,7 +184,9 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
                   <div className="truncate text-sm font-semibold">
                     {item.characterName} · {item.sceneType}
                   </div>
-                  <Badge variant="outline">{item.status}</Badge>
+                  <Badge variant="outline">
+                    {formatJobStatusLabel(item.status)}
+                  </Badge>
                 </div>
                 <div className="text-muted-foreground mt-2 text-xs">
                   {item.userName} · {item.userEmail}
@@ -166,7 +208,7 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
               <div className="rounded-lg border p-4">
                 <div className="text-sm font-medium">任务信息</div>
                 <div className="text-muted-foreground mt-3 space-y-1 text-sm">
-                  <div>状态：{selectedItem.status}</div>
+                  <div>状态：{formatJobStatusLabel(selectedItem.status)}</div>
                   <div>场景：{selectedItem.sceneType}</div>
                   <div>用户：{selectedItem.userName}</div>
                   <div>角色：{selectedItem.characterName}</div>
@@ -175,14 +217,15 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
                 </div>
               </div>
               <div className="rounded-lg border p-4">
-                <div className="text-sm font-medium">任务结果</div>
+                <div className="text-sm font-medium">草稿与同步结果</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {selectedItem.draftItems.length > 0 ? (
                     selectedItem.draftItems.map((draft) => (
                       <Badge key={draft.id} variant="outline">
-                        {draft.itemType} / {draft.reviewStatus}
-                        {draft.candidateStatus
-                          ? ` / 候选:${draft.candidateStatus}`
+                        {draft.itemType} /{' '}
+                        {formatDraftStatusLabel(draft.reviewStatus)}
+                        {formatCandidateStatusLabel(draft.candidateStatus)
+                          ? ` / 候选:${formatCandidateStatusLabel(draft.candidateStatus)}`
                           : ''}
                       </Badge>
                     ))
@@ -193,7 +236,7 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
                   )}
                 </div>
                 {selectedItem.errorMessage ? (
-                  <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <div className="border-destructive/30 bg-destructive/5 text-destructive mt-3 rounded-lg border px-3 py-2 text-sm">
                     {selectedItem.errorMessage}
                   </div>
                 ) : null}
@@ -226,7 +269,7 @@ export function SimulatorOcrJobAdminPanel({ initialItems }: Props) {
             </div>
 
             {error ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border px-3 py-2 text-sm">
                 {error}
               </div>
             ) : null}

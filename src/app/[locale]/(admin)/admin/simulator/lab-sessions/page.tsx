@@ -2,7 +2,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { SimulatorLabSessionAdminPanel } from '@/shared/blocks/simulator/lab-session-admin-panel';
-import { listAdminSimulatorLabSessions } from '@/shared/models/simulator';
+import { listAdminSimulatorLabSessions } from '@/shared/models/simulator-admin';
 
 import {
   getSimulatorAdminCrumbs,

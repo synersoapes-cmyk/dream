@@ -18,8 +18,7 @@ import { AttributeDisplay } from './AttributeDisplay';
 import { UploadPopover } from './UploadPopover';
 
 export function CharacterPanel() {
-  const accounts = useGameStore((state) => state.accounts);
-  const activeAccountId = useGameStore((state) => state.activeAccountId);
+  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
   const updateBaseAttribute = useGameStore(
@@ -45,8 +44,6 @@ export function CharacterPanel() {
   const [saveCultivationError, setSaveCultivationError] = useState<
     string | null
   >(null);
-  const activeAccount =
-    accounts.find((account) => account.id === activeAccountId) || null;
 
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);
@@ -156,9 +153,9 @@ export function CharacterPanel() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {activeAccount && (
+          {currentCharacter && (
             <span className="rounded-lg border border-yellow-700/30 bg-slate-900/60 px-4 py-1.5 text-sm text-yellow-100">
-              角色：{activeAccount.name}
+              角色：{currentCharacter.name}
             </span>
           )}
           <span className="rounded-lg border border-yellow-700/40 bg-yellow-900/40 px-4 py-1.5 text-sm text-yellow-400/90">

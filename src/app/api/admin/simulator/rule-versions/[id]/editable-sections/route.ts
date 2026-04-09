@@ -6,7 +6,7 @@ import { hasAllPermissions } from '@/shared/services/rbac';
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getUserInfo();
@@ -29,6 +29,9 @@ export async function PATCH(
       operatorId: user.id,
       modifiers: Array.isArray(body?.modifiers) ? body.modifiers : [],
       skillBonuses: Array.isArray(body?.skillBonuses) ? body.skillBonuses : [],
+      equipmentExtensionConfigs: Array.isArray(body?.equipmentExtensionConfigs)
+        ? body.equipmentExtensionConfigs
+        : [],
     });
 
     return respData(detail);
@@ -37,7 +40,7 @@ export async function PATCH(
     return respErr(
       error instanceof Error
         ? error.message
-        : 'failed to update damage rule editable sections',
+        : 'failed to update damage rule editable sections'
     );
   }
 }

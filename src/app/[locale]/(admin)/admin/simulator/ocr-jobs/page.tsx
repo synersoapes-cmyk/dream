@@ -2,7 +2,7 @@ import { setRequestLocale } from 'next-intl/server';
 
 import { Header, Main, MainHeader } from '@/shared/blocks/dashboard';
 import { SimulatorOcrJobAdminPanel } from '@/shared/blocks/simulator/ocr-job-admin-panel';
-import { listAdminSimulatorOcrJobs } from '@/shared/models/simulator';
+import { listAdminSimulatorOcrJobs } from '@/shared/models/simulator-admin';
 
 import {
   getSimulatorAdminCrumbs,

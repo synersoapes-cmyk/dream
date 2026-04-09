@@ -1,6 +1,6 @@
 import { PERMISSIONS } from '@/core/rbac';
 import { respData, respErr } from '@/shared/lib/resp';
-import { listAdminSimulatorInventoryEntries } from '@/shared/models/simulator';
+import { listAdminSimulatorInventoryEntries } from '@/shared/models/simulator-admin';
 import { getUserInfo } from '@/shared/models/user';
 import { hasAllPermissions } from '@/shared/services/rbac';
 

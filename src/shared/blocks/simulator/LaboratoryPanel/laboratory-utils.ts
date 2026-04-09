@@ -187,6 +187,17 @@ export function cloneEquipmentForEditor(equipment: Equipment): Equipment {
     effectModifiers: equipment.effectModifiers?.map((modifier) => ({
       ...modifier,
     })),
+    starPositionConfig: equipment.starPositionConfig
+      ? { ...equipment.starPositionConfig }
+      : undefined,
+    starAlignmentConfig: equipment.starAlignmentConfig
+      ? {
+          ...equipment.starAlignmentConfig,
+          colors: equipment.starAlignmentConfig.colors
+            ? [...equipment.starAlignmentConfig.colors]
+            : undefined,
+        }
+      : undefined,
     baseStats: { ...equipment.baseStats },
     stats: { ...equipment.stats },
     runeStoneSets: cloneRuneStoneSets(equipment),

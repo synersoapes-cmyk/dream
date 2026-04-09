@@ -377,6 +377,116 @@ export const ornamentSetEffect = table(
   ]
 );
 
+export const starStoneItem = table(
+  'star_stone_item',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    equipmentId: text('equipment_id').references(() => equipmentItem.id, {
+      onDelete: 'cascade',
+    }),
+    slot: text('slot').notNull().default(''),
+    name: text('name').notNull().default(''),
+    starType: text('star_type').notNull().default(''),
+    color: text('color').notNull().default(''),
+    yinYangState: text('yin_yang_state').notNull().default('yang'),
+    level: integer('level').notNull().default(0),
+    notesJson: text('notes_json').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_star_stone_item_character_slot').on(
+      table.characterId,
+      table.slot,
+      table.updatedAt
+    ),
+    index('idx_star_stone_item_equipment').on(table.equipmentId, table.updatedAt),
+  ]
+);
+
+export const starStoneAttr = table('star_stone_attr', {
+  id: text('id').primaryKey(),
+  starStoneId: text('star_stone_id')
+    .notNull()
+    .references(() => starStoneItem.id, { onDelete: 'cascade' }),
+  attrType: text('attr_type').notNull(),
+  attrValue: real('attr_value').notNull().default(0),
+  displayOrder: integer('display_order').notNull().default(0),
+});
+
+export const starResonanceRule = table(
+  'star_resonance_rule',
+  {
+    id: text('id').primaryKey(),
+    scope: text('scope').notNull().default('system'),
+    slot: text('slot').notNull(),
+    comboName: text('combo_name').notNull().default(''),
+    requiredColorsJson: text('required_colors_json').notNull().default('[]'),
+    bonusAttrType: text('bonus_attr_type').notNull().default(''),
+    bonusAttrValue: real('bonus_attr_value').notNull().default(0),
+    globalBonusJson: text('global_bonus_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    notes: text('notes').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_star_resonance_rule_slot_combo').on(
+      table.slot,
+      table.comboName
+    ),
+    index('idx_star_resonance_rule_enabled_sort').on(
+      table.enabled,
+      table.sort,
+      table.slot
+    ),
+  ]
+);
+
+export const characterStarResonance = table(
+  'character_star_resonance',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    ruleId: text('rule_id').references(() => starResonanceRule.id, {
+      onDelete: 'set null',
+    }),
+    matched: integer('matched', { mode: 'boolean' }).notNull().default(false),
+    bonusJson: text('bonus_json').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('uidx_character_star_resonance_snapshot_slot').on(
+      table.snapshotId,
+      table.slot
+    ),
+    index('idx_character_star_resonance_rule').on(table.ruleId, table.matched),
+  ]
+);
+
 export const jadeItem = table(
   'jade_item',
   {

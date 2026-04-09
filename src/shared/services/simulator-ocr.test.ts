@@ -11,7 +11,7 @@ import {
 import type {
   SimulatorCharacterBundle,
   SimulatorOcrDictionary,
-} from '@/shared/models/simulator';
+} from '@/shared/models/simulator-types';
 
 function createBundle(): SimulatorCharacterBundle {
   return {

@@ -15,6 +15,39 @@ import { getUuid } from '@/shared/lib/hash';
 export type DamageRuleVersion = typeof ruleVersion.$inferSelect;
 
 type JsonObject = Record<string, unknown>;
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+
+const EQUIPMENT_EXTENSION_MODIFIER_DOMAIN = 'equipment_extension';
+
+const EQUIPMENT_EXTENSION_CONFIG_SPECS = [
+  {
+    key: 'star_resonance_rules',
+    label: '星相互合规则',
+    description: '维护单件命中条件、部位组合和 6 件全局加成。',
+    defaultValue: [] as JsonValue,
+  },
+  {
+    key: 'ornament_set_rules',
+    label: '灵饰套装档位规则',
+    description: '维护套装阈值、档位和每档位对应效果。',
+    defaultValue: [] as JsonValue,
+  },
+  {
+    key: 'jade_attribute_pool',
+    label: '玉魄属性池',
+    description: '维护各部位可出现的玉魄属性池和上下限。',
+    defaultValue: [] as JsonValue,
+  },
+  {
+    key: 'jade_percent_semantics',
+    label: '玉魄百分比语义',
+    description: '维护百分比属性在公式中的计算时机和口径。',
+    defaultValue: [] as JsonValue,
+  },
+] as const;
+
+export type DamageRuleEquipmentExtensionConfigKey =
+  (typeof EQUIPMENT_EXTENSION_CONFIG_SPECS)[number]['key'];
 
 type RuleAttributeRow = typeof ruleAttribute.$inferSelect;
 type RuleSkillFormulaRow = typeof ruleSkillFormula.$inferSelect;
@@ -50,6 +83,16 @@ export type DamageSkillBonusRule = Omit<
   limitPolicy: JsonObject;
 };
 
+export type DamageRuleEquipmentExtensionConfig = {
+  id: string;
+  configKey: DamageRuleEquipmentExtensionConfigKey;
+  label: string;
+  description: string;
+  value: JsonValue;
+  enabled: boolean;
+  sort: number;
+};
+
 export type DamageRuleSet = {
   version: DamageRuleVersion;
   attributeConversions: DamageAttributeConversionRule[];
@@ -67,6 +110,7 @@ export type DamageRuleVersionListItem = DamageRuleVersion & {
 
 export type DamageRuleVersionDetail = DamageRuleSet & {
   publishLogs: Array<typeof rulePublishLog.$inferSelect>;
+  equipmentExtensionConfigs: DamageRuleEquipmentExtensionConfig[];
 };
 
 type EditableModifierInput = {
@@ -96,6 +140,14 @@ type EditableSkillBonusInput = {
   limitPolicy?: JsonObject;
   sort?: number;
   enabled?: boolean;
+};
+
+type EditableEquipmentExtensionConfigInput = {
+  id?: string;
+  configKey: DamageRuleEquipmentExtensionConfigKey;
+  value?: JsonValue;
+  enabled?: boolean;
+  sort?: number;
 };
 
 function getErrorMessages(error: unknown): string[] {
@@ -131,7 +183,7 @@ function isTransientD1Error(error: unknown): boolean {
 async function withTransientD1Retry<T>(
   label: string,
   operation: () => Promise<T>,
-  maxAttempts = 3,
+  maxAttempts = 3
 ): Promise<T> {
   let lastError: unknown;
 
@@ -147,7 +199,7 @@ async function withTransientD1Retry<T>(
 
       console.warn(
         `[damage-rules] transient D1 error during ${label}, retrying (${attempt}/${maxAttempts})`,
-        error,
+        error
       );
 
       await new Promise((resolve) => setTimeout(resolve, attempt * 150));
@@ -159,7 +211,10 @@ async function withTransientD1Retry<T>(
     : new Error(`Unknown damage rule D1 error during ${label}`);
 }
 
-function parseJsonObject<T extends JsonObject>(value: string | null | undefined, fallback: T): T {
+function parseJsonObject<T extends JsonObject>(
+  value: string | null | undefined,
+  fallback: T
+): T {
   if (!value) {
     return fallback;
   }
@@ -170,6 +225,72 @@ function parseJsonObject<T extends JsonObject>(value: string | null | undefined,
   } catch {
     return fallback;
   }
+}
+
+function parseJsonValue(
+  value: string | null | undefined,
+  fallback: JsonValue
+): JsonValue {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value) as JsonValue;
+  } catch {
+    return fallback;
+  }
+}
+
+function isEquipmentExtensionModifierRow(row: RuleDamageModifierRow) {
+  return row.modifierDomain === EQUIPMENT_EXTENSION_MODIFIER_DOMAIN;
+}
+
+function buildEquipmentExtensionConfigs(
+  rows: RuleDamageModifierRow[]
+): DamageRuleEquipmentExtensionConfig[] {
+  const rowByKey = new Map(
+    rows
+      .filter(isEquipmentExtensionModifierRow)
+      .map((row) => [row.modifierKey, row] as const)
+  );
+
+  return EQUIPMENT_EXTENSION_CONFIG_SPECS.map((spec, index) => {
+    const row = rowByKey.get(spec.key);
+
+    return {
+      id: row?.id ?? `${spec.key}_virtual`,
+      configKey: spec.key,
+      label: spec.label,
+      description: spec.description,
+      value: parseJsonValue(row?.valueJson, spec.defaultValue),
+      enabled: row?.enabled ?? true,
+      sort: row?.sort ?? index,
+    };
+  });
+}
+
+function serializeEquipmentExtensionConfigs(
+  versionId: string,
+  now: Date,
+  configs: EditableEquipmentExtensionConfigInput[]
+) {
+  return configs.map((config, index) => ({
+    id: config.id || getUuid(),
+    versionId,
+    modifierDomain: EQUIPMENT_EXTENSION_MODIFIER_DOMAIN,
+    modifierKey: config.configKey,
+    modifierType: 'config_json',
+    sourceKey: '',
+    targetKey: '',
+    value: 0,
+    valueJson: JSON.stringify(config.value ?? []),
+    conditionJson: '{}',
+    sort: config.sort ?? index,
+    enabled: config.enabled ?? true,
+    createdAt: now,
+    updatedAt: now,
+  }));
 }
 
 async function ensureDamageRuleDbReady() {
@@ -210,8 +331,8 @@ export async function getDamageRuleVersion(params?: {
         and(
           eq(ruleVersion.ruleDomain, 'damage'),
           eq(ruleVersion.status, 'published'),
-          eq(ruleVersion.isActive, true),
-        ),
+          eq(ruleVersion.isActive, true)
+        )
       )
       .orderBy(asc(ruleVersion.versionCode))
       .limit(1);
@@ -230,45 +351,56 @@ export async function getDamageRuleSet(params?: {
       return null;
     }
 
-    const [attributeRows, skillFormulaRows, modifierRows, bonusRows] = await Promise.all([
-      db()
-        .select()
-        .from(ruleAttribute)
-        .where(
-          and(
-            eq(ruleAttribute.versionId, version.id),
-            eq(ruleAttribute.enabled, true),
+    const [attributeRows, skillFormulaRows, modifierRows, bonusRows] =
+      await Promise.all([
+        db()
+          .select()
+          .from(ruleAttribute)
+          .where(
+            and(
+              eq(ruleAttribute.versionId, version.id),
+              eq(ruleAttribute.enabled, true)
+            )
+          )
+          .orderBy(asc(ruleAttribute.sort), asc(ruleAttribute.sourceAttr)),
+        db()
+          .select()
+          .from(ruleSkillFormula)
+          .where(
+            and(
+              eq(ruleSkillFormula.versionId, version.id),
+              eq(ruleSkillFormula.enabled, true)
+            )
+          )
+          .orderBy(asc(ruleSkillFormula.sort), asc(ruleSkillFormula.skillCode)),
+        db()
+          .select()
+          .from(ruleDamageModifier)
+          .where(
+            and(
+              eq(ruleDamageModifier.versionId, version.id),
+              eq(ruleDamageModifier.enabled, true)
+            )
+          )
+          .orderBy(
+            asc(ruleDamageModifier.sort),
+            asc(ruleDamageModifier.modifierDomain)
           ),
-        )
-        .orderBy(asc(ruleAttribute.sort), asc(ruleAttribute.sourceAttr)),
-      db()
-        .select()
-        .from(ruleSkillFormula)
-        .where(
-          and(
-            eq(ruleSkillFormula.versionId, version.id),
-            eq(ruleSkillFormula.enabled, true),
-          ),
-        )
-        .orderBy(asc(ruleSkillFormula.sort), asc(ruleSkillFormula.skillCode)),
-      db()
-        .select()
-        .from(ruleDamageModifier)
-        .where(
-          and(
-            eq(ruleDamageModifier.versionId, version.id),
-            eq(ruleDamageModifier.enabled, true),
-          ),
-        )
-        .orderBy(asc(ruleDamageModifier.sort), asc(ruleDamageModifier.modifierDomain)),
-      db()
-        .select()
-        .from(ruleSkillBonus)
-        .where(
-          and(eq(ruleSkillBonus.versionId, version.id), eq(ruleSkillBonus.enabled, true)),
-        )
-        .orderBy(asc(ruleSkillBonus.sort), asc(ruleSkillBonus.ruleCode)),
-    ]);
+        db()
+          .select()
+          .from(ruleSkillBonus)
+          .where(
+            and(
+              eq(ruleSkillBonus.versionId, version.id),
+              eq(ruleSkillBonus.enabled, true)
+            )
+          )
+          .orderBy(asc(ruleSkillBonus.sort), asc(ruleSkillBonus.ruleCode)),
+      ]);
+
+    const effectiveModifierRows = modifierRows.filter(
+      (row: RuleDamageModifierRow) => !isEquipmentExtensionModifierRow(row)
+    );
 
     return {
       version,
@@ -282,7 +414,7 @@ export async function getDamageRuleSet(params?: {
         extraFormula: parseJsonObject(row.extraFormulaJson, {}),
         condition: parseJsonObject(row.conditionJson, {}),
       })),
-      modifiers: modifierRows.map((row: RuleDamageModifierRow) => ({
+      modifiers: effectiveModifierRows.map((row: RuleDamageModifierRow) => ({
         ...row,
         valueLookup: parseJsonObject(row.valueJson, {}),
         condition: parseJsonObject(row.conditionJson, {}),
@@ -296,7 +428,9 @@ export async function getDamageRuleSet(params?: {
   });
 }
 
-export async function listDamageRuleVersions(): Promise<DamageRuleVersionListItem[]> {
+export async function listDamageRuleVersions(): Promise<
+  DamageRuleVersionListItem[]
+> {
   await ensureDamageRuleDbReady();
 
   const versions = await db()
@@ -310,12 +444,22 @@ export async function listDamageRuleVersions(): Promise<DamageRuleVersionListIte
     return [];
   }
 
-  const [attributeRows, skillFormulaRows, modifierRows, bonusRows] = await Promise.all([
-    db().select().from(ruleAttribute).where(eq(ruleAttribute.enabled, true)),
-    db().select().from(ruleSkillFormula).where(eq(ruleSkillFormula.enabled, true)),
-    db().select().from(ruleDamageModifier).where(eq(ruleDamageModifier.enabled, true)),
-    db().select().from(ruleSkillBonus).where(eq(ruleSkillBonus.enabled, true)),
-  ]);
+  const [attributeRows, skillFormulaRows, modifierRows, bonusRows] =
+    await Promise.all([
+      db().select().from(ruleAttribute).where(eq(ruleAttribute.enabled, true)),
+      db()
+        .select()
+        .from(ruleSkillFormula)
+        .where(eq(ruleSkillFormula.enabled, true)),
+      db()
+        .select()
+        .from(ruleDamageModifier)
+        .where(eq(ruleDamageModifier.enabled, true)),
+      db()
+        .select()
+        .from(ruleSkillBonus)
+        .where(eq(ruleSkillBonus.enabled, true)),
+    ]);
 
   const attributeCount = new Map<string, number>();
   const skillFormulaCount = new Map<string, number>();
@@ -323,13 +467,25 @@ export async function listDamageRuleVersions(): Promise<DamageRuleVersionListIte
   const bonusCount = new Map<string, number>();
 
   for (const row of attributeRows) {
-    attributeCount.set(row.versionId, (attributeCount.get(row.versionId) ?? 0) + 1);
+    attributeCount.set(
+      row.versionId,
+      (attributeCount.get(row.versionId) ?? 0) + 1
+    );
   }
   for (const row of skillFormulaRows) {
-    skillFormulaCount.set(row.versionId, (skillFormulaCount.get(row.versionId) ?? 0) + 1);
+    skillFormulaCount.set(
+      row.versionId,
+      (skillFormulaCount.get(row.versionId) ?? 0) + 1
+    );
   }
   for (const row of modifierRows) {
-    modifierCount.set(row.versionId, (modifierCount.get(row.versionId) ?? 0) + 1);
+    if (isEquipmentExtensionModifierRow(row)) {
+      continue;
+    }
+    modifierCount.set(
+      row.versionId,
+      (modifierCount.get(row.versionId) ?? 0) + 1
+    );
   }
   for (const row of bonusRows) {
     bonusCount.set(row.versionId, (bonusCount.get(row.versionId) ?? 0) + 1);
@@ -353,6 +509,20 @@ export async function getDamageRuleVersionDetail(params: {
     return null;
   }
 
+  const extensionRows = await db()
+    .select()
+    .from(ruleDamageModifier)
+    .where(
+      and(
+        eq(ruleDamageModifier.versionId, ruleSet.version.id),
+        eq(
+          ruleDamageModifier.modifierDomain,
+          EQUIPMENT_EXTENSION_MODIFIER_DOMAIN
+        )
+      )
+    )
+    .orderBy(asc(ruleDamageModifier.sort), asc(ruleDamageModifier.modifierKey));
+
   const publishLogs = await db()
     .select()
     .from(rulePublishLog)
@@ -362,6 +532,7 @@ export async function getDamageRuleVersionDetail(params: {
   return {
     ...ruleSet,
     publishLogs,
+    equipmentExtensionConfigs: buildEquipmentExtensionConfigs(extensionRows),
   };
 }
 
@@ -385,7 +556,9 @@ export async function publishDamageRuleVersion(params: {
       isActive: false,
       updatedAt: now,
     })
-    .where(and(eq(ruleVersion.ruleDomain, 'damage'), eq(ruleVersion.isActive, true)));
+    .where(
+      and(eq(ruleVersion.ruleDomain, 'damage'), eq(ruleVersion.isActive, true))
+    );
 
   await db()
     .update(ruleVersion)
@@ -398,21 +571,23 @@ export async function publishDamageRuleVersion(params: {
     })
     .where(eq(ruleVersion.id, version.id));
 
-  await db().insert(rulePublishLog).values({
-    id: getUuid(),
-    versionId: version.id,
-    action: 'publish',
-    operatorId: params.operatorId,
-    beforeSnapshotJson: '{}',
-    afterSnapshotJson: JSON.stringify({
-      status: 'published',
-      isActive: true,
-      publishedBy: params.operatorId,
-      publishedAt: now.toISOString(),
-    }),
-    notes: params.notes ?? '',
-    createdAt: now,
-  });
+  await db()
+    .insert(rulePublishLog)
+    .values({
+      id: getUuid(),
+      versionId: version.id,
+      action: 'publish',
+      operatorId: params.operatorId,
+      beforeSnapshotJson: '{}',
+      afterSnapshotJson: JSON.stringify({
+        status: 'published',
+        isActive: true,
+        publishedBy: params.operatorId,
+        publishedAt: now.toISOString(),
+      }),
+      notes: params.notes ?? '',
+      createdAt: now,
+    });
 
   return getDamageRuleVersionDetail({ versionId: version.id });
 }
@@ -423,7 +598,9 @@ export async function cloneDamageRuleVersion(params: {
 }) {
   await ensureDamageRuleDbReady();
 
-  const source = await getDamageRuleVersionDetail({ versionId: params.sourceVersionId });
+  const source = await getDamageRuleVersionDetail({
+    versionId: params.sourceVersionId,
+  });
   if (!source) {
     throw new Error('source damage rule version not found');
   }
@@ -432,116 +609,130 @@ export async function cloneDamageRuleVersion(params: {
   const nextVersionId = getUuid();
   const nextVersionCode = `${source.version.versionCode}_draft_${Date.now()}`;
 
-  await db().insert(ruleVersion).values({
-    id: nextVersionId,
-    ruleDomain: source.version.ruleDomain,
-    versionCode: nextVersionCode,
-    versionName: `${source.version.versionName} Draft`,
-    status: 'draft',
-    isActive: false,
-    sourceDocUrl: source.version.sourceDocUrl,
-    notes: `Cloned from ${source.version.versionCode}`,
-    createdBy: params.operatorId,
-    publishedBy: '',
-    publishedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await db()
+    .insert(ruleVersion)
+    .values({
+      id: nextVersionId,
+      ruleDomain: source.version.ruleDomain,
+      versionCode: nextVersionCode,
+      versionName: `${source.version.versionName} Draft`,
+      status: 'draft',
+      isActive: false,
+      sourceDocUrl: source.version.sourceDocUrl,
+      notes: `Cloned from ${source.version.versionCode}`,
+      createdBy: params.operatorId,
+      publishedBy: '',
+      publishedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
   if (source.attributeConversions.length > 0) {
-    await db().insert(ruleAttribute).values(
-      source.attributeConversions.map((item) => ({
-        id: getUuid(),
-        versionId: nextVersionId,
-        school: item.school,
-        roleType: item.roleType,
-        sourceAttr: item.sourceAttr,
-        targetAttr: item.targetAttr,
-        coefficient: item.coefficient,
-        valueType: item.valueType,
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        sort: item.sort,
-        enabled: item.enabled,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleAttribute)
+      .values(
+        source.attributeConversions.map((item) => ({
+          id: getUuid(),
+          versionId: nextVersionId,
+          school: item.school,
+          roleType: item.roleType,
+          sourceAttr: item.sourceAttr,
+          targetAttr: item.targetAttr,
+          coefficient: item.coefficient,
+          valueType: item.valueType,
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          sort: item.sort,
+          enabled: item.enabled,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
   }
 
   if (source.skillFormulas.length > 0) {
-    await db().insert(ruleSkillFormula).values(
-      source.skillFormulas.map((item) => ({
-        id: getUuid(),
-        versionId: nextVersionId,
-        school: item.school,
-        roleType: item.roleType,
-        skillCode: item.skillCode,
-        skillName: item.skillName,
-        formulaKey: item.formulaKey,
-        baseFormulaJson: JSON.stringify(item.baseFormula ?? {}),
-        extraFormulaJson: JSON.stringify(item.extraFormula ?? {}),
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        sort: item.sort,
-        enabled: item.enabled,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleSkillFormula)
+      .values(
+        source.skillFormulas.map((item) => ({
+          id: getUuid(),
+          versionId: nextVersionId,
+          school: item.school,
+          roleType: item.roleType,
+          skillCode: item.skillCode,
+          skillName: item.skillName,
+          formulaKey: item.formulaKey,
+          baseFormulaJson: JSON.stringify(item.baseFormula ?? {}),
+          extraFormulaJson: JSON.stringify(item.extraFormula ?? {}),
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          sort: item.sort,
+          enabled: item.enabled,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
   }
 
   if (source.modifiers.length > 0) {
-    await db().insert(ruleDamageModifier).values(
-      source.modifiers.map((item) => ({
-        id: getUuid(),
-        versionId: nextVersionId,
-        modifierDomain: item.modifierDomain,
-        modifierKey: item.modifierKey,
-        modifierType: item.modifierType,
-        sourceKey: item.sourceKey,
-        targetKey: item.targetKey,
-        value: item.value,
-        valueJson: JSON.stringify(item.valueLookup ?? {}),
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        sort: item.sort,
-        enabled: item.enabled,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleDamageModifier)
+      .values(
+        source.modifiers.map((item) => ({
+          id: getUuid(),
+          versionId: nextVersionId,
+          modifierDomain: item.modifierDomain,
+          modifierKey: item.modifierKey,
+          modifierType: item.modifierType,
+          sourceKey: item.sourceKey,
+          targetKey: item.targetKey,
+          value: item.value,
+          valueJson: JSON.stringify(item.valueLookup ?? {}),
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          sort: item.sort,
+          enabled: item.enabled,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
   }
 
   if (source.skillBonuses.length > 0) {
-    await db().insert(ruleSkillBonus).values(
-      source.skillBonuses.map((item) => ({
-        id: getUuid(),
-        versionId: nextVersionId,
-        bonusGroup: item.bonusGroup,
-        ruleCode: item.ruleCode,
-        skillCode: item.skillCode,
-        skillName: item.skillName,
-        bonusType: item.bonusType,
-        bonusValue: item.bonusValue,
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        conflictPolicy: item.conflictPolicy,
-        limitPolicyJson: JSON.stringify(item.limitPolicy ?? {}),
-        sort: item.sort,
-        enabled: item.enabled,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleSkillBonus)
+      .values(
+        source.skillBonuses.map((item) => ({
+          id: getUuid(),
+          versionId: nextVersionId,
+          bonusGroup: item.bonusGroup,
+          ruleCode: item.ruleCode,
+          skillCode: item.skillCode,
+          skillName: item.skillName,
+          bonusType: item.bonusType,
+          bonusValue: item.bonusValue,
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          conflictPolicy: item.conflictPolicy,
+          limitPolicyJson: JSON.stringify(item.limitPolicy ?? {}),
+          sort: item.sort,
+          enabled: item.enabled,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
   }
 
-  await db().insert(rulePublishLog).values({
-    id: getUuid(),
-    versionId: nextVersionId,
-    action: 'clone',
-    operatorId: params.operatorId,
-    beforeSnapshotJson: JSON.stringify({ sourceVersionId: source.version.id }),
-    afterSnapshotJson: JSON.stringify({ versionCode: nextVersionCode }),
-    notes: `Cloned from ${source.version.versionCode}`,
-    createdAt: now,
-  });
+  await db()
+    .insert(rulePublishLog)
+    .values({
+      id: getUuid(),
+      versionId: nextVersionId,
+      action: 'clone',
+      operatorId: params.operatorId,
+      beforeSnapshotJson: JSON.stringify({
+        sourceVersionId: source.version.id,
+      }),
+      afterSnapshotJson: JSON.stringify({ versionCode: nextVersionCode }),
+      notes: `Cloned from ${source.version.versionCode}`,
+      createdAt: now,
+    });
 
   return getDamageRuleVersionDetail({ versionId: nextVersionId });
 }
@@ -551,6 +742,7 @@ export async function updateDamageRuleVersionEditableSections(params: {
   operatorId: string;
   modifiers: EditableModifierInput[];
   skillBonuses: EditableSkillBonusInput[];
+  equipmentExtensionConfigs: EditableEquipmentExtensionConfigInput[];
 }) {
   await ensureDamageRuleDbReady();
 
@@ -561,50 +753,70 @@ export async function updateDamageRuleVersionEditableSections(params: {
 
   const now = new Date();
 
-  await db().delete(ruleDamageModifier).where(eq(ruleDamageModifier.versionId, version.id));
-  await db().delete(ruleSkillBonus).where(eq(ruleSkillBonus.versionId, version.id));
+  await db()
+    .delete(ruleDamageModifier)
+    .where(eq(ruleDamageModifier.versionId, version.id));
+  await db()
+    .delete(ruleSkillBonus)
+    .where(eq(ruleSkillBonus.versionId, version.id));
 
   if (params.modifiers.length > 0) {
-    await db().insert(ruleDamageModifier).values(
-      params.modifiers.map((item, index) => ({
-        id: item.id || getUuid(),
-        versionId: version.id,
-        modifierDomain: item.modifierDomain,
-        modifierKey: item.modifierKey,
-        modifierType: item.modifierType,
-        sourceKey: item.sourceKey ?? '',
-        targetKey: item.targetKey ?? '',
-        value: item.value ?? 0,
-        valueJson: JSON.stringify(item.valueLookup ?? {}),
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        sort: item.sort ?? index,
-        enabled: item.enabled ?? true,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleDamageModifier)
+      .values(
+        params.modifiers.map((item, index) => ({
+          id: item.id || getUuid(),
+          versionId: version.id,
+          modifierDomain: item.modifierDomain,
+          modifierKey: item.modifierKey,
+          modifierType: item.modifierType,
+          sourceKey: item.sourceKey ?? '',
+          targetKey: item.targetKey ?? '',
+          value: item.value ?? 0,
+          valueJson: JSON.stringify(item.valueLookup ?? {}),
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          sort: item.sort ?? index,
+          enabled: item.enabled ?? true,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
+  }
+
+  if (params.equipmentExtensionConfigs.length > 0) {
+    await db()
+      .insert(ruleDamageModifier)
+      .values(
+        serializeEquipmentExtensionConfigs(
+          version.id,
+          now,
+          params.equipmentExtensionConfigs
+        )
+      );
   }
 
   if (params.skillBonuses.length > 0) {
-    await db().insert(ruleSkillBonus).values(
-      params.skillBonuses.map((item, index) => ({
-        id: item.id || getUuid(),
-        versionId: version.id,
-        bonusGroup: item.bonusGroup,
-        ruleCode: item.ruleCode,
-        skillCode: item.skillCode,
-        skillName: item.skillName,
-        bonusType: item.bonusType ?? 'skill_level',
-        bonusValue: item.bonusValue ?? 0,
-        conditionJson: JSON.stringify(item.condition ?? {}),
-        conflictPolicy: item.conflictPolicy ?? 'take_max',
-        limitPolicyJson: JSON.stringify(item.limitPolicy ?? {}),
-        sort: item.sort ?? index,
-        enabled: item.enabled ?? true,
-        createdAt: now,
-        updatedAt: now,
-      })),
-    );
+    await db()
+      .insert(ruleSkillBonus)
+      .values(
+        params.skillBonuses.map((item, index) => ({
+          id: item.id || getUuid(),
+          versionId: version.id,
+          bonusGroup: item.bonusGroup,
+          ruleCode: item.ruleCode,
+          skillCode: item.skillCode,
+          skillName: item.skillName,
+          bonusType: item.bonusType ?? 'skill_level',
+          bonusValue: item.bonusValue ?? 0,
+          conditionJson: JSON.stringify(item.condition ?? {}),
+          conflictPolicy: item.conflictPolicy ?? 'take_max',
+          limitPolicyJson: JSON.stringify(item.limitPolicy ?? {}),
+          sort: item.sort ?? index,
+          enabled: item.enabled ?? true,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      );
   }
 
   await db()
@@ -614,19 +826,22 @@ export async function updateDamageRuleVersionEditableSections(params: {
     })
     .where(eq(ruleVersion.id, version.id));
 
-  await db().insert(rulePublishLog).values({
-    id: getUuid(),
-    versionId: version.id,
-    action: 'update',
-    operatorId: params.operatorId,
-    beforeSnapshotJson: '{}',
-    afterSnapshotJson: JSON.stringify({
-      modifierCount: params.modifiers.length,
-      skillBonusCount: params.skillBonuses.length,
-    }),
-    notes: 'Updated editable rule sections.',
-    createdAt: now,
-  });
+  await db()
+    .insert(rulePublishLog)
+    .values({
+      id: getUuid(),
+      versionId: version.id,
+      action: 'update',
+      operatorId: params.operatorId,
+      beforeSnapshotJson: '{}',
+      afterSnapshotJson: JSON.stringify({
+        modifierCount: params.modifiers.length,
+        skillBonusCount: params.skillBonuses.length,
+        equipmentExtensionConfigCount: params.equipmentExtensionConfigs.length,
+      }),
+      notes: 'Updated editable rule sections.',
+      createdAt: now,
+    });
 
   return getDamageRuleVersionDetail({ versionId: version.id });
 }

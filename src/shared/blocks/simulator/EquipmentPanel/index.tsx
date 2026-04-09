@@ -5,12 +5,17 @@ import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   Edit2,
   Gem,
+  Plus,
   Settings,
   Shield,
   Sparkles,
   Sword,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -107,6 +112,12 @@ export function EquipmentPanel() {
   const updateEquipmentSetName = useGameStore(
     (state) => state.updateEquipmentSetName
   );
+  const addEquipmentSet = useGameStore((state) => state.addEquipmentSet);
+  const duplicateEquipmentSet = useGameStore(
+    (state) => state.duplicateEquipmentSet
+  );
+  const removeEquipmentSet = useGameStore((state) => state.removeEquipmentSet);
+  const moveEquipmentSet = useGameStore((state) => state.moveEquipmentSet);
   const updateEquipment = useGameStore((state) => state.updateEquipment);
 
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(
@@ -348,10 +359,18 @@ export function EquipmentPanel() {
           <div className="mb-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-xs text-yellow-400/70">装备组合</div>
+              <button
+                type="button"
+                onClick={() => addEquipmentSet()}
+                className="inline-flex items-center gap-1 rounded-md border border-yellow-700/50 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-yellow-200 transition-colors hover:bg-slate-800"
+              >
+                <Plus className="h-3 w-3" />
+                新建方案
+              </button>
             </div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {[0, 1, 2, 3, 4].map((idx) => (
-                <div key={idx} className="group/set relative">
+            <div className="grid grid-cols-2 gap-1.5 xl:grid-cols-3">
+              {equipmentSets.map((set, idx) => (
+                <div key={set.id || idx} className="group/set relative">
                   {editingSetIndex === idx ? (
                     <input
                       id={`equipment-set-name-${idx}`}
@@ -375,8 +394,9 @@ export function EquipmentPanel() {
                   ) : (
                     <>
                       <button
+                        type="button"
                         onClick={() => selectEquipmentSet(idx)}
-                        className={`w-full rounded-lg py-2 pr-6 text-xs font-medium transition-all ${
+                        className={`w-full rounded-lg px-2 py-2 pr-20 text-left text-xs font-medium transition-all ${
                           idx === activeSetIndex
                             ? 'bg-yellow-600 text-slate-900 shadow-lg shadow-yellow-900/30'
                             : 'bg-slate-800/60 text-yellow-400/80 hover:bg-slate-700/60 hover:text-yellow-300'
@@ -384,16 +404,62 @@ export function EquipmentPanel() {
                       >
                         {getSetName(idx)}
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditedSetName(getSetName(idx));
-                          setEditingSetIndex(idx);
-                        }}
-                        className="absolute top-1/2 right-0.5 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded opacity-0 transition-opacity group-hover/set:opacity-100 hover:bg-blue-500/20"
-                      >
-                        <Edit2 className="h-3 w-3 text-blue-400/70" />
-                      </button>
+                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/set:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveEquipmentSet(idx, 'left');
+                          }}
+                          disabled={idx === 0}
+                          className="flex h-5 w-5 items-center justify-center rounded hover:bg-slate-700/70 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <ChevronLeft className="h-3 w-3 text-yellow-200" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveEquipmentSet(idx, 'right');
+                          }}
+                          disabled={idx === equipmentSets.length - 1}
+                          className="flex h-5 w-5 items-center justify-center rounded hover:bg-slate-700/70 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <ChevronRight className="h-3 w-3 text-yellow-200" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            duplicateEquipmentSet(idx);
+                          }}
+                          className="flex h-5 w-5 items-center justify-center rounded hover:bg-emerald-500/20"
+                        >
+                          <Copy className="h-3 w-3 text-emerald-300/80" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditedSetName(getSetName(idx));
+                            setEditingSetIndex(idx);
+                          }}
+                          className="flex h-5 w-5 items-center justify-center rounded hover:bg-blue-500/20"
+                        >
+                          <Edit2 className="h-3 w-3 text-blue-400/70" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeEquipmentSet(idx);
+                          }}
+                          disabled={equipmentSets.length <= 1}
+                          className="flex h-5 w-5 items-center justify-center rounded hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <Trash2 className="h-3 w-3 text-red-300/80" />
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>

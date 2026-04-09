@@ -88,10 +88,13 @@
   - 候选装备库，当前落在 `candidate_equipment`
 - `ocr_job` 产生多个 `ocr_draft_item`
 - `ocr_draft_item` 审核通过后可落入：
+  - `inventory_equipment_asset`
   - `equipment_item`
   - `ornament_item`
   - `jade_item`
 - `candidate_equipment` 保存实验室左侧候选装备库，覆盖 `pending / confirmed / replaced`
+- 当前实现里，`candidate_equipment` 会额外挂接 `ocr_job_id / ocr_draft_item_id`，用于把 OCR 审计链和候选装备库串起来
+- `inventory_equipment_asset` 承接候选确认后的正式库存资产快照，`inventory_entry` 再基于它记录出入库台账
 - `lab_session` 基于某个 `character_snapshot` 创建
 - `lab_session_equipment` 记录实验室样本/对比席位挂载的装备
 
@@ -153,7 +156,7 @@
 - `UNIQUE(version_code)`
 - `INDEX(rule_domain, is_active, status)`
 
-#### `rule_attribute_conversion`
+#### `rule_attribute`
 
 用途：属性转化规则，如体质、魔力、灵力到最终面板属性的线性映射。
 
@@ -277,7 +280,7 @@
 规则执行建议：
 
 1. 先读取当前生效的 `rule_version`
-2. 按版本加载 `rule_attribute_conversion`
+2. 按版本加载 `rule_attribute`
 3. 按版本加载 `rule_skill_formula`
 4. 按版本加载 `rule_damage_modifier`
 5. 按版本加载 `rule_skill_bonus`
@@ -488,6 +491,45 @@
 - `set_effect_json` 保存符石套装文本、灵饰套装文本等摘要字段。
 - `notes_json` 会额外持久化激活符石组、符石颜色序列、开孔数、跨服费等扩展元数据，供服务端规则链路自动命中 `rule_skill_bonus`，避免前端试算和正式保存口径分叉。
 
+### `equipment_plan`
+
+用途：角色的多套装备方案主表
+
+| 字段           | 类型      | 说明                     |
+| -------------- | --------- | ------------------------ |
+| `id`           | `TEXT PK` | 方案 ID                  |
+| `character_id` | `TEXT`    | 角色 ID                  |
+| `name`         | `TEXT`    | 方案名称，如任务套/PK 套 |
+| `sort`         | `INTEGER` | 排序                     |
+| `is_active`    | `INTEGER` | 是否当前激活方案         |
+| `created_at`   | `INTEGER` | 创建时间                 |
+| `updated_at`   | `INTEGER` | 更新时间                 |
+
+说明：
+
+- 这张表用于把“多套装备方案”从前端轻量上下文正式提升为持久化实体
+- 正式数据源已经切到 `equipment_plan / equipment_plan_item`
+
+### `equipment_plan_item`
+
+用途：某套装备方案内的单件明细
+
+| 字段           | 类型      | 说明                              |
+| -------------- | --------- | --------------------------------- |
+| `id`           | `TEXT PK` | 主键                              |
+| `plan_id`      | `TEXT`    | 所属方案                          |
+| `slot_key`     | `TEXT`    | 槽位键，如 `weapon` / `trinket:1` |
+| `item_type`    | `TEXT`    | 装备类型摘要                      |
+| `payload_json` | `TEXT`    | 方案里保存的完整装备快照          |
+| `sort`         | `INTEGER` | 排序                              |
+| `created_at`   | `INTEGER` | 创建时间                          |
+| `updated_at`   | `INTEGER` | 更新时间                          |
+
+说明：
+
+- 当前先用 `payload_json` 保存完整方案内容，避免一开始就把方案层和正式资产层强耦合
+- 后续若需要“方案引用正式资产 + 局部覆盖字段”，可以在此表继续扩展 `item_ref_id`
+
 ## 5.4 符石、符石组合、星石与星相互合
 
 ### `equipment_rune`
@@ -592,20 +634,29 @@
 
 用途：灵饰主表
 
-| 字段              | 类型      | 说明                                       |
-| ----------------- | --------- | ------------------------------------------ |
-| `id`              | `TEXT PK` | 灵饰 ID                                    |
-| `character_id`    | `TEXT`    | 归属角色                                   |
-| `slot`            | `TEXT`    | `ring` / `earring` / `bracelet` / `amulet` |
-| `name`            | `TEXT`    | 灵饰名                                     |
-| `level`           | `INTEGER` | 等级                                       |
-| `quality`         | `TEXT`    | 品质颜色                                   |
-| `main_attr_type`  | `TEXT`    | 主属性类型                                 |
-| `main_attr_value` | `REAL`    | 主属性值                                   |
-| `status`          | `TEXT`    | `stored` / `equipped` / `archived`         |
-| `source`          | `TEXT`    | 来源                                       |
-| `created_at`      | `INTEGER` | 创建时间                                   |
-| `updated_at`      | `INTEGER` | 更新时间                                   |
+当前实现补充：
+
+- 已落地到 D1 独立表，不再通过 `equipment_item` 兼容承载灵饰
+- 本地迁移 `0006_simulator_accessory_tables.sql` 会把历史灵饰数据从旧统一装备表迁移到本表
+
+| 字段                  | 类型      | 说明                                       |
+| --------------------- | --------- | ------------------------------------------ |
+| `id`                  | `TEXT PK` | 灵饰 ID                                    |
+| `character_id`        | `TEXT`    | 归属角色                                   |
+| `slot`                | `TEXT`    | `ring` / `earring` / `bracelet` / `amulet` |
+| `name`                | `TEXT`    | 灵饰名                                     |
+| `level`               | `INTEGER` | 等级                                       |
+| `quality`             | `TEXT`    | 品质颜色                                   |
+| `main_attr_type`      | `TEXT`    | 主属性类型                                 |
+| `main_attr_value`     | `REAL`    | 主属性值                                   |
+| `price`               | `INTEGER` | 价格                                       |
+| `status`              | `TEXT`    | `stored` / `equipped` / `archived`         |
+| `source`              | `TEXT`    | 来源                                       |
+| `special_effect_json` | `TEXT`    | 特效摘要 JSON                              |
+| `set_effect_json`     | `TEXT`    | 套装/点化摘要 JSON                         |
+| `notes_json`          | `TEXT`    | 其他备注元数据 JSON                        |
+| `created_at`          | `INTEGER` | 创建时间                                   |
+| `updated_at`          | `INTEGER` | 更新时间                                   |
 
 ### `ornament_sub_attr`
 
@@ -623,6 +674,12 @@
 
 用途：灵饰套装效果
 
+当前实现补充：
+
+- 当前快照写入时会根据 4 件灵饰的 `set_effect_json.setName` 自动汇总本表
+- `tier` 当前按 `8 / 16 / 24 / 28 / 32` 阶梯由 `total_level` 派生
+- `effect_json` 当前保存 `slotCount` 与命中的槽位列表，后续数值消费仍可继续扩展
+
 | 字段          | 类型      | 说明               |
 | ------------- | --------- | ------------------ |
 | `id`          | `TEXT PK` | 主键               |
@@ -638,18 +695,27 @@
 
 用途：玉魄主表
 
-| 字段           | 类型      | 说明                               |
-| -------------- | --------- | ---------------------------------- |
-| `id`           | `TEXT PK` | 玉魄 ID                            |
-| `character_id` | `TEXT`    | 归属角色                           |
-| `slot`         | `TEXT`    | 对应装备位                         |
-| `name`         | `TEXT`    | 玉魄名称                           |
-| `quality`      | `TEXT`    | 品质                               |
-| `fit_level`    | `INTEGER` | 契合等级                           |
-| `status`       | `TEXT`    | `stored` / `equipped` / `archived` |
-| `source`       | `TEXT`    | 来源                               |
-| `created_at`   | `INTEGER` | 创建时间                           |
-| `updated_at`   | `INTEGER` | 更新时间                           |
+当前实现补充：
+
+- 已落地到 D1 独立表，不再继续复用 `equipment_item`
+- 本地迁移 `0006_simulator_accessory_tables.sql` 会把旧玉魄记录迁移到本表
+
+| 字段                  | 类型      | 说明                               |
+| --------------------- | --------- | ---------------------------------- |
+| `id`                  | `TEXT PK` | 玉魄 ID                            |
+| `character_id`        | `TEXT`    | 归属角色                           |
+| `slot`                | `TEXT`    | `jade1` / `jade2`                  |
+| `name`                | `TEXT`    | 玉魄名称                           |
+| `quality`             | `TEXT`    | 品质                               |
+| `fit_level`           | `INTEGER` | 契合等级                           |
+| `price`               | `INTEGER` | 价格                               |
+| `status`              | `TEXT`    | `stored` / `equipped` / `archived` |
+| `source`              | `TEXT`    | 来源                               |
+| `special_effect_json` | `TEXT`    | 特效摘要 JSON                      |
+| `set_effect_json`     | `TEXT`    | 套装/词条摘要 JSON                 |
+| `notes_json`          | `TEXT`    | 其他备注元数据 JSON                |
+| `created_at`          | `INTEGER` | 创建时间                           |
+| `updated_at`          | `INTEGER` | 更新时间                           |
 
 ### `jade_attr`
 
@@ -693,6 +759,7 @@
 
 - `snapshot_equipment_slot` 现在同时承载当前快照和历史回滚快照的装备引用。
 - 覆写当前装备时，只会清理当前 `snapshot_id` 自身绑定的装备，以及没有被其他历史快照引用的孤儿 `equipment_item`；历史快照引用的装备不会被删除。
+- 灵饰和玉魄也已采用同样的快照引用策略，分别落在 `snapshot_ornament_slot`、`snapshot_jade_slot`。
 
 ### `snapshot_ornament_slot`
 
@@ -753,8 +820,33 @@
 
 说明：
 
-- 这张表就是文档里的“待确认区”
-- 正式入库前不直接写正式资产表
+- 当前实现里，这张表主要承担 OCR 审计链和结构化草稿留痕
+- 前台 OCR 成功后会自动把草稿标记为 `approved`，并同步写入 `candidate_equipment.pending`
+- 当前不再依赖后台人工审核才能进入候选装备库；是否确认入正式资产，仍由候选装备后续流程决定
+
+### `inventory_equipment_asset`
+
+用途：装备正式资产层
+
+| 字段                  | 类型      | 说明                             |
+| --------------------- | --------- | -------------------------------- |
+| `id`                  | `TEXT PK` | 正式资产 ID                      |
+| `character_id`        | `TEXT`    | 角色 ID                          |
+| `item_type`           | `TEXT`    | 当前默认 `equipment`             |
+| `source_candidate_id` | `TEXT`    | 来源候选装备 ID，可为空          |
+| `source_draft_id`     | `TEXT`    | 来源 OCR 草稿，可为空            |
+| `item_name`           | `TEXT`    | 装备名称快照                     |
+| `item_subtype`        | `TEXT`    | 装备类型快照                     |
+| `slot_key`            | `TEXT`    | 部位快照                         |
+| `payload_json`        | `TEXT`    | 资产完整结构化快照               |
+| `price_snapshot`      | `INTEGER` | 确认入库时记录的价格快照，可为空 |
+| `created_at`          | `INTEGER` | 创建时间                         |
+| `updated_at`          | `INTEGER` | 更新时间                         |
+
+说明：
+
+- 这张表用于承接候选装备确认后的正式资产，不再直接复用 `candidate_equipment`
+- 后续即使候选状态变化，正式资产仍可保留为库存与审计的稳定锚点
 
 ### `inventory_entry`
 
@@ -771,6 +863,12 @@
 | `price`           | `INTEGER` | 标价                            |
 | `status`          | `TEXT`    | `active` / `sold` / `discarded` |
 | `created_at`      | `INTEGER` | 创建时间                        |
+
+当前状态说明：
+
+- 这张表已在当前代码中落地，作为“正式库存台账”
+- `item_ref_id` 现在指向 `inventory_equipment_asset.id`
+- 当前实验室与候选库仍以 `candidate_equipment` 作为候选读模型，但正式库存与后台管理已改为先读正式资产层再反查来源候选
 
 ## 5.9 实验室
 
@@ -811,7 +909,9 @@
 
 - 文档要求支持“模拟老装备的符石/宝石”
 - 所以继承策略需要单独落字段，不能只靠前端临时传参
-- 当前版本已覆盖常规装备链路，并支持灵饰/玉魄通过持久化元数据接入百分比效果；灵饰套装档位的自动数值派生仍待补齐
+- 当前版本已覆盖常规装备、灵饰、玉魄三套独立持久化链路
+- 灵饰套装快照摘要已落地到 `ornament_set_effect`
+- 灵饰套装数值如何进入规则中心、玉魄属性池如何配置化，仍属于后续增强项
 
 ### `snapshot_battle_context`
 
@@ -844,6 +944,7 @@
 说明：
 
 - 当前版本优先把“当前状态”和“伤害计算”需要的战斗参数持久化
+- 多套装备方案已迁到独立的 `equipment_plan / equipment_plan_item`，不再依赖 `notes_json`
 - `target_speed` 用于服务端执行 `招云` 套装的目标速度加伤规则；老数据迁移后默认补 `0`
 - 更细粒度的实验结果表，如 `lab_result`、`lab_attr_delta`、`lab_apply_log`，后续再补
 
@@ -1352,6 +1453,7 @@ SQLite 没有原生枚举类型，建议：
 - `snapshot_equipment_slot`
 - `snapshot_ornament_slot`
 - `snapshot_jade_slot`
+- `ornament_set_effect`
 - `ocr_job`
 - `ocr_draft_item`
 - `inventory_entry`
@@ -1370,7 +1472,6 @@ SQLite 没有原生枚举类型，建议：
 - `star_stone_attr`
 - `star_resonance_rule`
 - `character_star_resonance`
-- `ornament_set_effect`
 - `damage_rule_version`
 - `lab_apply_log`
 - `admin_user`

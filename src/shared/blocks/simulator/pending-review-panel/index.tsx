@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/shared/components/ui/badge';
@@ -17,6 +17,7 @@ import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { formatDateTimeValue } from '@/shared/lib/date';
 import { getSimulatorEquipmentFieldLabel } from '@/shared/lib/simulator-equipment-editor';
+import { cn } from '@/shared/lib/utils';
 
 type ReviewItem = {
   id: string;
@@ -33,9 +34,29 @@ type ReviewItem = {
   equipment: Record<string, unknown>;
 };
 
+type ReviewStatus = ReviewItem['status'] | 'all';
+
 type Props = {
   canEdit?: boolean;
   initialItems: ReviewItem[];
+  title?: string;
+  description?: string;
+  initialStatus?: ReviewStatus;
+  availableStatuses?: ReviewStatus[];
+  listEndpoint?: string;
+  detailEndpointBase?: string;
+  saveButtonLabel?: string;
+  saveNotice?: string;
+  emptyMessage?: string;
+  loadLimit?: number;
+  remoteSearch?: boolean;
+};
+
+const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  all: '全部',
+  pending: '待确认',
+  confirmed: '已确认',
+  replaced: '已替换',
 };
 
 function toNumber(value: string) {
@@ -75,10 +96,24 @@ function getPreviewImageSrc(imagePreview?: string) {
 export function SimulatorPendingReviewPanel({
   canEdit = false,
   initialItems,
+  title = '候选装备库管理',
+  description = '支持按状态查看候选装备，搜索用户与角色，查看原图、OCR 原文并直接修改记录。',
+  initialStatus = 'pending',
+  availableStatuses = ['pending', 'confirmed', 'replaced'],
+  listEndpoint = '/api/admin/simulator/candidate-equipment',
+  detailEndpointBase = '/api/admin/simulator/candidate-equipment',
+  saveButtonLabel = '保存候选装备',
+  saveNotice = '当前修改会直接写回候选装备记录。',
+  emptyMessage = '当前没有匹配的候选装备。',
+  loadLimit = 100,
+  remoteSearch = false,
 }: Props) {
+  const defaultActiveStatus = availableStatuses.includes(initialStatus)
+    ? initialStatus
+    : (availableStatuses[0] ?? 'pending');
   const [items, setItems] = useState(initialItems);
   const [activeStatus, setActiveStatus] =
-    useState<ReviewItem['status']>('pending');
+    useState<ReviewStatus>(defaultActiveStatus);
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState(initialItems[0]?.id ?? null);
   const [isSaving, setIsSaving] = useState(false);
@@ -86,8 +121,13 @@ export function SimulatorPendingReviewPanel({
   const [isDeleting, setIsDeleting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const didInitRemoteSearchRef = useRef(false);
 
   const filteredItems = useMemo(() => {
+    if (remoteSearch) {
+      return items;
+    }
+
     const normalized = keyword.trim().toLowerCase();
     if (!normalized) {
       return items;
@@ -106,30 +146,41 @@ export function SimulatorPendingReviewPanel({
 
       return haystack.includes(normalized);
     });
-  }, [items, keyword]);
+  }, [items, keyword, remoteSearch]);
 
   const selectedItem = useMemo(
     () => filteredItems.find((item) => item.id === selectedId) ?? null,
     [filteredItems, selectedId]
   );
   const selectedFieldId = (field: string) =>
-    buildFieldId('pending-review', selectedItem?.id ?? 'empty', field);
+    buildFieldId('candidate-equipment', selectedItem?.id ?? 'empty', field);
 
-  const handleLoad = async (status: ReviewItem['status']) => {
+  const handleLoad = async (
+    status: ReviewStatus,
+    nextKeyword = keyword,
+    options?: { preserveSelection?: boolean }
+  ) => {
     setIsLoading(true);
     setNotice(null);
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/admin/simulator/pending-equipment?status=${encodeURIComponent(
-          status
-        )}&limit=100`,
-        {
-          method: 'GET',
-          cache: 'no-store',
+      const query = new URLSearchParams();
+      if (status !== 'all') {
+        query.set('status', status);
+      }
+      if (remoteSearch) {
+        const normalizedKeyword = nextKeyword.trim();
+        if (normalizedKeyword) {
+          query.set('keyword', normalizedKeyword);
         }
-      );
+      }
+      query.set('limit', String(loadLimit));
+
+      const response = await fetch(`${listEndpoint}?${query.toString()}`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
 
       const payload = await response.json();
       if (
@@ -142,13 +193,40 @@ export function SimulatorPendingReviewPanel({
 
       setItems(payload.data);
       setActiveStatus(status);
-      setSelectedId(payload.data[0]?.id ?? null);
+      setSelectedId((currentSelectedId) => {
+        if (
+          options?.preserveSelection &&
+          currentSelectedId &&
+          payload.data.some((item: ReviewItem) => item.id === currentSelectedId)
+        ) {
+          return currentSelectedId;
+        }
+
+        return payload.data[0]?.id ?? null;
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '读取失败');
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!remoteSearch) {
+      return;
+    }
+
+    if (!didInitRemoteSearchRef.current) {
+      didInitRemoteSearchRef.current = true;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void handleLoad(activeStatus, keyword, { preserveSelection: true });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [activeStatus, keyword, remoteSearch]);
 
   const updateSelectedItem = (updater: (item: ReviewItem) => ReviewItem) => {
     setItems((current) =>
@@ -166,20 +244,17 @@ export function SimulatorPendingReviewPanel({
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/admin/simulator/pending-equipment/${selectedItem.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            status: selectedItem.status,
-            rawText: selectedItem.rawText,
-            equipment: selectedItem.equipment,
-          }),
-        }
-      );
+      const response = await fetch(`${detailEndpointBase}/${selectedItem.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: selectedItem.status,
+          rawText: selectedItem.rawText,
+          equipment: selectedItem.equipment,
+        }),
+      });
 
       const payload = await response.json();
       if (!response.ok || payload?.code !== 0 || !payload?.data) {
@@ -209,12 +284,9 @@ export function SimulatorPendingReviewPanel({
     setError(null);
 
     try {
-      const response = await fetch(
-        `/api/admin/simulator/pending-equipment/${selectedItem.id}`,
-        {
-          method: 'DELETE',
-        }
-      );
+      const response = await fetch(`${detailEndpointBase}/${selectedItem.id}`, {
+        method: 'DELETE',
+      });
       const payload = await response.json();
       if (!response.ok || payload?.code !== 0) {
         throw new Error(payload?.message || '删除失败');
@@ -234,26 +306,32 @@ export function SimulatorPendingReviewPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>OCR 审核与候选装备管理</CardTitle>
-        <CardDescription>
-          支持按状态查看候选装备，搜索用户与角色，查看原图、OCR
-          原文并直接修改记录。
-        </CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <div className="space-y-3">
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex flex-wrap gap-2">
-              {(['pending', 'confirmed', 'replaced'] as const).map((status) => (
+              {availableStatuses.map((status) => (
                 <Button
                   key={status}
                   type="button"
                   variant={activeStatus === status ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => void handleLoad(status)}
+                  onClick={() => {
+                    if (remoteSearch) {
+                      setNotice(null);
+                      setError(null);
+                      setActiveStatus(status);
+                      return;
+                    }
+
+                    void handleLoad(status);
+                  }}
                   disabled={isLoading}
                 >
-                  {status}
+                  {REVIEW_STATUS_LABELS[status]}
                 </Button>
               ))}
             </div>
@@ -265,16 +343,18 @@ export function SimulatorPendingReviewPanel({
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 className="pl-9"
-                placeholder="搜索用户、邮箱、角色或装备"
+                placeholder={
+                  remoteSearch
+                    ? '搜索全部候选装备'
+                    : '搜索用户、邮箱、角色或装备'
+                }
               />
             </div>
           </div>
 
           {filteredItems.length === 0 ? (
             <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
-              {items.length === 0
-                ? '当前没有匹配的候选装备。'
-                : '当前筛选条件下没有结果。'}
+              {items.length === 0 ? emptyMessage : '当前筛选条件下没有结果。'}
             </div>
           ) : (
             filteredItems.map((item) => (
@@ -296,7 +376,9 @@ export function SimulatorPendingReviewPanel({
                   <div className="truncate text-sm font-semibold">
                     {String(item.equipment.name || '未命名装备')}
                   </div>
-                  <Badge variant="outline">{item.status}</Badge>
+                  <Badge variant="outline">
+                    {REVIEW_STATUS_LABELS[item.status]}
+                  </Badge>
                 </div>
                 <div className="text-muted-foreground mt-2 text-xs">
                   {item.userName} · {item.userEmail}
@@ -334,8 +416,13 @@ export function SimulatorPendingReviewPanel({
               </div>
               <div className="space-y-2">
                 <Label htmlFor={selectedFieldId('status')}>状态</Label>
-                <Input
+                <select
                   id={selectedFieldId('status')}
+                  className={cn(
+                    'border-input bg-background flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none',
+                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+                    'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50'
+                  )}
                   value={selectedItem.status}
                   onChange={(e) =>
                     updateSelectedItem((item) => ({
@@ -345,7 +432,17 @@ export function SimulatorPendingReviewPanel({
                     }))
                   }
                   disabled={!canEdit}
-                />
+                >
+                  <option value="pending">
+                    {REVIEW_STATUS_LABELS.pending}
+                  </option>
+                  <option value="confirmed">
+                    {REVIEW_STATUS_LABELS.confirmed}
+                  </option>
+                  <option value="replaced">
+                    {REVIEW_STATUS_LABELS.replaced}
+                  </option>
+                </select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor={selectedFieldId('type')}>
@@ -468,7 +565,9 @@ export function SimulatorPendingReviewPanel({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-2">
-                <Label htmlFor={selectedFieldId('raw-text')}>OCR 原始文本</Label>
+                <Label htmlFor={selectedFieldId('raw-text')}>
+                  OCR 原始文本
+                </Label>
                 <Textarea
                   id={selectedFieldId('raw-text')}
                   rows={14}
@@ -489,7 +588,7 @@ export function SimulatorPendingReviewPanel({
                     <img
                       src={getPreviewImageSrc(selectedItem.imagePreview)}
                       alt={String(
-                        selectedItem.equipment.name || 'pending-equipment'
+                        selectedItem.equipment.name || 'candidate-equipment'
                       )}
                       className="h-auto w-full object-cover"
                     />
@@ -509,9 +608,7 @@ export function SimulatorPendingReviewPanel({
                 ) : notice ? (
                   <span className="text-emerald-600">{notice}</span>
                 ) : (
-                  <span className="text-muted-foreground">
-                    当前修改会直接写回候选装备审核记录。
-                  </span>
+                  <span className="text-muted-foreground">{saveNotice}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -525,7 +622,7 @@ export function SimulatorPendingReviewPanel({
                   {isDeleting ? '删除中...' : '删除记录'}
                 </Button>
                 <Button onClick={handleSave} disabled={!canEdit || isSaving}>
-                  {isSaving ? '保存中...' : '保存审核结果'}
+                  {isSaving ? '保存中...' : saveButtonLabel}
                 </Button>
               </div>
             </div>

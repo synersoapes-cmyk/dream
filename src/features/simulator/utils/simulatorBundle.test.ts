@@ -253,43 +253,38 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
       snapshotSlot: 'weapon',
     },
   ];
-  bundle.battleContext = {
-    ...bundle.battleContext!,
-    notesJson: JSON.stringify({
-      equipmentPlan: {
-        activeSetIndex: 1,
-        equipmentSets: [
+  bundle.equipmentPlan = {
+    activeSetIndex: 1,
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '常规方案',
+        items: [
           {
-            id: 'set_1',
-            name: '常规方案',
-            items: [
-              {
-                id: 'eq_plan_1',
-                name: '常规武器',
-                type: 'weapon',
-                mainStat: '法伤 +250',
-                baseStats: { magicDamage: 250 },
-                stats: { magicDamage: 250 },
-              },
-            ],
-          },
-          {
-            id: 'set_2',
-            name: '爆发方案',
-            items: [
-              {
-                id: 'eq_old_active',
-                name: '旧激活武器',
-                type: 'weapon',
-                mainStat: '法伤 +111',
-                baseStats: { magicDamage: 111 },
-                stats: { magicDamage: 111 },
-              },
-            ],
+            id: 'eq_plan_1',
+            name: '常规武器',
+            type: 'weapon',
+            mainStat: '法伤 +250',
+            baseStats: { magicDamage: 250 },
+            stats: { magicDamage: 250 },
           },
         ],
       },
-    }),
+      {
+        id: 'set_2',
+        name: '爆发方案',
+        items: [
+          {
+            id: 'eq_old_active',
+            name: '旧激活武器',
+            type: 'weapon',
+            mainStat: '法伤 +111',
+            baseStats: { magicDamage: 111 },
+            stats: { magicDamage: 111 },
+          },
+        ],
+      },
+    ],
   };
 
   applySimulatorBundleToStore(bundle);

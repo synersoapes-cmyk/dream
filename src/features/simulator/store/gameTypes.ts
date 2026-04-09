@@ -365,6 +365,10 @@ export interface GameState {
   removeEquipment: (id: string) => void;
   selectEquipmentSet: (index: number) => void;
   updateEquipmentSetName: (index: number, name: string) => void;
+  addEquipmentSet: () => void;
+  duplicateEquipmentSet: (index: number) => void;
+  removeEquipmentSet: (index: number) => void;
+  moveEquipmentSet: (index: number, direction: 'left' | 'right') => void;
   calculateStatsDiff: () => {
     attributes: Record<string, number>;
     damageChange: { physical: number; magic: number; skill: number };

@@ -33,13 +33,15 @@ export const cloneEquipmentItem = (equipment: Equipment): Equipment => ({
 export const cloneEquipmentList = (equipment: Equipment[]): Equipment[] =>
   equipment.map(cloneEquipmentItem);
 
-const createEquipmentSet = (
+export const getDefaultEquipmentSetName = (index: number) => `配置${index + 1}`;
+
+export const createEquipmentSet = (
   index: number,
   equipment: Equipment[],
   name?: string
 ): EquipmentSet => ({
   id: `set_${index + 1}`,
-  name: name ?? `配置${index + 1}`,
+  name: name ?? getDefaultEquipmentSetName(index),
   items: cloneEquipmentList(equipment),
   isActive: false,
 });

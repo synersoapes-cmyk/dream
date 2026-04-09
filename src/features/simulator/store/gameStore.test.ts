@@ -97,6 +97,61 @@ test('equipment sets switch and retain per-set equipment changes', () => {
   assert.equal(state.equipmentSets[1]?.isActive, false);
 });
 
+test('equipment set CRUD actions create duplicate remove and reorder plans', () => {
+  const baseSetA = [createEquipment('weapon_a', 'weapon', 100)];
+  const baseSetB = [createEquipment('weapon_b', 'weapon', 200)];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore.getState().addEquipmentSet();
+
+  let state = useGameStore.getState();
+  assert.equal(state.equipmentSets.length, 3);
+  assert.equal(state.activeSetIndex, 2);
+  assert.equal(state.equipmentSets[2]?.isActive, true);
+  assert.equal(state.equipmentSets[2]?.items[0]?.id, 'weapon_a');
+
+  useGameStore.getState().duplicateEquipmentSet(0);
+
+  state = useGameStore.getState();
+  assert.equal(state.equipmentSets.length, 4);
+  assert.equal(state.activeSetIndex, 1);
+  assert.equal(state.equipmentSets[1]?.name, '方案一 副本');
+  assert.equal(state.equipment[0]?.id, 'weapon_a');
+
+  useGameStore.getState().moveEquipmentSet(1, 'right');
+
+  state = useGameStore.getState();
+  assert.equal(state.activeSetIndex, 2);
+  assert.equal(state.equipmentSets[2]?.name, '方案一 副本');
+  assert.equal(state.equipmentSets[2]?.isActive, true);
+
+  useGameStore.getState().removeEquipmentSet(2);
+
+  state = useGameStore.getState();
+  assert.equal(state.equipmentSets.length, 3);
+  assert.equal(state.activeSetIndex, 2);
+  assert.equal(state.equipmentSets[2]?.isActive, true);
+});
+
 test('status mode keeps cloud combat stats when equipment changes locally', () => {
   const cloudCombatStats = {
     hp: 3850,

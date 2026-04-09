@@ -1187,7 +1187,7 @@ export function calculateDamageFromRuleSet({
         },
         panelMagicDamageSource: hasPanelMagicDamageOverride
           ? 'request.panelMagicDamageOverride'
-          : 'rule_attribute_conversion',
+          : 'rule_attribute',
         targetMagicDefense,
         actualTargetMagicDefense: roundForBreakdown(actualTargetMagicDefense, 4),
         spellIgnorePercent: roundForBreakdown(spellIgnorePercent, 4),

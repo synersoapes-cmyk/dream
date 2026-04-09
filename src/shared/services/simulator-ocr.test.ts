@@ -2,12 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applySimulatorOcrDictionaryToEquipment,
   mergeRecognizedProfileWithBundle,
   normalizeRecognizedProfile,
   normalizeRecognizedEquipment,
   validateSimulatorOcrFile,
 } from '@/shared/services/simulator-ocr';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import type {
+  SimulatorCharacterBundle,
+  SimulatorOcrDictionary,
+} from '@/shared/models/simulator';
 
 function createBundle(): SimulatorCharacterBundle {
   return {
@@ -106,6 +110,48 @@ test('normalizeRecognizedEquipment clamps jade slot to supported range 1-2', () 
 
   assert.equal(equipment.type, 'jade');
   assert.equal(equipment.slot, 2);
+});
+
+test('applySimulatorOcrDictionaryToEquipment normalizes name and set highlights', () => {
+  const entries: SimulatorOcrDictionary[] = [
+    {
+      id: 'dict_1',
+      dictType: 'equipment_name',
+      rawText: '晶凊诀头盔',
+      normalizedText: '晶清诀头盔',
+      priority: 100,
+      enabled: true,
+      createdBy: 'tester',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: 'dict_2',
+      dictType: 'set_name',
+      rawText: '招雲',
+      normalizedText: '招云',
+      priority: 50,
+      enabled: true,
+      createdBy: 'tester',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  const normalized = applySimulatorOcrDictionaryToEquipment(
+    {
+      ...normalizeRecognizedEquipment({
+        name: '晶凊诀头盔',
+        type: 'helmet',
+        mainStat: '魔法 +245',
+        highlights: ['招雲', '高魔力'],
+      }),
+    },
+    entries
+  );
+
+  assert.equal(normalized.name, '晶清诀头盔');
+  assert.deepEqual(normalized.highlights, ['招云', '高魔力']);
 });
 
 test('normalizeRecognizedProfile maps chinese aliases and nested payloads', () => {

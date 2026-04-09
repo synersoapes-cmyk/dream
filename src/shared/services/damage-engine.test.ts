@@ -857,7 +857,7 @@ test('calculateDamageFromRuleSet derives panel magic damage from attribute rules
   const breakdown = result.targets[0]?.breakdown as Record<string, any>;
 
   assert.equal(breakdown.panelMagicDamage, 2429);
-  assert.equal(breakdown.panelMagicDamageSource, 'rule_attribute_conversion');
+  assert.equal(breakdown.panelMagicDamageSource, 'rule_attribute');
   assert.equal(
     breakdown.panelMagicDamageBreakdown.ruleDerivedMagicDamage,
     2209

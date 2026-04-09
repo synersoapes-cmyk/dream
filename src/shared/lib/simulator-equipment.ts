@@ -22,6 +22,13 @@ export const SIMULATOR_EQUIPMENT_TYPES = [
 
 export const SIMULATOR_TRINKET_SLOTS = [1, 2, 3, 4] as const;
 export const SIMULATOR_JADE_SLOTS = [1, 2] as const;
+export const SIMULATOR_TRINKET_SLOT_KEYS = [
+  'ring',
+  'earring',
+  'bracelet',
+  'amulet',
+] as const;
+export const SIMULATOR_JADE_SLOT_KEYS = ['jade1', 'jade2'] as const;
 
 export type SimulatorPrimaryEquipmentType =
   (typeof SIMULATOR_PRIMARY_EQUIPMENT_TYPES)[number];
@@ -32,6 +39,9 @@ export type SimulatorOcrEquipmentType =
 export type SimulatorEquipmentType = (typeof SIMULATOR_EQUIPMENT_TYPES)[number];
 export type SimulatorTrinketSlot = (typeof SIMULATOR_TRINKET_SLOTS)[number];
 export type SimulatorJadeSlot = (typeof SIMULATOR_JADE_SLOTS)[number];
+export type SimulatorTrinketSlotKey =
+  (typeof SIMULATOR_TRINKET_SLOT_KEYS)[number];
+export type SimulatorJadeSlotKey = (typeof SIMULATOR_JADE_SLOT_KEYS)[number];
 
 export type SimulatorEquipmentSlot =
   | SimulatorOcrEquipmentType
@@ -203,6 +213,77 @@ export function extractSimulatorEquipmentSlotNumber(
     return undefined;
   }
 
+  const normalized = String(value).trim().toLowerCase();
+
+  if (normalized === 'ring' || normalized === 'trinket1') {
+    return 1;
+  }
+  if (normalized === 'earring' || normalized === 'trinket2') {
+    return 2;
+  }
+  if (normalized === 'bracelet' || normalized === 'trinket3') {
+    return 3;
+  }
+  if (
+    normalized === 'amulet' ||
+    normalized === 'pendant' ||
+    normalized === 'trinket4'
+  ) {
+    return 4;
+  }
+  if (normalized === 'jade1') {
+    return 1;
+  }
+  if (normalized === 'jade2') {
+    return 2;
+  }
+
   const match = value.match(/(\d+)/);
   return match ? Number(match[1]) : undefined;
+}
+
+export function toSimulatorTrinketSlotKey(
+  slot: number | string | null | undefined
+): SimulatorTrinketSlotKey {
+  const normalized = String(slot ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalized === 'ring' ||
+    normalized === 'trinket1' ||
+    normalized === '1'
+  ) {
+    return 'ring';
+  }
+  if (
+    normalized === 'earring' ||
+    normalized === 'trinket2' ||
+    normalized === '2'
+  ) {
+    return 'earring';
+  }
+  if (
+    normalized === 'bracelet' ||
+    normalized === 'trinket3' ||
+    normalized === '3'
+  ) {
+    return 'bracelet';
+  }
+
+  return 'amulet';
+}
+
+export function toSimulatorJadeSlotKey(
+  slot: number | string | null | undefined
+): SimulatorJadeSlotKey {
+  const normalized = String(slot ?? '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'jade2' || normalized === '2') {
+    return 'jade2';
+  }
+
+  return 'jade1';
 }

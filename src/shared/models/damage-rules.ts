@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/core/db';
 import { initD1ContextForDev } from '@/core/db/d1';
 import {
-  ruleAttributeConversion,
+  ruleAttribute,
   ruleDamageModifier,
   rulePublishLog,
   ruleSkillBonus,
@@ -16,12 +16,12 @@ export type DamageRuleVersion = typeof ruleVersion.$inferSelect;
 
 type JsonObject = Record<string, unknown>;
 
-type RuleAttributeConversionRow = typeof ruleAttributeConversion.$inferSelect;
+type RuleAttributeRow = typeof ruleAttribute.$inferSelect;
 type RuleSkillFormulaRow = typeof ruleSkillFormula.$inferSelect;
 type RuleDamageModifierRow = typeof ruleDamageModifier.$inferSelect;
 type RuleSkillBonusRow = typeof ruleSkillBonus.$inferSelect;
 
-export type DamageAttributeConversionRule = RuleAttributeConversionRow & {
+export type DamageAttributeConversionRule = RuleAttributeRow & {
   condition: JsonObject;
 };
 
@@ -233,14 +233,14 @@ export async function getDamageRuleSet(params?: {
     const [attributeRows, skillFormulaRows, modifierRows, bonusRows] = await Promise.all([
       db()
         .select()
-        .from(ruleAttributeConversion)
+        .from(ruleAttribute)
         .where(
           and(
-            eq(ruleAttributeConversion.versionId, version.id),
-            eq(ruleAttributeConversion.enabled, true),
+            eq(ruleAttribute.versionId, version.id),
+            eq(ruleAttribute.enabled, true),
           ),
         )
-        .orderBy(asc(ruleAttributeConversion.sort), asc(ruleAttributeConversion.sourceAttr)),
+        .orderBy(asc(ruleAttribute.sort), asc(ruleAttribute.sourceAttr)),
       db()
         .select()
         .from(ruleSkillFormula)
@@ -272,7 +272,7 @@ export async function getDamageRuleSet(params?: {
 
     return {
       version,
-      attributeConversions: attributeRows.map((row: RuleAttributeConversionRow) => ({
+      attributeConversions: attributeRows.map((row: RuleAttributeRow) => ({
         ...row,
         condition: parseJsonObject(row.conditionJson, {}),
       })),
@@ -311,7 +311,7 @@ export async function listDamageRuleVersions(): Promise<DamageRuleVersionListIte
   }
 
   const [attributeRows, skillFormulaRows, modifierRows, bonusRows] = await Promise.all([
-    db().select().from(ruleAttributeConversion).where(eq(ruleAttributeConversion.enabled, true)),
+    db().select().from(ruleAttribute).where(eq(ruleAttribute.enabled, true)),
     db().select().from(ruleSkillFormula).where(eq(ruleSkillFormula.enabled, true)),
     db().select().from(ruleDamageModifier).where(eq(ruleDamageModifier.enabled, true)),
     db().select().from(ruleSkillBonus).where(eq(ruleSkillBonus.enabled, true)),
@@ -449,7 +449,7 @@ export async function cloneDamageRuleVersion(params: {
   });
 
   if (source.attributeConversions.length > 0) {
-    await db().insert(ruleAttributeConversion).values(
+    await db().insert(ruleAttribute).values(
       source.attributeConversions.map((item) => ({
         id: getUuid(),
         versionId: nextVersionId,

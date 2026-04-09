@@ -1,5 +1,9 @@
 import { respData, respErr } from '@/shared/lib/resp';
-import { appendSimulatorCandidateEquipment } from '@/shared/models/simulator';
+import {
+  createSimulatorOcrJob,
+  finalizeSimulatorEquipmentOcrJob,
+  markSimulatorOcrJobFailed,
+} from '@/shared/models/simulator';
 import { getUserInfo } from '@/shared/models/user';
 import {
   recognizeSimulatorEquipmentFromImage,
@@ -25,26 +29,46 @@ export async function POST(req: Request) {
       return respErr(validation.error || '图片文件不合法');
     }
 
-    const recognized = await recognizeSimulatorEquipmentFromImage(file);
-    const items = await appendSimulatorCandidateEquipment(user.id, {
-      equipment: recognized.equipment,
-      imagePreview: recognized.url,
-      rawText: JSON.stringify(recognized.raw),
-      status: 'pending',
+    const job = await createSimulatorOcrJob(user.id, {
+      sceneType: 'equipment',
     });
 
-    if (!items) {
+    if (!job) {
       return respErr('simulator character not found');
     }
 
-    return respData({
-      item: items[items.length - 1] ?? null,
-      items,
-      upload: {
-        key: recognized.key,
-        url: recognized.url,
-      },
-    });
+    try {
+      const recognized = await recognizeSimulatorEquipmentFromImage(file);
+      const result = await finalizeSimulatorEquipmentOcrJob({
+        ocrJobId: job.id,
+        recognizedEquipment: recognized.equipment,
+        rawResult: recognized.raw,
+        imageUrl: recognized.url,
+        imageKey: recognized.key,
+      });
+
+      if (!result) {
+        return respErr('simulator OCR job not found');
+      }
+
+      return respData({
+        item: result.item,
+        items: result.items,
+        upload: {
+          key: recognized.key,
+          url: recognized.url,
+        },
+        ocrJobId: job.id,
+        ocrDraftId: result.draftId,
+      });
+    } catch (error) {
+      await markSimulatorOcrJobFailed({
+        ocrJobId: job.id,
+        errorMessage:
+          error instanceof Error ? error.message : '识图失败，请稍后重试',
+      });
+      throw error;
+    }
   } catch (error) {
     console.error('failed to OCR simulator candidate equipment:', error);
     return respErr(

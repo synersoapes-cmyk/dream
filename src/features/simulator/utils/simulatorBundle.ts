@@ -569,11 +569,9 @@ function createFallbackEquipmentSet(
 }
 
 function parsePersistedEquipmentPlan(
-  notesJson: string | null | undefined,
+  plan: SimulatorCharacterBundle['equipmentPlan'],
   currentEquipment: Equipment[]
 ): { equipmentSets: EquipmentSet[]; activeSetIndex: number } | null {
-  const notes = parseJsonRecord(notesJson);
-  const plan = notes.equipmentPlan;
   if (!isRecord(plan) || !Array.isArray(plan.equipmentSets)) {
     return null;
   }
@@ -639,7 +637,7 @@ export function applySimulatorBundleToStore(
   const combatStats = mapCombatStats(bundle);
   const equipment = mapEquipments(bundle);
   const persistedPlan = parsePersistedEquipmentPlan(
-    bundle.battleContext?.notesJson,
+    bundle.equipmentPlan,
     equipment
   );
   const equipmentSets =

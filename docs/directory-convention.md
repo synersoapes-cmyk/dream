@@ -69,9 +69,14 @@
 
 放在：
 
-- `src/app/[locale]/(lab)/simulator/`
+- `src/app/[locale]/page.tsx`
 
-这是梦幻实验室的页面入口。
+这是当前实际的梦幻实验室页面入口。
+
+补充说明：
+
+- 历史规划里曾使用 `src/app/[locale]/(lab)/simulator/`
+- 当前实现已经把 simulator 提升为首页入口
 
 ### 2.5 后台管理目录
 
@@ -157,7 +162,7 @@
 梦幻实验室的目录主线现在是：
 
 - 文档在 `docs/`
-- 页面在 `src/app/[locale]/(lab)/simulator/`
+- 页面在 `src/app/[locale]/page.tsx`
 - 后台页面在 `src/app/[locale]/(admin)/admin/simulator/`
 - 接口在 `src/app/api/simulator/`
 - 后台接口在 `src/app/api/admin/`

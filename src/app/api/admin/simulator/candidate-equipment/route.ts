@@ -1,6 +1,6 @@
 import { PERMISSIONS } from '@/core/rbac';
 import { respData, respErr } from '@/shared/lib/resp';
-import { listAdminSimulatorPendingEquipment } from '@/shared/models/simulator';
+import { listAdminSimulatorCandidateEquipment } from '@/shared/models/simulator';
 import { getUserInfo } from '@/shared/models/user';
 import { hasAllPermissions } from '@/shared/services/rbac';
 
@@ -19,17 +19,19 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status') || 'pending';
-    const limit = Number(searchParams.get('limit') || 50);
+    const status = searchParams.get('status') || 'all';
+    const keyword = searchParams.get('keyword') || '';
+    const limit = Number(searchParams.get('limit') || 100);
 
-    const items = await listAdminSimulatorPendingEquipment({
-      status: status as 'pending' | 'confirmed' | 'replaced',
+    const items = await listAdminSimulatorCandidateEquipment({
+      status: status as 'all' | 'pending' | 'confirmed' | 'replaced',
+      keyword,
       limit,
     });
 
     return respData(items);
   } catch (error) {
-    console.error('failed to load admin simulator pending equipment:', error);
-    return respErr('failed to load admin simulator pending equipment');
+    console.error('failed to load admin simulator candidate equipment:', error);
+    return respErr('failed to load admin simulator candidate equipment');
   }
 }

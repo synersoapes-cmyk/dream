@@ -4,7 +4,12 @@ import {
   type SimulatorOcrEquipmentType,
 } from '@/shared/lib/simulator-equipment';
 import { getAllConfigs } from '@/shared/models/config';
-import type { SimulatorCharacterBundle } from '@/shared/models/simulator';
+import {
+  listEnabledSimulatorOcrDictionaryEntries,
+  type SimulatorCharacterBundle,
+  type SimulatorEquipment,
+  type SimulatorOcrDictionary,
+} from '@/shared/models/simulator';
 import { getStorageService } from '@/shared/services/storage';
 
 type SimulatorEquipmentLike = {
@@ -440,6 +445,70 @@ export function normalizeRecognizedEquipment(
   };
 }
 
+function applyDictionaryToText(
+  text: string | undefined,
+  entries: SimulatorOcrDictionary[]
+) {
+  if (!text) {
+    return text;
+  }
+
+  const normalized = text.trim();
+  if (!normalized) {
+    return text;
+  }
+
+  const matched = entries.find((entry) => entry.rawText.trim() === normalized);
+  return matched?.normalizedText?.trim() || text;
+}
+
+export function applySimulatorOcrDictionaryToEquipment<
+  T extends Pick<
+    SimulatorEquipmentLike,
+    | 'name'
+    | 'mainStat'
+    | 'extraStat'
+    | 'specialEffect'
+    | 'refinementEffect'
+    | 'gemstone'
+    | 'description'
+    | 'highlights'
+  >,
+>(equipment: T, entries: SimulatorOcrDictionary[]) {
+  const equipmentNameEntries = entries.filter(
+    (entry) => entry.dictType === 'equipment_name'
+  );
+  const attrEntries = entries.filter((entry) => entry.dictType === 'attr_name');
+  const setEntries = entries.filter((entry) => entry.dictType === 'set_name');
+
+  return {
+    ...equipment,
+    name: applyDictionaryToText(equipment.name, equipmentNameEntries) || equipment.name,
+    mainStat:
+      applyDictionaryToText(equipment.mainStat, attrEntries) || equipment.mainStat,
+    extraStat: applyDictionaryToText(equipment.extraStat, attrEntries),
+    specialEffect: applyDictionaryToText(equipment.specialEffect, attrEntries),
+    refinementEffect: applyDictionaryToText(
+      equipment.refinementEffect,
+      attrEntries
+    ),
+    gemstone: applyDictionaryToText(equipment.gemstone, attrEntries),
+    description: applyDictionaryToText(equipment.description, attrEntries),
+    highlights: equipment.highlights?.map(
+      (item) => applyDictionaryToText(item, setEntries) || item
+    ),
+  };
+}
+
+async function normalizeRecognizedEquipmentWithDictionary(
+  value: Record<string, unknown>,
+  imageUrl?: string
+) {
+  const normalizedEquipment = normalizeRecognizedEquipment(value, imageUrl);
+  const entries = await listEnabledSimulatorOcrDictionaryEntries();
+  return applySimulatorOcrDictionaryToEquipment(normalizedEquipment, entries);
+}
+
 export function validateSimulatorOcrFile(file: File): {
   valid: boolean;
   error?: string;
@@ -484,54 +553,58 @@ async function uploadSimulatorImage(file: File) {
   };
 }
 
-export async function getSimulatorOcrConfigStatus() {
-  const configs = await getAllConfigs();
+export async function getSimulatorOcrConfigStatus(
+  configs?: Awaited<ReturnType<typeof getAllConfigs>>
+) {
+  const resolvedConfigs = configs ?? (await getAllConfigs());
   const missing: string[] = [];
   const checks = [
     {
       key: 'gemini_api_key',
       label: 'Gemini API Key',
-      configured: Boolean(configs.gemini_api_key),
+      configured: Boolean(resolvedConfigs.gemini_api_key),
     },
     {
       key: 'r2_account_id',
       label: 'R2 Account ID',
-      configured: Boolean(configs.r2_account_id || configs.r2_endpoint),
+      configured: Boolean(
+        resolvedConfigs.r2_account_id || resolvedConfigs.r2_endpoint
+      ),
     },
     {
       key: 'r2_access_key',
       label: 'R2 Access Key',
-      configured: Boolean(configs.r2_access_key),
+      configured: Boolean(resolvedConfigs.r2_access_key),
     },
     {
       key: 'r2_secret_key',
       label: 'R2 Secret Key',
-      configured: Boolean(configs.r2_secret_key),
+      configured: Boolean(resolvedConfigs.r2_secret_key),
     },
     {
       key: 'r2_bucket_name',
       label: 'R2 Bucket Name',
-      configured: Boolean(configs.r2_bucket_name),
+      configured: Boolean(resolvedConfigs.r2_bucket_name),
     },
   ];
 
-  if (!configs.gemini_api_key) {
+  if (!resolvedConfigs.gemini_api_key) {
     missing.push('gemini_api_key');
   }
 
-  if (!configs.r2_access_key) {
+  if (!resolvedConfigs.r2_access_key) {
     missing.push('r2_access_key');
   }
 
-  if (!configs.r2_secret_key) {
+  if (!resolvedConfigs.r2_secret_key) {
     missing.push('r2_secret_key');
   }
 
-  if (!configs.r2_bucket_name) {
+  if (!resolvedConfigs.r2_bucket_name) {
     missing.push('r2_bucket_name');
   }
 
-  if (!configs.r2_account_id && !configs.r2_endpoint) {
+  if (!resolvedConfigs.r2_account_id && !resolvedConfigs.r2_endpoint) {
     missing.push('r2_account_id_or_r2_endpoint');
   }
 
@@ -543,6 +616,22 @@ export async function getSimulatorOcrConfigStatus() {
       ocr: 'Gemini',
       storage: 'Cloudflare R2',
     },
+  };
+}
+
+export async function getSimulatorOcrAdminConfig() {
+  const configs = await getAllConfigs();
+  const status = await getSimulatorOcrConfigStatus(configs);
+
+  return {
+    geminiApiKey: configs.gemini_api_key ?? '',
+    r2AccountId: configs.r2_account_id ?? '',
+    r2Endpoint: configs.r2_endpoint ?? '',
+    r2AccessKey: configs.r2_access_key ?? '',
+    r2SecretKey: configs.r2_secret_key ?? '',
+    r2BucketName: configs.r2_bucket_name ?? '',
+    r2UploadPath: configs.r2_upload_path ?? '',
+    status,
   };
 }
 
@@ -662,7 +751,7 @@ async function callGeminiProfileOcr(params: {
 
 export async function recognizeSimulatorEquipmentFromImage(file: File) {
   const configs = await getAllConfigs();
-  const configStatus = await getSimulatorOcrConfigStatus();
+  const configStatus = await getSimulatorOcrConfigStatus(configs);
   if (!configStatus.ready) {
     throw new Error(`识图配置未完成：${configStatus.missing.join(', ')}`);
   }
@@ -677,14 +766,17 @@ export async function recognizeSimulatorEquipmentFromImage(file: File) {
   return {
     key: uploaded.key,
     url: uploaded.url,
-    equipment: normalizeRecognizedEquipment(recognized, uploaded.url),
+    equipment: await normalizeRecognizedEquipmentWithDictionary(
+      recognized,
+      uploaded.url
+    ),
     raw: recognized,
   };
 }
 
 export async function recognizeSimulatorProfileFromImage(file: File) {
   const configs = await getAllConfigs();
-  const configStatus = await getSimulatorOcrConfigStatus();
+  const configStatus = await getSimulatorOcrConfigStatus(configs);
   if (!configStatus.ready) {
     throw new Error(`识图配置未完成：${configStatus.missing.join(', ')}`);
   }

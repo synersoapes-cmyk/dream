@@ -3,7 +3,9 @@ import { create } from 'zustand';
 import {
   buildEquipmentSetStatePatch,
   cloneEquipmentList,
+  createEquipmentSet,
   ensureEquipmentSets,
+  getDefaultEquipmentSetName,
   syncEquipmentSetsWithActiveEquipment,
 } from './equipmentSetState';
 import {
@@ -61,6 +63,9 @@ const defaultSeed = {
   equipment: initialEquipment,
   equipmentSets: initialEquipmentSets,
 };
+
+const createEquipmentSetId = () =>
+  `set_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 export const useGameStore = create<GameState>()((set, get) => ({
   // Account state
@@ -250,6 +255,162 @@ export const useGameStore = create<GameState>()((set, get) => ({
         equipment: state.equipment,
         equipmentSets,
         activeSetIndex: state.activeSetIndex,
+      });
+    });
+  },
+
+  addEquipmentSet: () => {
+    set((state) => {
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const nextIndex = persistedSets.length;
+      const nextSet = {
+        ...createEquipmentSet(nextIndex, state.equipment),
+        id: createEquipmentSetId(),
+        name: getDefaultEquipmentSetName(nextIndex),
+        isActive: false,
+      };
+      const equipmentSets = [...persistedSets, nextSet].map(
+        (set, setIndex) => ({
+          ...set,
+          isActive: setIndex === nextIndex,
+        })
+      );
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: cloneEquipmentList(nextSet.items),
+        equipmentSets,
+        activeSetIndex: nextIndex,
+      });
+    });
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
+
+  duplicateEquipmentSet: (index) => {
+    set((state) => {
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const source = persistedSets[index];
+      if (!source) {
+        return state;
+      }
+
+      const duplicatedSet = {
+        id: createEquipmentSetId(),
+        name: `${source.name || getDefaultEquipmentSetName(index)} 副本`,
+        items: cloneEquipmentList(source.items),
+        isActive: false,
+      };
+      const nextIndex = index + 1;
+      const equipmentSets = [
+        ...persistedSets.slice(0, nextIndex),
+        duplicatedSet,
+        ...persistedSets.slice(nextIndex),
+      ].map((set, setIndex) => ({
+        ...set,
+        isActive: setIndex === nextIndex,
+      }));
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: cloneEquipmentList(duplicatedSet.items),
+        equipmentSets,
+        activeSetIndex: nextIndex,
+      });
+    });
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
+
+  removeEquipmentSet: (index) => {
+    set((state) => {
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      if (
+        persistedSets.length <= 1 ||
+        index < 0 ||
+        index >= persistedSets.length
+      ) {
+        return state;
+      }
+
+      const equipmentSets = persistedSets.filter(
+        (_, setIndex) => setIndex !== index
+      );
+      const nextActiveIndex =
+        index < state.activeSetIndex
+          ? state.activeSetIndex - 1
+          : index === state.activeSetIndex
+            ? Math.max(0, Math.min(index, equipmentSets.length - 1))
+            : state.activeSetIndex;
+      const normalizedSets = equipmentSets.map((set, setIndex) => ({
+        ...set,
+        isActive: setIndex === nextActiveIndex,
+      }));
+      const nextEquipment = cloneEquipmentList(
+        normalizedSets[nextActiveIndex]?.items ?? []
+      );
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: nextEquipment,
+        equipmentSets: normalizedSets,
+        activeSetIndex: nextActiveIndex,
+      });
+    });
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
+
+  moveEquipmentSet: (index, direction) => {
+    set((state) => {
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const targetIndex = direction === 'left' ? index - 1 : index + 1;
+      if (
+        index < 0 ||
+        targetIndex < 0 ||
+        index >= persistedSets.length ||
+        targetIndex >= persistedSets.length
+      ) {
+        return state;
+      }
+
+      const nextSets = [...persistedSets];
+      const current = nextSets[index];
+      nextSets[index] = nextSets[targetIndex]!;
+      nextSets[targetIndex] = current!;
+
+      const nextActiveIndex =
+        state.activeSetIndex === index
+          ? targetIndex
+          : state.activeSetIndex === targetIndex
+            ? index
+            : state.activeSetIndex;
+
+      const equipmentSets = nextSets.map((set, setIndex) => ({
+        ...set,
+        isActive: setIndex === nextActiveIndex,
+      }));
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: cloneEquipmentList(state.equipment),
+        equipmentSets,
+        activeSetIndex: nextActiveIndex,
       });
     });
   },

@@ -311,6 +311,117 @@ export const equipmentAttr = table('equipment_attr', {
   displayOrder: integer('display_order').notNull().default(0),
 });
 
+export const ornamentItem = table(
+  'ornament_item',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    name: text('name').notNull(),
+    level: integer('level').notNull().default(0),
+    quality: text('quality').notNull().default(''),
+    mainAttrType: text('main_attr_type').notNull().default(''),
+    mainAttrValue: real('main_attr_value').notNull().default(0),
+    price: integer('price').notNull().default(0),
+    source: text('source').notNull().default('manual'),
+    status: text('status').notNull().default('equipped'),
+    specialEffectJson: text('special_effect_json').notNull().default('{}'),
+    setEffectJson: text('set_effect_json').notNull().default('{}'),
+    notesJson: text('notes_json').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_ornament_item_character_slot_status').on(
+      table.characterId,
+      table.slot,
+      table.status
+    ),
+  ]
+);
+
+export const ornamentSubAttr = table('ornament_sub_attr', {
+  id: text('id').primaryKey(),
+  ornamentId: text('ornament_id')
+    .notNull()
+    .references(() => ornamentItem.id, { onDelete: 'cascade' }),
+  attrType: text('attr_type').notNull(),
+  attrValue: real('attr_value').notNull().default(0),
+  displayOrder: integer('display_order').notNull().default(0),
+});
+
+export const ornamentSetEffect = table(
+  'ornament_set_effect',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    setName: text('set_name').notNull(),
+    totalLevel: integer('total_level').notNull().default(0),
+    tier: integer('tier').notNull().default(0),
+    effectJson: text('effect_json').notNull().default('{}'),
+  },
+  (table) => [
+    uniqueIndex('uidx_ornament_set_effect_snapshot_name').on(
+      table.snapshotId,
+      table.setName
+    ),
+  ]
+);
+
+export const jadeItem = table(
+  'jade_item',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    name: text('name').notNull(),
+    quality: text('quality').notNull().default(''),
+    fitLevel: integer('fit_level').notNull().default(0),
+    price: integer('price').notNull().default(0),
+    source: text('source').notNull().default('manual'),
+    status: text('status').notNull().default('equipped'),
+    specialEffectJson: text('special_effect_json').notNull().default('{}'),
+    setEffectJson: text('set_effect_json').notNull().default('{}'),
+    notesJson: text('notes_json').notNull().default('{}'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_jade_item_character_slot_status').on(
+      table.characterId,
+      table.slot,
+      table.status
+    ),
+  ]
+);
+
+export const jadeAttr = table('jade_attr', {
+  id: text('id').primaryKey(),
+  jadeId: text('jade_id')
+    .notNull()
+    .references(() => jadeItem.id, { onDelete: 'cascade' }),
+  attrType: text('attr_type').notNull(),
+  valueType: text('value_type').notNull().default('flat'),
+  attrValue: real('attr_value').notNull().default(0),
+  displayOrder: integer('display_order').notNull().default(0),
+});
+
 export const snapshotEquipmentSlot = table(
   'snapshot_equipment_slot',
   {
@@ -327,6 +438,106 @@ export const snapshotEquipmentSlot = table(
     uniqueIndex('uidx_snapshot_equipment_slot').on(
       table.snapshotId,
       table.slot
+    ),
+  ]
+);
+
+export const snapshotOrnamentSlot = table(
+  'snapshot_ornament_slot',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    ornamentId: text('ornament_id')
+      .notNull()
+      .references(() => ornamentItem.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('uidx_snapshot_ornament_slot').on(table.snapshotId, table.slot),
+  ]
+);
+
+export const snapshotJadeSlot = table(
+  'snapshot_jade_slot',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id')
+      .notNull()
+      .references(() => characterSnapshot.id, { onDelete: 'cascade' }),
+    slot: text('slot').notNull(),
+    jadeId: text('jade_id')
+      .notNull()
+      .references(() => jadeItem.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('uidx_snapshot_jade_slot').on(table.snapshotId, table.slot),
+  ]
+);
+
+export const equipmentPlan = table(
+  'equipment_plan',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    name: text('name').notNull().default(''),
+    sort: integer('sort').notNull().default(0),
+    isActive: integer('is_active', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_equipment_plan_character_sort').on(
+      table.characterId,
+      table.sort,
+      table.updatedAt
+    ),
+    index('idx_equipment_plan_character_active').on(
+      table.characterId,
+      table.isActive,
+      table.updatedAt
+    ),
+  ]
+);
+
+export const equipmentPlanItem = table(
+  'equipment_plan_item',
+  {
+    id: text('id').primaryKey(),
+    planId: text('plan_id')
+      .notNull()
+      .references(() => equipmentPlan.id, { onDelete: 'cascade' }),
+    slotKey: text('slot_key').notNull().default(''),
+    itemType: text('item_type').notNull().default('equipment'),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    sort: integer('sort').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_equipment_plan_item_plan_sort').on(
+      table.planId,
+      table.sort,
+      table.updatedAt
+    ),
+    uniqueIndex('uidx_equipment_plan_item_plan_slot').on(
+      table.planId,
+      table.slotKey
     ),
   ]
 );
@@ -376,42 +587,6 @@ export const battleTargetTemplate = table(
   ]
 );
 
-export const attributeRule = table(
-  'attribute_rule',
-  {
-    id: text('id').primaryKey(),
-    school: text('school').notNull(),
-    roleType: text('role_type').notNull(),
-    sourceAttr: text('source_attr').notNull(),
-    targetAttr: text('target_attr').notNull(),
-    addValue: real('add_value').notNull(),
-    notes: text('notes').notNull().default(''),
-    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
-    sort: integer('sort').notNull().default(0),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' })
-      .default(sqliteNowMs)
-      .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
-      .default(sqliteNowMs)
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('uidx_attribute_rule_scope').on(
-      table.school,
-      table.roleType,
-      table.sourceAttr,
-      table.targetAttr
-    ),
-    index('idx_attribute_rule_query').on(
-      table.school,
-      table.roleType,
-      table.sourceAttr,
-      table.enabled
-    ),
-  ]
-);
-
 export const ruleVersion = table(
   'rule_version',
   {
@@ -446,8 +621,8 @@ export const ruleVersion = table(
   ]
 );
 
-export const ruleAttributeConversion = table(
-  'rule_attribute_conversion',
+export const ruleAttribute = table(
+  'rule_attribute',
   {
     id: text('id').primaryKey(),
     versionId: text('version_id')
@@ -471,14 +646,14 @@ export const ruleAttributeConversion = table(
       .notNull(),
   },
   (table) => [
-    uniqueIndex('uidx_rule_attr_conversion_scope').on(
+    uniqueIndex('uidx_rule_attribute_scope').on(
       table.versionId,
       table.school,
       table.roleType,
       table.sourceAttr,
       table.targetAttr
     ),
-    index('idx_rule_attr_conversion_lookup').on(
+    index('idx_rule_attribute_lookup').on(
       table.versionId,
       table.school,
       table.roleType,
@@ -782,6 +957,174 @@ export const labSessionEquipment = table(
   ]
 );
 
+export const ocrJob = table(
+  'ocr_job',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    sceneType: text('scene_type').notNull().default('equipment'),
+    imageUrl: text('image_url').notNull().default(''),
+    status: text('status').notNull().default('pending'),
+    rawResultJson: text('raw_result_json').notNull().default('{}'),
+    errorMessage: text('error_message').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_ocr_job_character_created').on(
+      table.characterId,
+      table.createdAt
+    ),
+    index('idx_ocr_job_status_updated').on(table.status, table.updatedAt),
+  ]
+);
+
+export const ocrDraftItem = table(
+  'ocr_draft_item',
+  {
+    id: text('id').primaryKey(),
+    ocrJobId: text('ocr_job_id')
+      .notNull()
+      .references(() => ocrJob.id, { onDelete: 'cascade' }),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    itemType: text('item_type').notNull().default('equipment'),
+    draftBodyJson: text('draft_body_json').notNull().default('{}'),
+    confidenceScore: real('confidence_score').notNull().default(0),
+    reviewStatus: text('review_status').notNull().default('pending'),
+    reviewNote: text('review_note').notNull().default(''),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_ocr_draft_item_character_review_created').on(
+      table.characterId,
+      table.reviewStatus,
+      table.createdAt
+    ),
+    index('idx_ocr_draft_item_job').on(table.ocrJobId, table.createdAt),
+  ]
+);
+
+export const ocrDictionary = table(
+  'ocr_dictionary',
+  {
+    id: text('id').primaryKey(),
+    dictType: text('dict_type').notNull().default('equipment_name'),
+    rawText: text('raw_text').notNull(),
+    normalizedText: text('normalized_text').notNull(),
+    priority: integer('priority').notNull().default(0),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    createdBy: text('created_by').notNull().default('system'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_ocr_dictionary_type_raw_text').on(table.dictType, table.rawText),
+    index('idx_ocr_dictionary_enabled_priority').on(
+      table.enabled,
+      table.priority,
+      table.updatedAt
+    ),
+  ]
+);
+
+export const inventoryEquipmentAsset = table(
+  'inventory_equipment_asset',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    itemType: text('item_type').notNull().default('equipment'),
+    sourceCandidateId: text('source_candidate_id'),
+    sourceDraftId: text('source_draft_id').references(() => ocrDraftItem.id, {
+      onDelete: 'set null',
+    }),
+    itemName: text('item_name').notNull().default(''),
+    itemSubtype: text('item_subtype').notNull().default(''),
+    slotKey: text('slot_key').notNull().default(''),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    priceSnapshot: integer('price_snapshot'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_inventory_asset_character_type_status').on(
+      table.characterId,
+      table.itemType,
+      table.updatedAt
+    ),
+    index('idx_inventory_asset_source_draft').on(table.sourceDraftId),
+    uniqueIndex('uidx_inventory_asset_source_candidate').on(
+      table.sourceCandidateId
+    ),
+  ]
+);
+
+export const inventoryEntry = table(
+  'inventory_entry',
+  {
+    id: text('id').primaryKey(),
+    characterId: text('character_id')
+      .notNull()
+      .references(() => gameCharacter.id, { onDelete: 'cascade' }),
+    itemType: text('item_type').notNull().default('equipment'),
+    itemRefId: text('item_ref_id').notNull(),
+    sourceDraftId: text('source_draft_id').references(() => ocrDraftItem.id, {
+      onDelete: 'set null',
+    }),
+    folderKey: text('folder_key').notNull().default('equipment'),
+    price: integer('price'),
+    status: text('status').notNull().default('active'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_inventory_entry_character_type_status').on(
+      table.characterId,
+      table.itemType,
+      table.status
+    ),
+    index('idx_inventory_entry_folder_status').on(
+      table.folderKey,
+      table.status
+    ),
+    uniqueIndex('uidx_inventory_entry_item_ref_type').on(
+      table.itemRefId,
+      table.itemType
+    ),
+  ]
+);
+
 export const candidateEquipment = table(
   'candidate_equipment',
   {
@@ -797,6 +1140,15 @@ export const candidateEquipment = table(
     targetSetId: text('target_set_id'),
     targetEquipmentId: text('target_equipment_id'),
     targetRuneStoneSetIndex: integer('target_rune_stone_set_index'),
+    ocrJobId: text('ocr_job_id').references(() => ocrJob.id, {
+      onDelete: 'set null',
+    }),
+    ocrDraftItemId: text('ocr_draft_item_id').references(
+      () => ocrDraftItem.id,
+      {
+        onDelete: 'set null',
+      }
+    ),
     sort: integer('sort').notNull().default(0),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
@@ -816,6 +1168,7 @@ export const candidateEquipment = table(
       table.characterId,
       table.sort
     ),
+    index('idx_candidate_equipment_ocr_draft').on(table.ocrDraftItemId),
   ]
 );
 

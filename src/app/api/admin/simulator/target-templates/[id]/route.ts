@@ -33,6 +33,10 @@ export async function PATCH(
     const { id } = await params;
     const body = await req.json();
     const item = await updateAdminBattleTargetTemplate(id, {
+      sceneType:
+        body?.sceneType === 'manual' || body?.sceneType === 'dungeon'
+          ? body.sceneType
+          : undefined,
       name: typeof body?.name === 'string' ? body.name : undefined,
       dungeonName: typeof body?.dungeonName === 'string' ? body.dungeonName : undefined,
       targetType: typeof body?.targetType === 'string' ? body.targetType : undefined,

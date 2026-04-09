@@ -91,6 +91,7 @@ export async function listAdminSimulatorLabSessions(params?: {
 
 export async function listAdminBattleTargetTemplates(params?: {
   enabled?: boolean;
+  sceneType?: string;
   limit?: number;
 }): Promise<AdminBattleTargetTemplateItem[]> {
   await ensureSimulatorDbReady();
@@ -100,6 +101,9 @@ export async function listAdminBattleTargetTemplates(params?: {
     if (typeof params?.enabled === 'boolean') {
       conditions.push(eq(battleTargetTemplate.enabled, params.enabled));
     }
+    if (params?.sceneType) {
+      conditions.push(eq(battleTargetTemplate.sceneType, params.sceneType));
+    }
 
     const rows = await db()
       .select()
@@ -107,6 +111,7 @@ export async function listAdminBattleTargetTemplates(params?: {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(
         desc(battleTargetTemplate.enabled),
+        asc(battleTargetTemplate.sceneType),
         asc(battleTargetTemplate.scope),
         asc(battleTargetTemplate.dungeonName),
         asc(battleTargetTemplate.name)
@@ -117,7 +122,12 @@ export async function listAdminBattleTargetTemplates(params?: {
   });
 }
 
-export async function listSimulatorBattleTargetTemplates(userId?: string) {
+export async function listSimulatorBattleTargetTemplates(
+  userId?: string,
+  params?: {
+    sceneType?: string;
+  }
+) {
   await ensureSimulatorDbReady();
 
   return withTransientD1Retry(
@@ -129,6 +139,9 @@ export async function listSimulatorBattleTargetTemplates(userId?: string) {
         .where(
           and(
             eq(battleTargetTemplate.enabled, true),
+            params?.sceneType
+              ? eq(battleTargetTemplate.sceneType, params.sceneType)
+              : undefined,
             userId
               ? or(
                   eq(battleTargetTemplate.scope, 'system'),
@@ -141,6 +154,7 @@ export async function listSimulatorBattleTargetTemplates(userId?: string) {
           )
         )
         .orderBy(
+          asc(battleTargetTemplate.sceneType),
           asc(battleTargetTemplate.dungeonName),
           asc(battleTargetTemplate.name),
           asc(battleTargetTemplate.level)
@@ -152,6 +166,7 @@ export async function listSimulatorBattleTargetTemplates(userId?: string) {
 }
 
 export async function createAdminBattleTargetTemplate(input: {
+  sceneType?: string;
   name: string;
   dungeonName?: string;
   targetType?: string;
@@ -179,6 +194,7 @@ export async function createAdminBattleTargetTemplate(input: {
         id,
         userId: null,
         scope: 'system',
+        sceneType: input.sceneType?.trim() || 'dungeon',
         name: input.name.trim(),
         dungeonName: input.dungeonName?.trim() ?? '',
         targetType: input.targetType?.trim() ?? 'mob',
@@ -217,6 +233,7 @@ export async function createAdminBattleTargetTemplate(input: {
 export async function updateAdminBattleTargetTemplate(
   id: string,
   input: {
+    sceneType?: string;
     name?: string;
     dungeonName?: string;
     targetType?: string;
@@ -250,6 +267,7 @@ export async function updateAdminBattleTargetTemplate(
     await db()
       .update(battleTargetTemplate)
       .set({
+        sceneType: input.sceneType?.trim() ?? existing.sceneType,
         name: input.name?.trim() ?? existing.name,
         dungeonName: input.dungeonName?.trim() ?? existing.dungeonName,
         targetType: input.targetType?.trim() ?? existing.targetType,

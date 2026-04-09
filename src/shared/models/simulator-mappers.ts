@@ -167,6 +167,7 @@ export function mapBattleTargetTemplateRow(
     id: row.id,
     userId: row.userId ?? null,
     scope: row.scope,
+    sceneType: row.sceneType,
     name: row.name,
     dungeonName: row.dungeonName,
     targetType: row.targetType,

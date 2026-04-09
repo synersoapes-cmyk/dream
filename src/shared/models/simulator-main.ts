@@ -234,6 +234,9 @@ function toOptionalInteger(value: unknown) {
 }
 
 const EQUIPMENT_PLAN_NOTES_KEY = 'equipmentPlan';
+const MANUAL_TARGETS_NOTES_KEY = 'manualTargets';
+const COMBAT_TAB_NOTES_KEY = 'combatTab';
+const SELECTED_DUNGEON_IDS_NOTES_KEY = 'selectedDungeonIds';
 const EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE = 'equipment_backup';
 const ORNAMENT_SET_TIERS = [32, 28, 24, 16, 8] as const;
 
@@ -569,6 +572,109 @@ function removeEquipmentPlanFromNotesJson(
 ) {
   const notes = parseJsonObject(notesJson);
   delete notes[EQUIPMENT_PLAN_NOTES_KEY];
+  return JSON.stringify(notes);
+}
+
+function toFiniteNumber(value: unknown, fallback = 0) {
+  const parsed =
+    typeof value === 'number' && Number.isFinite(value) ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toPersistedManualTarget(
+  value: unknown,
+  index: number
+): Record<string, unknown> | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id =
+    typeof value.id === 'string' && value.id.trim().length > 0
+      ? value.id.trim()
+      : `manual_target_${index + 1}`;
+  const name =
+    typeof value.name === 'string' && value.name.trim().length > 0
+      ? value.name.trim()
+      : `手动目标${index + 1}`;
+  const element =
+    typeof value.element === 'string' && value.element.trim().length > 0
+      ? value.element.trim()
+      : '水';
+  const formation =
+    typeof value.formation === 'string' && value.formation.trim().length > 0
+      ? value.formation.trim()
+      : '普通阵';
+
+  return {
+    id,
+    name,
+    element,
+    formation,
+    magicDamage: toFiniteNumber(value.magicDamage, 0),
+    spiritualPower: toFiniteNumber(value.spiritualPower, 0),
+    magicCritLevel: toFiniteNumber(value.magicCritLevel, 0),
+    speed: toFiniteNumber(value.speed, 0),
+    hit: toFiniteNumber(value.hit, 0),
+    fixedDamage: toFiniteNumber(value.fixedDamage, 0),
+    pierceLevel: toFiniteNumber(value.pierceLevel, 0),
+    elementalMastery: toFiniteNumber(value.elementalMastery, 0),
+    hp: toFiniteNumber(value.hp, 0),
+    magicDefense: toFiniteNumber(value.magicDefense, 0),
+    defense: toFiniteNumber(value.defense, 0),
+    block: toFiniteNumber(value.block, 0),
+    antiCritLevel: toFiniteNumber(value.antiCritLevel, 0),
+    sealResistLevel: toFiniteNumber(value.sealResistLevel, 0),
+    dodge: toFiniteNumber(value.dodge, 0),
+    elementalResistance: toFiniteNumber(value.elementalResistance, 0),
+  };
+}
+
+function sanitizeSelectedDungeonIds(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const ids = value
+    .filter(
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0
+    )
+    .map((item) => item.trim());
+
+  return Array.from(new Set(ids)).slice(0, 5);
+}
+
+function buildBattleContextNotesJson(
+  currentNotesJson: string | null | undefined,
+  patch: {
+    manualTargets?: unknown[];
+    combatTab?: 'manual' | 'dungeon';
+    selectedDungeonIds?: unknown[];
+  }
+) {
+  const notes = parseJsonObject(removeEquipmentPlanFromNotesJson(currentNotesJson));
+
+  if (patch.manualTargets !== undefined) {
+    const manualTargets = patch.manualTargets
+      .map(toPersistedManualTarget)
+      .filter(
+        (item): item is Record<string, unknown> => item !== null
+      );
+    notes[MANUAL_TARGETS_NOTES_KEY] = manualTargets;
+  }
+
+  if (patch.combatTab !== undefined) {
+    notes[COMBAT_TAB_NOTES_KEY] =
+      patch.combatTab === 'dungeon' ? 'dungeon' : 'manual';
+  }
+
+  if (patch.selectedDungeonIds !== undefined) {
+    notes[SELECTED_DUNGEON_IDS_NOTES_KEY] = sanitizeSelectedDungeonIds(
+      patch.selectedDungeonIds
+    );
+  }
+
   return JSON.stringify(notes);
 }
 
@@ -2495,6 +2601,9 @@ export async function updateSimulatorBattleContext(
     targetElement?: string;
     targetFormation?: string;
     targetTemplateId?: string | null;
+    manualTargets?: unknown[];
+    combatTab?: 'manual' | 'dungeon';
+    selectedDungeonIds?: unknown[];
   }
 ) {
   await ensureSimulatorDbReady();
@@ -2590,7 +2699,11 @@ export async function updateSimulatorBattleContext(
     targetMagicDefenseCultivation: payload.targetMagicDefenseCultivation ?? 0,
     targetElement: payload.targetElement || '',
     targetFormation: payload.targetFormation || '普通阵',
-    notesJson: existingContext?.notesJson ?? '{}',
+    notesJson: buildBattleContextNotesJson(existingContext?.notesJson, {
+      manualTargets: payload.manualTargets,
+      combatTab: payload.combatTab,
+      selectedDungeonIds: payload.selectedDungeonIds,
+    }),
   };
   const nextBattleContext: SimulatorBattleContext = existingContext
     ? {

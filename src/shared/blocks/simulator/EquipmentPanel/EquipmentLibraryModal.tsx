@@ -114,7 +114,7 @@ export function EquipmentLibraryModal({
                   选择{slotName}
                 </h2>
                 <p className={`text-xs ${theme.accentColor}/80`}>
-                  从装备库中选择一件装备
+                  可从当前方案、其他方案或候选装备库中选择
                 </p>
               </div>
             </div>
@@ -133,7 +133,7 @@ export function EquipmentLibraryModal({
                 <Package className={`h-16 w-16 ${theme.accentColor}/30 mb-4`} />
                 <p className="text-sm text-slate-400">暂无{slotName}装备</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  请先在实验室的新品装备库中添加装备
+                  当前方案、其他装备方案和候选装备库里都还没有可用装备
                 </p>
               </div>
             ) : (

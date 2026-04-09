@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Dungeon, Skill } from '@/features/simulator/store/gameTypes';
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
@@ -378,11 +377,8 @@ export function SkillDamagePanel({
     DamageEngineResult['ruleVersion'] | null
   >(null);
 
-  const [targetDungeons, setTargetDungeons] =
-    useState<Dungeon[]>(DUNGEON_DATABASE);
-  const [selectedDungeonId, setSelectedDungeonId] = useState<string>(
-    DUNGEON_DATABASE[0]?.id || ''
-  );
+  const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>([]);
+  const [selectedDungeonId, setSelectedDungeonId] = useState<string>('');
   const [isDungeonSelectOpen, setIsDungeonSelectOpen] = useState(false);
 
   const [activeSkillId, setActiveSkillId] = useState<string>(
@@ -416,7 +412,7 @@ export function SkillDamagePanel({
 
     const loadTemplates = async () => {
       try {
-        const response = await fetch('/api/simulator/target-templates', {
+        const response = await fetch('/api/simulator/target-templates?scene=dungeon', {
           method: 'GET',
           cache: 'no-store',
         });
@@ -440,9 +436,7 @@ export function SkillDamagePanel({
             );
           }
         }
-      } catch {
-        // Keep local fallback data when remote templates are unavailable.
-      }
+      } catch {}
     };
 
     void loadTemplates();

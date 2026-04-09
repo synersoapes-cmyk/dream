@@ -99,6 +99,42 @@ function getEquipmentEffectTexts(
   );
 }
 
+function getEquipmentLibraryKey(equipment: Equipment) {
+  const normalizedName = equipment.name.trim().toLowerCase();
+  const normalizedMainStat = equipment.mainStat.trim().toLowerCase();
+
+  return [
+    equipment.type,
+    equipment.slot ?? 'default',
+    normalizedName,
+    equipment.level ?? 'default',
+    normalizedMainStat,
+    equipment.price ?? 'default',
+  ].join(':');
+}
+
+function mergeLibraryEquipments(...groups: Equipment[][]) {
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const merged: Equipment[] = [];
+
+  groups.forEach((group) => {
+    group.forEach((equipment) => {
+      const libraryKey = getEquipmentLibraryKey(equipment);
+
+      if (seenIds.has(equipment.id) || seenKeys.has(libraryKey)) {
+        return;
+      }
+
+      seenIds.add(equipment.id);
+      seenKeys.add(libraryKey);
+      merged.push(equipment);
+    });
+  });
+
+  return merged;
+}
+
 type EquipmentPanelSlotType =
   | SimulatorPrimaryEquipmentType
   | SimulatorAccessoryEquipmentType;
@@ -107,6 +143,7 @@ export function EquipmentPanel() {
   const equipment = useGameStore((state) => state.equipment);
   const equipmentSets = useGameStore((state) => state.equipmentSets);
   const pendingEquipments = useGameStore((state) => state.pendingEquipments);
+  const syncedCloudState = useGameStore((state) => state.syncedCloudState);
   const activeSetIndex = useGameStore((state) => state.activeSetIndex);
   const selectEquipmentSet = useGameStore((state) => state.selectEquipmentSet);
   const updateEquipmentSetName = useGameStore(
@@ -137,9 +174,15 @@ export function EquipmentPanel() {
     name: string;
     slot?: number;
   } | null>(null);
-  const libraryEquipments = pendingEquipments
-    .filter((item) => item.status === 'confirmed')
-    .map((item) => item.equipment);
+  const libraryEquipments = mergeLibraryEquipments(
+    equipment,
+    equipmentSets.flatMap((set) => set.items),
+    syncedCloudState?.equipment ?? [],
+    syncedCloudState?.equipmentSets.flatMap((set) => set.items) ?? [],
+    pendingEquipments
+      .filter((item) => item.status === 'confirmed')
+      .map((item) => item.equipment)
+  );
 
   // 获取装备组合名称（从state获取，或使用默认名称）
   const getSetName = (index: number) => {

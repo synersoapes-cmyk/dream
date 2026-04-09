@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
+import { createInitialManualTargets } from '@/features/simulator/store/gameRuntimeSeeds';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   Dungeon,
-  DungeonTarget,
   EnemyTarget,
 } from '@/features/simulator/store/gameTypes';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
+import {
+  buildDungeonDatabaseFromTemplates,
+  buildManualTargetsFromTemplates,
+} from '@/features/simulator/utils/targetTemplates';
 import {
   Check,
   ChevronDown,
@@ -84,8 +86,13 @@ const MANUAL_DEFENSE_STAT_FIELDS: Array<{
   { key: 'elementalResistance', label: '五行克制抵御能力', max: 300 },
 ];
 
+const INITIAL_MANUAL_TARGETS = createInitialManualTargets();
+
+function isUsingInitialManualTargets(targets: EnemyTarget[]) {
+  return JSON.stringify(targets) === JSON.stringify(INITIAL_MANUAL_TARGETS);
+}
+
 export function CombatPanel() {
-  const [activeTab, setActiveTab] = useState<'manual' | 'dungeon'>('manual');
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
   const combatTarget = useGameStore((state) => state.combatTarget);
   const updateCombatTarget = useGameStore((state) => state.updateCombatTarget);
@@ -95,6 +102,7 @@ export function CombatPanel() {
   const updateManualTarget = useGameStore((state) => state.updateManualTarget);
   const playerSetup = useGameStore((state) => state.playerSetup);
   const selectedSkill = useGameStore((state) => state.selectedSkill);
+  const combatTab = useGameStore((state) => state.combatTab);
   const selectedDungeonIds = useGameStore((state) => state.selectedDungeonIds);
   const setCombatTab = useGameStore((state) => state.setCombatTab);
   const setSelectedDungeonIds = useGameStore(
@@ -119,33 +127,57 @@ export function CombatPanel() {
   const [saveBattleContextError, setSaveBattleContextError] = useState<
     string | null
   >(null);
-  const [targetDungeons, setTargetDungeons] =
-    useState<Dungeon[]>(DUNGEON_DATABASE);
+  const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>([]);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadTemplates = async () => {
       try {
-        const response = await fetch('/api/simulator/target-templates', {
-          method: 'GET',
-          cache: 'no-store',
-        });
-        const payload = await response.json();
-        if (
-          !response.ok ||
-          payload?.code !== 0 ||
-          !Array.isArray(payload?.data)
-        ) {
+        const [dungeonResponse, manualResponse] = await Promise.all([
+          fetch('/api/simulator/target-templates?scene=dungeon', {
+            method: 'GET',
+            cache: 'no-store',
+          }),
+          fetch('/api/simulator/target-templates?scene=manual', {
+            method: 'GET',
+            cache: 'no-store',
+          }),
+        ]);
+        const [dungeonPayload, manualPayload] = await Promise.all([
+          dungeonResponse.json(),
+          manualResponse.json(),
+        ]);
+        if (cancelled) {
           return;
         }
 
-        if (!cancelled) {
-          setTargetDungeons(buildDungeonDatabaseFromTemplates(payload.data));
+        if (
+          dungeonResponse.ok &&
+          dungeonPayload?.code === 0 &&
+          Array.isArray(dungeonPayload?.data)
+        ) {
+          setTargetDungeons(buildDungeonDatabaseFromTemplates(dungeonPayload.data));
         }
-      } catch {
-        // Keep local dungeon fallback when remote templates are unavailable.
-      }
+
+        if (
+          manualResponse.ok &&
+          manualPayload?.code === 0 &&
+          Array.isArray(manualPayload?.data)
+        ) {
+          const nextManualTargets = buildManualTargetsFromTemplates(
+            manualPayload.data
+          );
+          if (
+            nextManualTargets.length > 0 &&
+            isUsingInitialManualTargets(useGameStore.getState().manualTargets)
+          ) {
+            useGameStore.setState({
+              manualTargets: nextManualTargets,
+            });
+          }
+        }
+      } catch {}
     };
 
     void loadTemplates();
@@ -154,6 +186,23 @@ export function CombatPanel() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (manualTargets.length === 0) {
+      return;
+    }
+
+    setExpandedTargetIds((current) => {
+      const hasVisibleTarget = manualTargets.some((target) =>
+        current.has(target.id)
+      );
+      if (hasVisibleTarget) {
+        return current;
+      }
+
+      return new Set([manualTargets[0].id]);
+    });
+  }, [manualTargets]);
 
   const elementRelation = useMemo(() => {
     const selfElement = playerSetup.element;
@@ -205,18 +254,30 @@ export function CombatPanel() {
     updateManualTarget(id, { [key]: value } as Partial<EnemyTarget>);
   };
 
-  const handleSaveBattleContext = async () => {
+  const saveBattleContext = async (overrides?: {
+    combatTab?: 'manual' | 'dungeon';
+    selectedDungeonIds?: string[];
+    combatTarget?: typeof combatTarget;
+  }) => {
     setIsSavingBattleContext(true);
     setSaveBattleContextMessage(null);
     setSaveBattleContextError(null);
 
     try {
+      const nextCombatTab = overrides?.combatTab ?? combatTab;
+      const nextSelectedDungeonIds =
+        overrides?.selectedDungeonIds ?? selectedDungeonIds;
+      const nextCombatTarget = overrides?.combatTarget ?? combatTarget;
+
       const response = await fetch('/api/simulator/current/battle-context', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          combatTab: nextCombatTab,
+          selectedDungeonIds: nextSelectedDungeonIds,
+          manualTargets,
           selfFormation: playerSetup.formation,
           selfElement: playerSetup.element,
           formationCounterState: '无克/普通',
@@ -225,16 +286,16 @@ export function CombatPanel() {
           splitTargetCount: selectedSkill?.targets || 1,
           shenmuValue: 0,
           magicResult: 0,
-          targetTemplateId: combatTarget.templateId || null,
-          targetName: combatTarget.name,
-          targetLevel: combatTarget.level || 0,
-          targetHp: combatTarget.hp || 0,
-          targetDefense: combatTarget.defense || 0,
-          targetMagicDefense: combatTarget.magicDefense || 0,
-          targetSpeed: combatTarget.speed || 0,
+          targetTemplateId: nextCombatTarget.templateId || null,
+          targetName: nextCombatTarget.name,
+          targetLevel: nextCombatTarget.level || 0,
+          targetHp: nextCombatTarget.hp || 0,
+          targetDefense: nextCombatTarget.defense || 0,
+          targetMagicDefense: nextCombatTarget.magicDefense || 0,
+          targetSpeed: nextCombatTarget.speed || 0,
           targetMagicDefenseCultivation: 0,
-          targetElement: combatTarget.element || '',
-          targetFormation: combatTarget.formation || '普通阵',
+          targetElement: nextCombatTarget.element || '',
+          targetFormation: nextCombatTarget.formation || '普通阵',
         }),
       });
 
@@ -257,6 +318,10 @@ export function CombatPanel() {
     }
   };
 
+  const handleSaveBattleContext = async () => {
+    await saveBattleContext();
+  };
+
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
@@ -275,18 +340,16 @@ export function CombatPanel() {
           {/* 标签页 */}
           <div className="flex rounded-lg border border-yellow-800/40 bg-slate-900/80 p-1">
             <button
-              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${activeTab === 'manual' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${combatTab === 'manual' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
               onClick={() => {
-                setActiveTab('manual');
                 setCombatTab('manual');
               }}
             >
               手动目标
             </button>
             <button
-              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${activeTab === 'dungeon' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
+              className={`rounded-md px-3 py-1.5 text-xs transition-colors ${combatTab === 'dungeon' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
               onClick={() => {
-                setActiveTab('dungeon');
                 setCombatTab('dungeon');
               }}
             >
@@ -314,7 +377,7 @@ export function CombatPanel() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex h-full flex-col p-5">
             {/* 手动目标设置 */}
-            {activeTab === 'manual' && (
+            {combatTab === 'manual' && (
               <div className="space-y-4">
                 {/* 我方设置 */}
                 <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
@@ -656,170 +719,204 @@ export function CombatPanel() {
             )}
 
             {/* 副本目标设置 */}
-            {activeTab === 'dungeon' && (
+            {combatTab === 'dungeon' && (
               <div className="flex-1 space-y-3 overflow-y-auto">
-                {targetDungeons.map((dungeon) => {
-                  const isExpanded = expandedDungeonIds.has(dungeon.id);
-
-                  return (
-                    <div
-                      key={dungeon.id}
-                      className="overflow-hidden rounded-xl border border-yellow-800/40 bg-slate-900/40"
-                    >
-                      {/* 副本头部 */}
-                      <button
-                        onClick={() => {
-                          const newExpanded = new Set(expandedDungeonIds);
-                          if (newExpanded.has(dungeon.id)) {
-                            newExpanded.delete(dungeon.id);
-                          } else {
-                            newExpanded.add(dungeon.id);
-                          }
-                          setExpandedDungeonIds(newExpanded);
-                        }}
-                        className="flex w-full items-center justify-between p-4 transition-colors hover:bg-slate-800/40"
-                      >
-                        <div className="flex items-center gap-3">
-                          <ChevronDown
-                            className={`h-4 w-4 text-yellow-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
-                          />
-                          <Sword className="h-4 w-4 text-yellow-400" />
-                          <span className="text-sm font-bold text-yellow-100">
-                            {dungeon.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-yellow-500/70">
-                            {dungeon.level}级
-                          </span>
-                          <span className="rounded bg-yellow-900/40 px-2 py-0.5 text-xs text-yellow-400">
-                            {dungeon.difficulty === 'nightmare'
-                              ? '噩梦'
-                              : dungeon.difficulty === 'hard'
-                                ? '困难'
-                                : dungeon.difficulty === 'normal'
-                                  ? '普通'
-                                  : '简单'}
-                          </span>
-                        </div>
-                      </button>
-
-                      {/* 野怪列表 */}
-                      {isExpanded && (
-                        <div className="space-y-2 border-t border-yellow-800/30 bg-slate-950/40 p-3">
-                          {dungeon.targets.map((target) => {
-                            const currentDefense = dungeonTargetDefense[
-                              target.id
-                            ] || {
-                              defense: target.defense,
-                              magicDefense: target.magicDefense,
-                            };
-
-                            return (
-                              <div
-                                key={target.id}
-                                onClick={() => {
-                                  updateCombatTarget({
-                                    templateId: target.templateId || target.id,
-                                    name: target.name,
-                                    defense: currentDefense.defense,
-                                    magicDefense: currentDefense.magicDefense,
-                                    speed: target.speed || 0,
-                                    hp: target.hp,
-                                    level: target.level,
-                                    element: target.element,
-                                    formation: target.formation,
-                                    dungeonName: dungeon.name,
-                                  });
-                                  setCombatTab('dungeon');
-                                }}
-                                className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                                  combatTarget.dungeonName === dungeon.name &&
-                                  combatTarget.name === target.name
-                                    ? 'border-yellow-500 bg-yellow-900/10'
-                                    : 'border-yellow-800/30 bg-slate-900/60 hover:border-yellow-600/50 hover:bg-slate-900/80'
-                                }`}
-                              >
-                                <div className="mb-2 flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-yellow-100">
-                                      {target.name}
-                                    </span>
-                                    {target.isBoss && (
-                                      <span className="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] text-red-300">
-                                        BOSS
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-yellow-500/70">
-                                    <span>等级 {target.level}</span>
-                                    <span>气血 {target.hp}</span>
-                                  </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                  {/* 物理防御 */}
-                                  <div>
-                                    <Label className="mb-1.5 flex justify-between text-[10px] text-yellow-100">
-                                      <span>物理防御</span>
-                                      <span className="font-bold text-yellow-400">
-                                        {currentDefense.defense}
-                                      </span>
-                                    </Label>
-                                    <Slider
-                                      value={[currentDefense.defense]}
-                                      onValueChange={([val]) => {
-                                        setDungeonTargetDefense((prev) => ({
-                                          ...prev,
-                                          [target.id]: {
-                                            ...currentDefense,
-                                            defense: val,
-                                          },
-                                        }));
-                                      }}
-                                      min={0}
-                                      max={3000}
-                                      step={10}
-                                      aria-label={`${dungeon.name} ${target.name} 物理防御`}
-                                      className="mt-0.5"
-                                    />
-                                  </div>
-
-                                  {/* 法术防御 */}
-                                  <div>
-                                    <Label className="mb-1.5 flex justify-between text-[10px] text-yellow-100">
-                                      <span>法术防御</span>
-                                      <span className="font-bold text-yellow-400">
-                                        {currentDefense.magicDefense}
-                                      </span>
-                                    </Label>
-                                    <Slider
-                                      value={[currentDefense.magicDefense]}
-                                      onValueChange={([val]) => {
-                                        setDungeonTargetDefense((prev) => ({
-                                          ...prev,
-                                          [target.id]: {
-                                            ...currentDefense,
-                                            magicDefense: val,
-                                          },
-                                        }));
-                                      }}
-                                      min={0}
-                                      max={3000}
-                                      step={10}
-                                      aria-label={`${dungeon.name} ${target.name} 法术防御`}
-                                      className="mt-0.5"
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                {targetDungeons.length === 0 ? (
+                  <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-yellow-800/40 bg-slate-950/40 px-6 py-8 text-center">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-yellow-600/15">
+                      <Target className="h-6 w-6 text-yellow-400" />
                     </div>
-                  );
-                })}
+                    <div className="text-sm font-bold text-yellow-100">
+                      暂无副本目标模板
+                    </div>
+                    <div className="mt-2 max-w-sm text-xs leading-6 text-yellow-100/65">
+                      当前只展示后台已配置的正式副本目标。你可以先使用“手动目标”，
+                      或在后台目标模板里补充副本数据。
+                    </div>
+                  </div>
+                ) : (
+                  targetDungeons.map((dungeon) => {
+                    const isExpanded = expandedDungeonIds.has(dungeon.id);
+
+                    return (
+                      <div
+                        key={dungeon.id}
+                        className="overflow-hidden rounded-xl border border-yellow-800/40 bg-slate-900/40"
+                      >
+                        {/* 副本头部 */}
+                        <button
+                          onClick={() => {
+                            const newExpanded = new Set(expandedDungeonIds);
+                            if (newExpanded.has(dungeon.id)) {
+                              newExpanded.delete(dungeon.id);
+                            } else {
+                              newExpanded.add(dungeon.id);
+                            }
+                            setExpandedDungeonIds(newExpanded);
+                          }}
+                          className="flex w-full items-center justify-between p-4 transition-colors hover:bg-slate-800/40"
+                        >
+                          <div className="flex items-center gap-3">
+                            <ChevronDown
+                              className={`h-4 w-4 text-yellow-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                            />
+                            <Sword className="h-4 w-4 text-yellow-400" />
+                            <span className="text-sm font-bold text-yellow-100">
+                              {dungeon.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-yellow-500/70">
+                              {dungeon.level}级
+                            </span>
+                            <span className="rounded bg-yellow-900/40 px-2 py-0.5 text-xs text-yellow-400">
+                              {dungeon.difficulty === 'nightmare'
+                                ? '噩梦'
+                                : dungeon.difficulty === 'hard'
+                                  ? '困难'
+                                  : dungeon.difficulty === 'normal'
+                                    ? '普通'
+                                    : '简单'}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* 野怪列表 */}
+                        {isExpanded && (
+                          <div className="space-y-2 border-t border-yellow-800/30 bg-slate-950/40 p-3">
+                            {dungeon.targets.map((target) => {
+                              const currentDefense = dungeonTargetDefense[
+                                target.id
+                              ] || {
+                                defense: target.defense,
+                                magicDefense: target.magicDefense,
+                              };
+                              const targetSelectionId =
+                                target.templateId || target.id;
+                              const persistedTemplateId =
+                                typeof target.templateId === 'string' &&
+                                target.templateId.trim().length > 0
+                                  ? target.templateId
+                                  : undefined;
+
+                              return (
+                                <div
+                                  key={target.id}
+                                  onClick={async () => {
+                                    const nextCombatTarget = {
+                                      templateId: persistedTemplateId,
+                                      name: target.name,
+                                      defense: currentDefense.defense,
+                                      magicDefense: currentDefense.magicDefense,
+                                      speed: target.speed || 0,
+                                      hp: target.hp,
+                                      level: target.level,
+                                      element: target.element,
+                                      formation: target.formation,
+                                      dungeonName: dungeon.name,
+                                    };
+                                    const nextSelectedDungeonIds =
+                                      selectedDungeonIds.includes(targetSelectionId)
+                                        ? selectedDungeonIds
+                                        : [...selectedDungeonIds, targetSelectionId].slice(
+                                            -5
+                                          );
+
+                                    updateCombatTarget(nextCombatTarget);
+                                    setSelectedDungeonIds(nextSelectedDungeonIds);
+                                    setCombatTab('dungeon');
+                                    await saveBattleContext({
+                                      combatTab: 'dungeon',
+                                      selectedDungeonIds: nextSelectedDungeonIds,
+                                      combatTarget: nextCombatTarget,
+                                    });
+                                  }}
+                                  className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                                    combatTarget.dungeonName === dungeon.name &&
+                                    combatTarget.name === target.name
+                                      ? 'border-yellow-500 bg-yellow-900/10'
+                                      : 'border-yellow-800/30 bg-slate-900/60 hover:border-yellow-600/50 hover:bg-slate-900/80'
+                                  }`}
+                                >
+                                  <div className="mb-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-yellow-100">
+                                        {target.name}
+                                      </span>
+                                      {target.isBoss && (
+                                        <span className="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] text-red-300">
+                                          BOSS
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-yellow-500/70">
+                                      <span>等级 {target.level}</span>
+                                      <span>气血 {target.hp}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <Label className="mb-1.5 flex justify-between text-[10px] text-yellow-100">
+                                        <span>物理防御</span>
+                                        <span className="font-bold text-yellow-400">
+                                          {currentDefense.defense}
+                                        </span>
+                                      </Label>
+                                      <Slider
+                                        value={[currentDefense.defense]}
+                                        onValueChange={([val]) => {
+                                          setDungeonTargetDefense((prev) => ({
+                                            ...prev,
+                                            [target.id]: {
+                                              ...currentDefense,
+                                              defense: val,
+                                            },
+                                          }));
+                                        }}
+                                        min={0}
+                                        max={3000}
+                                        step={10}
+                                        aria-label={`${dungeon.name} ${target.name} 物理防御`}
+                                        className="mt-0.5"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <Label className="mb-1.5 flex justify-between text-[10px] text-yellow-100">
+                                        <span>法术防御</span>
+                                        <span className="font-bold text-yellow-400">
+                                          {currentDefense.magicDefense}
+                                        </span>
+                                      </Label>
+                                      <Slider
+                                        value={[currentDefense.magicDefense]}
+                                        onValueChange={([val]) => {
+                                          setDungeonTargetDefense((prev) => ({
+                                            ...prev,
+                                            [target.id]: {
+                                              ...currentDefense,
+                                              magicDefense: val,
+                                            },
+                                          }));
+                                        }}
+                                        min={0}
+                                        max={3000}
+                                        step={10}
+                                        aria-label={`${dungeon.name} ${target.name} 法术防御`}
+                                        className="mt-0.5"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>

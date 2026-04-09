@@ -548,6 +548,7 @@ export const battleTargetTemplate = table(
     id: text('id').primaryKey(),
     userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
     scope: text('scope').notNull().default('system'),
+    sceneType: text('scene_type').notNull().default('dungeon'),
     name: text('name').notNull(),
     dungeonName: text('dungeon_name').notNull().default(''),
     targetType: text('target_type').notNull().default('mob'),
@@ -578,6 +579,12 @@ export const battleTargetTemplate = table(
       table.scope,
       table.enabled,
       table.name
+    ),
+    index('idx_battle_target_template_scene_enabled').on(
+      table.sceneType,
+      table.scope,
+      table.enabled,
+      table.updatedAt
     ),
     index('idx_battle_target_template_user_enabled').on(
       table.userId,

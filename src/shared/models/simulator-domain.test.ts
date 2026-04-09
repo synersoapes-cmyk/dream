@@ -107,6 +107,7 @@ function createBundle(): SimulatorCharacterBundle {
       id: 'target_1',
       userId: null,
       scope: 'system',
+      sceneType: 'dungeon',
       name: '乌鸡国树怪',
       dungeonName: '乌鸡国',
       targetType: 'mob',

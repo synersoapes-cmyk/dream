@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
+  Dungeon,
   Equipment,
   PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
@@ -164,7 +164,7 @@ export function LaboratoryPanel() {
   // 战队目标选择器中的技能和秒几选项
   const [selectedSkillName, setSelectedSkillName] = useState<string>('');
   const [selectedTargetCount, setSelectedTargetCount] = useState<number>(1);
-  const [targetDungeons, setTargetDungeons] = useState(DUNGEON_DATABASE);
+  const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>([]);
 
   // 确认弹窗状态 - 用于覆盖当前装备
   const [confirmOverwriteDialog, setConfirmOverwriteDialog] = useState<{
@@ -188,7 +188,7 @@ export function LaboratoryPanel() {
 
     const loadTemplates = async () => {
       try {
-        const response = await fetch('/api/simulator/target-templates', {
+        const response = await fetch('/api/simulator/target-templates?scene=dungeon', {
           method: 'GET',
           cache: 'no-store',
         });
@@ -204,9 +204,7 @@ export function LaboratoryPanel() {
         if (!cancelled) {
           setTargetDungeons(buildDungeonDatabaseFromTemplates(payload.data));
         }
-      } catch {
-        // Keep local fallback data when remote templates are unavailable.
-      }
+      } catch {}
     };
 
     void loadTemplates();

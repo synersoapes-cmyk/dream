@@ -26,6 +26,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const enabledParam = searchParams.get('enabled');
+    const sceneTypeParam = searchParams.get('sceneType');
     const limitParam = searchParams.get('limit');
 
     const items = await listAdminBattleTargetTemplates({
@@ -35,6 +36,10 @@ export async function GET(req: Request) {
           : enabledParam === 'false'
             ? false
             : undefined,
+      sceneType:
+        sceneTypeParam === 'manual' || sceneTypeParam === 'dungeon'
+          ? sceneTypeParam
+          : undefined,
       limit: limitParam ? toNumber(limitParam, 100) : 100,
     });
 
@@ -67,6 +72,10 @@ export async function POST(req: Request) {
     }
 
     const item = await createAdminBattleTargetTemplate({
+      sceneType:
+        body?.sceneType === 'manual' || body?.sceneType === 'dungeon'
+          ? body.sceneType
+          : 'dungeon',
       name,
       dungeonName: typeof body?.dungeonName === 'string' ? body.dungeonName : '',
       targetType: typeof body?.targetType === 'string' ? body.targetType : 'mob',

@@ -25,6 +25,36 @@ type Props = {
 
 type EditableItem = AdminBattleTargetTemplateItem;
 
+const MANUAL_PAYLOAD_FIELDS: Array<{
+  key:
+    | 'magicDamage'
+    | 'spiritualPower'
+    | 'magicCritLevel'
+    | 'hit'
+    | 'fixedDamage'
+    | 'pierceLevel'
+    | 'elementalMastery'
+    | 'block'
+    | 'antiCritLevel'
+    | 'sealResistLevel'
+    | 'dodge'
+    | 'elementalResistance';
+  label: string;
+}> = [
+  { key: 'magicDamage', label: '法术伤害' },
+  { key: 'spiritualPower', label: '灵力' },
+  { key: 'magicCritLevel', label: '法暴等级' },
+  { key: 'hit', label: '命中' },
+  { key: 'fixedDamage', label: '固定伤害' },
+  { key: 'pierceLevel', label: '穿刺等级' },
+  { key: 'elementalMastery', label: '五行克制能力' },
+  { key: 'block', label: '格挡值' },
+  { key: 'antiCritLevel', label: '暴击等级' },
+  { key: 'sealResistLevel', label: '抗封等级' },
+  { key: 'dodge', label: '躲避' },
+  { key: 'elementalResistance', label: '五行抵御能力' },
+];
+
 function toNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -43,11 +73,32 @@ function formatDate(timestamp: number) {
   });
 }
 
+function sortTargetTemplates(items: EditableItem[]) {
+  return [...items].sort((left, right) => {
+    if (left.sceneType !== right.sceneType) {
+      return left.sceneType.localeCompare(right.sceneType, 'zh-CN');
+    }
+
+    if (left.dungeonName !== right.dungeonName) {
+      return left.dungeonName.localeCompare(right.dungeonName, 'zh-CN');
+    }
+
+    return left.name.localeCompare(right.name, 'zh-CN');
+  });
+}
+
+function getPayloadNumber(item: EditableItem, key: string) {
+  const value = item.payload?.[key];
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function createBlankItem(): EditableItem {
   return {
     id: '__new__',
     userId: null,
     scope: 'system',
+    sceneType: 'dungeon',
     name: '',
     dungeonName: '',
     targetType: 'mob',
@@ -72,7 +123,7 @@ export function SimulatorTargetTemplatePanel({
   canEdit = false,
   initialItems,
 }: Props) {
-  const [items, setItems] = useState(initialItems);
+  const [items, setItems] = useState(sortTargetTemplates(initialItems));
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(
     initialItems[0]?.id ?? '__new__'
@@ -107,6 +158,19 @@ export function SimulatorTargetTemplatePanel({
   const currentItemKey = currentItem ? (isCreating ? 'new' : currentItem.id) : null;
   const currentFieldId = (field: string) =>
     buildFieldId('target-template', currentItemKey ?? 'empty', field);
+
+  const patchCurrentPayload = (key: string, value: number) => {
+    if (!currentItem) {
+      return;
+    }
+
+    patchCurrentItem({
+      payload: {
+        ...currentItem.payload,
+        [key]: value,
+      },
+    });
+  };
 
   const patchCurrentItem = (patch: Partial<EditableItem>) => {
     if (isCreating) {
@@ -150,6 +214,7 @@ export function SimulatorTargetTemplatePanel({
     setError(null);
 
     const payload = {
+      sceneType: currentItem.sceneType,
       name: currentItem.name,
       dungeonName: currentItem.dungeonName,
       targetType: currentItem.targetType,
@@ -190,7 +255,7 @@ export function SimulatorTargetTemplatePanel({
       setItems((current) => {
         const next = current.filter((item) => item.id !== saved.id);
         next.push(saved);
-        return next.sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
+        return sortTargetTemplates(next);
       });
       setIsCreating(false);
       setSelectedId(saved.id);
@@ -286,9 +351,14 @@ export function SimulatorTargetTemplatePanel({
                   <div className="truncate text-sm font-semibold">
                     {item.dungeonName ? `${item.dungeonName} - ${item.name}` : item.name}
                   </div>
-                  <Badge variant={item.enabled ? 'secondary' : 'outline'}>
-                    {item.enabled ? '启用中' : '停用'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">
+                      {item.sceneType === 'manual' ? '手动目标' : '副本目标'}
+                    </Badge>
+                    <Badge variant={item.enabled ? 'secondary' : 'outline'}>
+                      {item.enabled ? '启用中' : '停用'}
+                    </Badge>
+                  </div>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
                   {item.targetType} · {item.level} 级 · {item.formation || '普通阵'}
@@ -318,6 +388,23 @@ export function SimulatorTargetTemplatePanel({
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor={currentFieldId('scene-type')}>用途</Label>
+                <select
+                  id={currentFieldId('scene-type')}
+                  value={currentItem.sceneType}
+                  onChange={(e) =>
+                    patchCurrentItem({
+                      sceneType: e.target.value === 'manual' ? 'manual' : 'dungeon',
+                    })
+                  }
+                  disabled={!canEdit}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="dungeon">副本目标</option>
+                  <option value="manual">手动目标</option>
+                </select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor={currentFieldId('name')}>目标名称</Label>
                 <Input
@@ -454,6 +541,32 @@ export function SimulatorTargetTemplatePanel({
                 rows={4}
               />
             </div>
+
+            {currentItem.sceneType === 'manual' ? (
+              <div className="space-y-3 rounded-lg border border-dashed p-4">
+                <div>
+                  <h4 className="text-sm font-semibold">手动目标扩展属性</h4>
+                  <p className="text-xs text-muted-foreground">
+                    这些字段会写入模板的 `payload_json`，首页手动目标页会直接读取。
+                  </p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {MANUAL_PAYLOAD_FIELDS.map(({ key, label }) => (
+                    <div className="space-y-2" key={key}>
+                      <Label htmlFor={currentFieldId(key)}>{label}</Label>
+                      <Input
+                        id={currentFieldId(key)}
+                        value={String(getPayloadNumber(currentItem, key))}
+                        onChange={(e) =>
+                          patchCurrentPayload(key, toNumber(e.target.value))
+                        }
+                        disabled={!canEdit}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm">

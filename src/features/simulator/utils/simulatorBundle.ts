@@ -75,6 +75,96 @@ function parseJsonRecord(
   }
 }
 
+function toPersistedCombatTab(
+  value: unknown
+): GameState['combatTab'] | undefined {
+  return value === 'dungeon' || value === 'manual' ? value : undefined;
+}
+
+function toPersistedSelectedDungeonIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value.filter(
+        (item): item is string =>
+          typeof item === 'string' && item.trim().length > 0
+      )
+    )
+  ).slice(0, 5);
+}
+
+function toPersistedManualTargets(
+  value: unknown
+): GameState['manualTargets'] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value
+    .filter(isRecord)
+    .map((item, index) => {
+      const fallback = createInitialManualTargets()[0];
+      const id =
+        typeof item.id === 'string' && item.id.trim().length > 0
+          ? item.id.trim()
+          : `manual_target_${index + 1}`;
+      const name =
+        typeof item.name === 'string' && item.name.trim().length > 0
+          ? item.name.trim()
+          : `手动目标${index + 1}`;
+
+      return {
+        ...fallback,
+        id,
+        name,
+        element:
+          typeof item.element === 'string' && item.element.trim().length > 0
+            ? (item.element as GameState['manualTargets'][number]['element'])
+            : fallback.element,
+        formation:
+          typeof item.formation === 'string' && item.formation.trim().length > 0
+            ? item.formation
+            : fallback.formation,
+        magicDamage: toNumber(item.magicDamage, fallback.magicDamage),
+        spiritualPower: toNumber(
+          item.spiritualPower,
+          fallback.spiritualPower
+        ),
+        magicCritLevel: toNumber(
+          item.magicCritLevel,
+          fallback.magicCritLevel
+        ),
+        speed: toNumber(item.speed, fallback.speed),
+        hit: toNumber(item.hit, fallback.hit),
+        fixedDamage: toNumber(item.fixedDamage, fallback.fixedDamage),
+        pierceLevel: toNumber(item.pierceLevel, fallback.pierceLevel),
+        elementalMastery: toNumber(
+          item.elementalMastery,
+          fallback.elementalMastery
+        ),
+        hp: toNumber(item.hp, fallback.hp),
+        magicDefense: toNumber(item.magicDefense, fallback.magicDefense),
+        defense: toNumber(item.defense, fallback.defense),
+        block: toNumber(item.block, fallback.block),
+        antiCritLevel: toNumber(item.antiCritLevel, fallback.antiCritLevel),
+        sealResistLevel: toNumber(
+          item.sealResistLevel,
+          fallback.sealResistLevel
+        ),
+        dodge: toNumber(item.dodge, fallback.dodge),
+        elementalResistance: toNumber(
+          item.elementalResistance,
+          fallback.elementalResistance
+        ),
+      };
+    });
+
+  return items.length > 0 ? items : undefined;
+}
+
 function toFaction(value: string | null | undefined): Faction {
   const factions: Faction[] = [
     '龙宫',
@@ -649,6 +739,14 @@ export function applySimulatorBundleToStore(
   const selfFormation = bundle.battleContext?.selfFormation || '天覆阵';
   const selfElement = (bundle.battleContext?.selfElement || '水') as any;
   const preserveWorkbenchState = options.preserveWorkbenchState ?? false;
+  const battleNotes = parseJsonRecord(bundle.battleContext?.notesJson);
+  const persistedManualTargets = toPersistedManualTargets(
+    battleNotes.manualTargets
+  );
+  const persistedCombatTab = toPersistedCombatTab(battleNotes.combatTab);
+  const persistedSelectedDungeonIds = toPersistedSelectedDungeonIds(
+    battleNotes.selectedDungeonIds
+  );
 
   const account: AccountData = {
     id: bundle.character.id,
@@ -698,7 +796,13 @@ export function applySimulatorBundleToStore(
       : createInitialExperimentSeats(),
     manualTargets: preserveWorkbenchState
       ? state.manualTargets
-      : createInitialManualTargets(),
+      : (persistedManualTargets ?? createInitialManualTargets()),
+    combatTab: preserveWorkbenchState
+      ? state.combatTab
+      : (persistedCombatTab ?? 'manual'),
+    selectedDungeonIds: preserveWorkbenchState
+      ? state.selectedDungeonIds
+      : persistedSelectedDungeonIds,
     pendingEquipments: preserveWorkbenchState ? state.pendingEquipments : [],
     selectedPendingIds: preserveWorkbenchState ? state.selectedPendingIds : [],
     history: preserveWorkbenchState ? state.history : [],

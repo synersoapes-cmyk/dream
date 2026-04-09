@@ -50,6 +50,14 @@ export async function PATCH(req: Request) {
         typeof body?.targetTemplateId === 'string' && body.targetTemplateId.trim()
           ? body.targetTemplateId.trim()
           : null,
+      manualTargets: Array.isArray(body?.manualTargets) ? body.manualTargets : undefined,
+      combatTab:
+        body?.combatTab === 'manual' || body?.combatTab === 'dungeon'
+          ? body.combatTab
+          : undefined,
+      selectedDungeonIds: Array.isArray(body?.selectedDungeonIds)
+        ? body.selectedDungeonIds
+        : undefined,
     });
 
     if (!bundle) {

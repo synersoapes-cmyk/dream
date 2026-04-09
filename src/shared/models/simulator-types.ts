@@ -245,6 +245,7 @@ export type AdminBattleTargetTemplateItem = {
   id: string;
   userId: string | null;
   scope: string;
+  sceneType: string;
   name: string;
   dungeonName: string;
   targetType: string;

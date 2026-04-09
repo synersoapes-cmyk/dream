@@ -946,6 +946,10 @@
 - 当前版本优先把“当前状态”和“伤害计算”需要的战斗参数持久化
 - 多套装备方案已迁到独立的 `equipment_plan / equipment_plan_item`，不再依赖 `notes_json`
 - `target_speed` 用于服务端执行 `招云` 套装的目标速度加伤规则；老数据迁移后默认补 `0`
+- `notes_json` 当前还会持久化战斗工作台态：
+  - `combatTab`
+  - `selectedDungeonIds`
+  - `manualTargets`
 - 更细粒度的实验结果表，如 `lab_result`、`lab_attr_delta`、`lab_apply_log`，后续再补
 
 ## 5.10 战斗目标与规则模板
@@ -959,9 +963,10 @@
 | `id`                        | `TEXT PK` | 模板 ID                               |
 | `user_id`                   | `TEXT`    | 用户 ID，可空，支持系统模板和个人模板 |
 | `scope`                     | `TEXT`    | `system` / `user`                     |
+| `scene_type`                | `TEXT`    | `dungeon` / `manual`                  |
 | `name`                      | `TEXT`    | 模板名称                              |
 | `dungeon_name`              | `TEXT`    | 副本或场景                            |
-| `target_type`               | `TEXT`    | `mob` / `boss` / `manual`             |
+| `target_type`               | `TEXT`    | `mob` / `boss` 等目标类型             |
 | `school`                    | `TEXT`    | 门派或流派说明                        |
 | `level`                     | `INTEGER` | 等级                                  |
 | `hp`                        | `REAL`    | 气血                                  |
@@ -976,9 +981,12 @@
 | `enabled`                   | `INTEGER` | 是否启用                              |
 | `created_at`                | `INTEGER` | 创建时间                              |
 | `updated_at`                | `INTEGER` | 更新时间                              |
-| `five_element`              | `TEXT`    | 五行                                  |
-| `body_json`                 | `TEXT`    | 其他扩展字段                          |
-| `enabled`                   | `INTEGER` | 0/1                                   |
+
+说明：
+
+- `scene_type = dungeon` 用于副本目标模板，前台会按副本分组展示
+- `scene_type = manual` 用于首页手动目标模板，基础防御字段走主列，其余攻击/抗性扩展字段走 `payload_json`
+- 首页当前保存的手动目标列表会优先读取 `snapshot_battle_context.notes_json`；没有个人保存记录时，再回退到后台启用的 `manual` 模板
 
 ### `damage_rule_version`
 

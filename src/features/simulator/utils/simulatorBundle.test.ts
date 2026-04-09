@@ -105,6 +105,7 @@ function createBundle(): SimulatorCharacterBundle {
       id: 'target_1',
       userId: null,
       scope: 'system',
+      sceneType: 'dungeon',
       name: '乌鸡国树怪',
       dungeonName: '乌鸡国',
       targetType: 'mob',
@@ -302,4 +303,52 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
   assert.equal(state.equipment[0]?.runeStoneSetsNames?.[0], '腾蛟');
   assert.equal(state.equipment[0]?.extraStat, '魔力 +28');
   assert.equal(state.equipment[0]?.luckyHoles, '1');
+});
+
+test('applySimulatorBundleToStore restores persisted combat workbench state', () => {
+  const bundle = createBundle();
+  const existingBattleContext = bundle.battleContext;
+  assert.ok(existingBattleContext);
+  bundle.battleContext = {
+    ...existingBattleContext,
+    notesJson: JSON.stringify({
+      combatTab: 'dungeon',
+      selectedDungeonIds: ['target_1', 'target_2'],
+      manualTargets: [
+        {
+          id: 'manual_template_1',
+          name: '后台手动目标',
+          element: '土',
+          formation: '鸟翔阵',
+          magicDamage: 999,
+          spiritualPower: 666,
+          magicCritLevel: 188,
+          speed: 888,
+          hit: 1444,
+          fixedDamage: 20,
+          pierceLevel: 88,
+          elementalMastery: 120,
+          hp: 88888,
+          magicDefense: 1666,
+          defense: 1777,
+          block: 333,
+          antiCritLevel: 166,
+          sealResistLevel: 199,
+          dodge: 555,
+          elementalResistance: 144,
+        },
+      ],
+    }),
+  };
+
+  applySimulatorBundleToStore(bundle);
+
+  const state = useGameStore.getState();
+  assert.equal(state.combatTab, 'dungeon');
+  assert.deepEqual(state.selectedDungeonIds, ['target_1', 'target_2']);
+  assert.equal(state.manualTargets.length, 1);
+  assert.equal(state.manualTargets[0]?.id, 'manual_template_1');
+  assert.equal(state.manualTargets[0]?.name, '后台手动目标');
+  assert.equal(state.manualTargets[0]?.magicDamage, 999);
+  assert.equal(state.manualTargets[0]?.hp, 88888);
 });

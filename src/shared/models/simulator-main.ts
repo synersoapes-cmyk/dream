@@ -745,6 +745,25 @@ async function replaceCharacterEquipmentPlanState(params: {
   plan: SimulatorEquipmentPlanNotes | null;
   now: Date;
 }): Promise<SimulatorEquipmentPlanNotes | null> {
+  const existingPlans = await db()
+    .select({ id: equipmentPlan.id })
+    .from(equipmentPlan)
+    .where(eq(equipmentPlan.characterId, params.characterId));
+  const reusablePlanIds = new Set(
+    existingPlans.map((plan: { id: string }) => plan.id)
+  );
+
+  if (existingPlans.length > 0) {
+    await db()
+      .delete(equipmentPlanItem)
+      .where(
+        inArray(
+          equipmentPlanItem.planId,
+          existingPlans.map((plan: { id: string }) => plan.id)
+        )
+      );
+  }
+
   await db()
     .delete(equipmentPlan)
     .where(eq(equipmentPlan.characterId, params.characterId));
@@ -759,7 +778,9 @@ async function replaceCharacterEquipmentPlanState(params: {
 
   params.plan.equipmentSets.forEach((set, index) => {
     const planId =
-      typeof set.id === 'string' && set.id.trim().length > 0
+      typeof set.id === 'string' &&
+      set.id.trim().length > 0 &&
+      reusablePlanIds.has(set.id.trim())
         ? set.id.trim()
         : getUuid();
     const items = Array.isArray(set.items)

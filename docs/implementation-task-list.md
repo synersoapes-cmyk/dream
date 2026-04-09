@@ -221,6 +221,26 @@
 - `src/config/db/migrations_d1/0006_simulator_accessory_tables.sql`
 - `docs/d1-database-design.md`
 
+#### H. 多角色云端管理与切换
+
+对应任务：
+
+- `P1-07`
+
+当前状态：
+
+- D1 `game_character` 模型已经支持一名用户拥有多个角色，且已有唯一索引约束同用户重名
+- 顶部 `AccountSwitcher` 已支持云端角色列表读取、角色切换、新建、重命名、删除，以及切换后重新 hydrate 当前角色 bundle
+- 当前主链路已经不再只固定单角色；本地选中的角色 ID 也会跟随保存，用于下次进入时恢复
+
+主要代码：
+
+- `src/app/api/simulator/characters/route.ts`
+- `src/app/api/simulator/characters/[id]/route.ts`
+- `src/features/simulator/shell/AccountSwitcher.tsx`
+- `src/features/simulator/utils/characterSelection.ts`
+- `src/shared/models/simulator-user.ts`
+
 ### 部分完成
 
 #### A. 多套装备快照
@@ -288,26 +308,7 @@
 - `src/config/db/schema.sqlite.ts`
 - `docs/d1-database-design.md`
 
-#### D. 多角色云端管理与切换
-
-对应任务：
-
-- `P1-07`
-
-当前状态：
-
-- D1 `game_character` 模型已经支持一名用户拥有多个角色，且已有唯一索引约束同用户重名
-- store 内保留了本地 `accounts / activeAccountId / switchAccount` 结构，说明前端早期为多角色切换预留过骨架
-- 但当前线上主链路仍默认只读取当前活跃角色，顶部 `AccountSwitcher` 也还没有真正提供云端角色切换、新建角色、重名校验与角色列表入口
-
-主要代码：
-
-- `src/config/db/schema.sqlite.ts`
-- `src/shared/models/simulator-main.ts`
-- `src/features/simulator/store/gameStoreActions.ts`
-- `src/features/simulator/shell/AccountSwitcher.tsx`
-
-#### E. 星石 / 星相互合正式建模与规则消费
+#### D. 星石 / 星相互合正式建模与规则消费
 
 对应任务：
 
@@ -330,7 +331,7 @@
 - `docs/project-overview.md`
 - `docs/d1-database-design.md`
 
-#### F. 玉魄百分比属性规则化与属性池配置
+#### E. 玉魄百分比属性规则化与属性池配置
 
 对应任务：
 
@@ -340,12 +341,14 @@
 当前状态：
 
 - 玉魄独立表与快照挂载已经落地
-- 但 Lark 文档要求的 `法术忽视 %`、`基础法术伤害 %` 这类百分比属性，需要在实验室计算阶段参与公式，当前仍未形成完整的后台可配置规则
-- 规则中心现已补充玉魄属性池与百分比语义扩展配置区；后续重点转向属性池边界和公式消费的进一步收口
+- 服务端伤害链路已覆盖 `法术忽视 %`、`基础法术伤害 %` 这类关键百分比属性，并已有对应测试
+- 规则中心也已补充玉魄属性池与百分比语义扩展配置区
+- 当前仍未完全收口的是“更完整的属性池边界、更多百分比词条语义，以及后台配置与完整公式消费的一致性”
 
 主要代码：
 
 - `src/shared/services/damage-engine.ts`
+- `src/shared/models/damage-rules.ts`
 - `src/config/db/schema.sqlite.ts`
 - `docs/project-overview.md`
 - `docs/d1-database-design.md`
@@ -397,6 +400,62 @@
 - 当前已有主链路功能回归测试，但还未见针对文档里明确提出的 `< 50ms` 伤害刷新、`10 张大图排队识别`、`1000 件装备加载`、`4K / 200% 缩放` 的专项验收基线
 - 这部分能力目前更多依赖人工体验，尚未沉淀成稳定的压测 / 浏览器验收脚本
 
+#### E. 用户安全中心
+
+对应任务：
+
+- 当前未在原任务号中单列
+
+当前状态：
+
+- `/settings/security` 已有页面与文案骨架
+- 但重置密码逻辑仍为空实现，提交时没有真正更新密码
+- 注销账号当前也只有入口文案与按钮，还没有删除前校验、二次确认、数据清理或退出流程
+
+主要代码：
+
+- `src/app/[locale]/(landing)/settings/security/page.tsx`
+- `src/config/locale/messages/zh/settings/security.json`
+- `src/config/locale/messages/en/settings/security.json`
+
+#### F. 用户反馈入口
+
+对应任务：
+
+- 当前未在原任务号中单列
+
+当前状态：
+
+- `/activity/feedbacks` 仍是纯占位页
+- 活动侧栏当前也没有把该页面作为正式入口挂出来，说明反馈闭环尚未进入可用状态
+
+主要代码：
+
+- `src/app/[locale]/(landing)/activity/feedbacks/page.tsx`
+- `src/config/locale/messages/zh/activity/sidebar.json`
+- `src/config/locale/messages/en/activity/sidebar.json`
+
+#### G. 产品化与模板残留清理
+
+对应任务：
+
+- 当前未在原任务号中单列
+
+当前状态：
+
+- 仓库核心业务已经是“梦幻实验室”，但 README、包名、落地页、定价页、博客页、站点文案里仍大量保留 `ShipAny` 模板内容
+- 这部分不会阻塞模拟器主链路，但会影响对外展示、产品定位和后续维护判断
+- 适合单独作为一轮“品牌收口 / 外围页面清理”任务来做，而不是继续混在模拟器主链路里
+
+主要代码：
+
+- `README.md`
+- `package.json`
+- `src/config/locale/messages/zh/landing.json`
+- `src/config/locale/messages/en/landing.json`
+- `src/config/locale/messages/zh/pages/index.json`
+- `src/config/locale/messages/en/pages/index.json`
+
 ## 2.2 2026-04 当前验收补充
 
 截至 `2026-04-09`，最近一轮前后台验收结论如下：
@@ -404,9 +463,12 @@
 - 线上前台 `实验室` 白屏已修复。
 - 线上前台 `AI 顾问` 白屏已修复。
 - 技能伤害弹层已经能跟随当前副本目标 / 目标模板联动。
+- 顶部 `AccountSwitcher` 已支持云端角色切换、新建、重命名和删除。
+- 玉魄百分比属性的服务端试算已覆盖 `法术忽视 %` 与 `基础法术伤害 %` 两类关键规则。
 - 生产后台 `/zh/admin/simulator` 最近一轮验收中，`unlabeledCount = 0`、`missingIdOrNameCount = 0`。
 - 同一轮后台页面 Lighthouse Accessibility = `100`。
-- 最近本地回归已通过：`pnpm test:simulator` 为 `27 / 27`，`pnpm build` 通过。
+- 最近静态核对确认：用户侧 `Security`、`Feedbacks` 和外围模板文案仍未完成产品化收口。
+- 最近本地回归已通过：`pnpm test:simulator` 为 `32 / 32`，`pnpm build` 通过。
 - 已确认的线上部署版本为 `492e97b2-fd80-4b03-a77a-22036e3bb660`。
 
 ## 3. 优先级说明

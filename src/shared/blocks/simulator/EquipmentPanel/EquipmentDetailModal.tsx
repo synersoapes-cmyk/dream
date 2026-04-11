@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   Equipment,
@@ -18,6 +18,11 @@ import {
   getSimulatorRuneSetOptions,
   isSimulatorPrimaryEquipment,
 } from '@/shared/lib/simulator-rune-editor';
+import {
+  getSimulatorEquipmentFieldLabel as getFieldLabel,
+  SIMULATOR_EDITABLE_STAT_KEYS,
+  SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
+} from '@/shared/lib/simulator-equipment-editor';
 import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
@@ -37,10 +42,34 @@ const AVAILABLE_RUNES = [
 ];
 
 const AVAILABLE_RUNE_SET_EFFECTS = ['锐不可当', '破血狂攻', '弱点击破'];
+const inputClassName =
+  'w-full rounded-lg border border-yellow-700/40 bg-slate-900/70 px-3 py-2 text-sm text-yellow-100 outline-none transition-colors focus:border-yellow-500';
+const textareaClassName = `${inputClassName} min-h-24 resize-y`;
+
+type EditableStatKey = (typeof SIMULATOR_EDITABLE_STAT_KEYS)[number];
 
 interface EquipmentDetailModalProps {
   equipment: Equipment;
   onClose: () => void;
+}
+
+function toOptionalNumber(value: string) {
+  if (value.trim() === '') {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isAccessoryEquipment(
+  type: Equipment['type']
+): type is 'trinket' | 'jade' {
+  return type === 'trinket' || type === 'jade';
+}
+
+function getAccessoryType(type: Equipment['type']): 'trinket' | 'jade' | null {
+  return isAccessoryEquipment(type) ? type : null;
 }
 
 export function EquipmentDetailModal({
@@ -114,11 +143,52 @@ export function EquipmentDetailModal({
   const activeRuneSet =
     simulatedLibEquip.runeStoneSets?.[activeRuneSetIndex] ?? [];
   const runeSetOptions = getSimulatorRuneSetOptions(simulatedLibEquip);
+  const isAccessory = isAccessoryEquipment(simulatedLibEquip.type);
+  const accessoryType = getAccessoryType(simulatedLibEquip.type);
+  const accessoryStatKeys = useMemo(
+    () =>
+      accessoryType
+        ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[accessoryType].filter(
+            (key): key is EditableStatKey =>
+            (SIMULATOR_EDITABLE_STAT_KEYS as readonly string[]).includes(key)
+          )
+        : [],
+    [accessoryType]
+  );
 
   useEffect(() => {
     setSimulatedLibEquip(ensureSimulatorEquipmentRuneEditingState(equipment));
     setRunePopover(null);
   }, [equipment]);
+
+  const updateAccessoryField = (patch: Partial<Equipment>) => {
+    setSimulatedLibEquip((current) => ({
+      ...current,
+      ...patch,
+    }));
+  };
+
+  const updateAccessoryStat = (key: EditableStatKey, value: string) => {
+    const nextValue = toOptionalNumber(value);
+    setSimulatedLibEquip((current) => {
+      const nextStats = { ...(current.stats || {}) };
+      const nextBaseStats = { ...(current.baseStats || {}) };
+
+      if (nextValue === undefined) {
+        delete nextStats[key];
+        delete nextBaseStats[key];
+      } else {
+        nextStats[key] = nextValue;
+        nextBaseStats[key] = nextValue;
+      }
+
+      return {
+        ...current,
+        stats: nextStats,
+        baseStats: nextBaseStats,
+      };
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -271,6 +341,18 @@ export function EquipmentDetailModal({
                   {simulatedLibEquip.extraStat}
                 </div>
               )}
+
+              {isAccessory && simulatedLibEquip.specialEffect && (
+                <div className="mt-1 text-sm text-purple-400">
+                  特效：{simulatedLibEquip.specialEffect}
+                </div>
+              )}
+
+              {isAccessory && simulatedLibEquip.refinementEffect && (
+                <div className="mt-1 text-sm text-cyan-400">
+                  附加效果：{simulatedLibEquip.refinementEffect}
+                </div>
+              )}
             </div>
 
             {/* 符石信息 / 特效 */}
@@ -282,6 +364,138 @@ export function EquipmentDetailModal({
                   </div>
                 </div>
               )}
+
+            {isAccessory && (
+              <div className="space-y-4 rounded-xl border border-blue-700/40 bg-slate-900 p-4">
+                <div className="text-sm font-semibold text-blue-300">
+                  {simulatedLibEquip.type === 'trinket'
+                    ? '灵饰编辑'
+                    : '玉魄编辑'}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('slot')}
+                    </div>
+                    <input
+                      value={simulatedLibEquip.slot ?? ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          slot: toOptionalNumber(event.target.value),
+                        })
+                      }
+                      className={inputClassName}
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('level')}
+                    </div>
+                    <input
+                      value={simulatedLibEquip.level ?? ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          level: toOptionalNumber(event.target.value),
+                        })
+                      }
+                      className={inputClassName}
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('forgeLevel')}
+                    </div>
+                    <input
+                      value={simulatedLibEquip.forgeLevel ?? ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          forgeLevel: toOptionalNumber(event.target.value),
+                        })
+                      }
+                      className={inputClassName}
+                      inputMode="numeric"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('price')}
+                    </div>
+                    <input
+                      value={simulatedLibEquip.price ?? ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          price: toOptionalNumber(event.target.value),
+                        })
+                      }
+                      className={inputClassName}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('mainStat')}
+                    </div>
+                    <textarea
+                      value={simulatedLibEquip.mainStat || ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          mainStat: event.target.value,
+                        })
+                      }
+                      className={textareaClassName}
+                    />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('extraStat')}
+                    </div>
+                    <textarea
+                      value={simulatedLibEquip.extraStat || ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          extraStat: event.target.value || undefined,
+                        })
+                      }
+                      className={textareaClassName}
+                    />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <div className="text-xs text-slate-400">
+                      {getFieldLabel('specialEffect')}
+                    </div>
+                    <input
+                      value={simulatedLibEquip.specialEffect || ''}
+                      onChange={(event) =>
+                        updateAccessoryField({
+                          specialEffect: event.target.value || undefined,
+                        })
+                      }
+                      className={inputClassName}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  {accessoryStatKeys.map((key) => (
+                    <label key={key} className="space-y-1">
+                      <div className="text-xs text-slate-400">
+                        {getSimulatorStatLabel(key)}
+                      </div>
+                      <input
+                        value={simulatedLibEquip.stats?.[key] ?? ''}
+                        onChange={(event) =>
+                          updateAccessoryStat(key, event.target.value)
+                        }
+                        className={inputClassName}
+                        inputMode="decimal"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {isPrimaryEquipment && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">

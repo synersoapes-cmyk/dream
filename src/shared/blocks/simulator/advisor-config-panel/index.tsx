@@ -90,13 +90,15 @@ export function SimulatorAdvisorConfigPanel({
           >
             {config.enabled ? '顾问已启用' : '顾问已停用'}
           </Badge>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Bot className="h-4 w-4" />
             <span>模型：{config.model}</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Sparkles className="h-4 w-4" />
-            <span>{config.hasGeminiKey ? 'Gemini Key 已配置' : 'Gemini Key 缺失'}</span>
+            <span>
+              {config.hasGeminiKey ? 'Gemini Key 已配置' : 'Gemini Key 缺失'}
+            </span>
           </div>
         </div>
 
@@ -153,7 +155,10 @@ export function SimulatorAdvisorConfigPanel({
             type="checkbox"
             checked={config.enabled}
             onChange={(e) =>
-              setConfig((current) => ({ ...current, enabled: e.target.checked }))
+              setConfig((current) => ({
+                ...current,
+                enabled: e.target.checked,
+              }))
             }
             disabled={!canEdit}
           />
@@ -162,12 +167,16 @@ export function SimulatorAdvisorConfigPanel({
 
         {!config.hasGeminiKey ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800">
-            当前缺少 `gemini_api_key`，即使启用顾问也无法正常回答。
+            当前缺少 Gemini 密钥，即使启用顾问也无法正常回答。
           </div>
         ) : null}
 
         <div className="flex items-center gap-3">
-          <Button type="button" onClick={handleSave} disabled={!canEdit || isSaving}>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={!canEdit || isSaving}
+          >
             {isSaving ? '保存中...' : '保存顾问配置'}
           </Button>
         </div>
@@ -178,7 +187,7 @@ export function SimulatorAdvisorConfigPanel({
           </div>
         ) : null}
         {error ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border px-3 py-2 text-sm">
             {error}
           </div>
         ) : null}

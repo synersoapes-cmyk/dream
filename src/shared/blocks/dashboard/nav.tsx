@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 
-import { Link, usePathname, useRouter } from '@/core/i18n/navigation';
+import { Link, usePathname } from '@/core/i18n/navigation';
 import { SmartIcon } from '@/shared/blocks/common/smart-icon';
 import {
   Collapsible,
@@ -23,9 +23,20 @@ import {
 } from '@/shared/components/ui/sidebar';
 import { NavItem, type Nav as NavType } from '@/shared/types/blocks/common';
 
+function matchesPath(pathname: string, item?: NavItem) {
+  const matchesUrl = (url: string, matchPath: 'exact' | 'prefix') =>
+    pathname.endsWith(url) ||
+    (matchPath === 'prefix' && pathname.includes(`${url}/`));
+
+  if (item?.url && matchesUrl(item.url, item.match_path || 'prefix')) {
+    return true;
+  }
+
+  return (item?.active_urls || []).some((url) => matchesUrl(url, 'prefix'));
+}
+
 export function Nav({ nav, className }: { nav: NavType; className?: string }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -51,9 +62,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                       tooltip={item?.title}
                       className={`${
                         item?.is_active ||
-                        (mounted &&
-                          item?.url &&
-                          pathname.startsWith(item?.url as string))
+                        (mounted && matchesPath(pathname, item))
                           ? 'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/90 hover:text-sidebar-accent-foreground active:bg-sidebar-accent/90 active:text-sidebar-accent-foreground min-w-8 duration-200 ease-linear'
                           : ''
                       }`}
@@ -69,9 +78,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                     tooltip={item?.title}
                     className={`${
                       item?.is_active ||
-                      (mounted &&
-                        item?.url &&
-                        pathname.startsWith(item?.url as string))
+                      (mounted && matchesPath(pathname, item))
                         ? 'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/90 hover:text-sidebar-accent-foreground active:bg-sidebar-accent/90 active:text-sidebar-accent-foreground min-w-8 duration-200 ease-linear'
                         : ''
                     }`}
@@ -96,8 +103,7 @@ export function Nav({ nav, className }: { nav: NavType; className?: string }) {
                             asChild
                             className={`${
                               subItem.is_active ||
-                              (mounted &&
-                                pathname.endsWith(subItem.url as string))
+                              (mounted && matchesPath(pathname, subItem))
                                 ? 'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/90 hover:text-sidebar-accent-foreground active:bg-sidebar-accent/90 active:text-sidebar-accent-foreground min-w-8 duration-200 ease-linear'
                                 : ''
                             }`}

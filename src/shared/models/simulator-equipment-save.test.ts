@@ -14,100 +14,109 @@ import {
   snapshotBattleContext,
   user,
 } from '@/config/db/schema';
+import { withTransientD1Retry } from '@/shared/models/simulator-core';
 import { updateSimulatorEquipment } from '@/shared/models/simulator-main';
 
 async function createCharacterFixture(suffix: string) {
-  const database = db();
   const userId = `itest_user_${suffix}`;
   const characterId = `itest_character_${suffix}`;
   const snapshotId = `itest_snapshot_${suffix}`;
   const now = new Date();
 
-  await database.insert(user).values({
-    id: userId,
-    name: 'ITest User',
-    email: `itest.${suffix}@example.com`,
-    emailVerified: true,
-    createdAt: now,
-    updatedAt: now,
-    utmSource: '',
-    ip: '',
-    locale: 'zh',
-  });
+  await withTransientD1Retry('createCharacterFixture', async () => {
+    const database = db();
 
-  await database.insert(gameCharacter).values({
-    id: characterId,
-    userId,
-    name: 'ITest 龙宫号',
-    serverName: '测试服',
-    school: '龙宫',
-    roleType: '法师',
-    level: 89,
-    race: '仙族',
-    status: 'active',
-    currentSnapshotId: snapshotId,
-    createdAt: now,
-    updatedAt: now,
-  });
+    await database
+      .delete(user)
+      .where(eq(user.id, userId))
+      .catch(() => undefined);
 
-  await database.insert(characterSnapshot).values({
-    id: snapshotId,
-    characterId,
-    snapshotType: 'current',
-    name: '当前状态',
-    versionNo: 1,
-    source: 'manual',
-    notes: '',
-    createdAt: now,
-    updatedAt: now,
-  });
+    await database.insert(user).values({
+      id: userId,
+      name: 'ITest User',
+      email: `itest.${suffix}@example.com`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+      utmSource: '',
+      ip: '',
+      locale: 'zh',
+    });
 
-  await database.insert(characterProfile).values({
-    snapshotId,
-    school: '龙宫',
-    level: 89,
-    physique: 40,
-    magic: 210,
-    strength: 20,
-    endurance: 30,
-    agility: 25,
-    potentialPoints: 0,
-    hp: 3850,
-    mp: 1720,
-    damage: 860,
-    defense: 920,
-    magicDamage: 1460,
-    magicDefense: 1180,
-    speed: 540,
-    hit: 990,
-    sealHit: 0,
-    rawBodyJson: '{}',
-  });
+    await database.insert(gameCharacter).values({
+      id: characterId,
+      userId,
+      name: 'ITest 龙宫号',
+      serverName: '测试服',
+      school: '龙宫',
+      roleType: '法师',
+      level: 89,
+      race: '仙族',
+      status: 'active',
+      currentSnapshotId: snapshotId,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-  await database.insert(snapshotBattleContext).values({
-    snapshotId,
-    ruleVersionId: null,
-    selfFormation: '天覆阵',
-    selfElement: '水',
-    formationCounterState: '无克/普通',
-    elementRelation: '无克/普通',
-    transformCardFactor: 1,
-    splitTargetCount: 1,
-    shenmuValue: 0,
-    magicResult: 0,
-    targetTemplateId: null,
-    targetName: '默认目标',
-    targetLevel: 0,
-    targetHp: 0,
-    targetDefense: 0,
-    targetMagicDefense: 0,
-    targetSpeed: 0,
-    targetMagicDefenseCultivation: 0,
-    targetElement: '',
-    targetFormation: '普通阵',
-    notesJson: '{}',
-    createdAt: now,
-    updatedAt: now,
+    await database.insert(characterSnapshot).values({
+      id: snapshotId,
+      characterId,
+      snapshotType: 'current',
+      name: '当前状态',
+      versionNo: 1,
+      source: 'manual',
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.insert(characterProfile).values({
+      snapshotId,
+      school: '龙宫',
+      level: 89,
+      physique: 40,
+      magic: 210,
+      strength: 20,
+      endurance: 30,
+      agility: 25,
+      potentialPoints: 0,
+      hp: 3850,
+      mp: 1720,
+      damage: 860,
+      defense: 920,
+      magicDamage: 1460,
+      magicDefense: 1180,
+      speed: 540,
+      hit: 990,
+      sealHit: 0,
+      rawBodyJson: '{}',
+    });
+
+    await database.insert(snapshotBattleContext).values({
+      snapshotId,
+      ruleVersionId: null,
+      selfFormation: '天覆阵',
+      selfElement: '水',
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      transformCardFactor: 1,
+      splitTargetCount: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targetTemplateId: null,
+      targetName: '默认目标',
+      targetLevel: 0,
+      targetHp: 0,
+      targetDefense: 0,
+      targetMagicDefense: 0,
+      targetSpeed: 0,
+      targetMagicDefenseCultivation: 0,
+      targetElement: '',
+      targetFormation: '普通阵',
+      notesJson: '{}',
+      createdAt: now,
+      updatedAt: now,
+    });
   });
 
   return { userId };
@@ -117,15 +126,17 @@ test('updateSimulatorEquipment can save the same structured equipment plan twice
   await resetD1DevBindingCache();
   await initD1ContextForDev();
 
-  const database = db();
   const suffix = randomUUID();
   const { userId } = await createCharacterFixture(suffix);
 
   t.after(async () => {
+    const database = db();
+
     await database
       .delete(user)
       .where(eq(user.id, userId))
       .catch(() => undefined);
+    await resetD1DevBindingCache();
   });
 
   const equipmentItem = {
@@ -202,13 +213,14 @@ test('updateSimulatorEquipment assigns unique persisted plan ids for different u
   await resetD1DevBindingCache();
   await initD1ContextForDev();
 
-  const database = db();
   const firstSuffix = randomUUID();
   const secondSuffix = randomUUID();
   const firstFixture = await createCharacterFixture(firstSuffix);
   const secondFixture = await createCharacterFixture(secondSuffix);
 
   t.after(async () => {
+    const database = db();
+
     await database
       .delete(user)
       .where(eq(user.id, firstFixture.userId))
@@ -217,6 +229,7 @@ test('updateSimulatorEquipment assigns unique persisted plan ids for different u
       .delete(user)
       .where(eq(user.id, secondFixture.userId))
       .catch(() => undefined);
+    await resetD1DevBindingCache();
   });
 
   const payload = {
@@ -275,6 +288,7 @@ test('updateSimulatorEquipment assigns unique persisted plan ids for different u
   await updateSimulatorEquipment(firstFixture.userId, payload);
   await updateSimulatorEquipment(secondFixture.userId, payload);
 
+  const database = db();
   const persistedPlans = await database
     .select({ id: equipmentPlan.id, characterId: equipmentPlan.characterId })
     .from(equipmentPlan)

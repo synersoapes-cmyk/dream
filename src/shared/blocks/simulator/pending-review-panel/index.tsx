@@ -14,7 +14,6 @@ import {
 } from '@/shared/components/ui/card';
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
-import { Textarea } from '@/shared/components/ui/textarea';
 import { formatDateTimeValue } from '@/shared/lib/date';
 import { getSimulatorEquipmentFieldLabel } from '@/shared/lib/simulator-equipment-editor';
 import { cn } from '@/shared/lib/utils';
@@ -93,11 +92,72 @@ function getPreviewImageSrc(imagePreview?: string) {
   return `/api/proxy/file?key=${encodeURIComponent(imagePreview)}`;
 }
 
+function formatRawValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '未识别';
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return `${value.length} 项`;
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${key}: ${formatRawValue(item)}`)
+      .join('；');
+  }
+
+  return String(value);
+}
+
+function getRawTextSummary(rawText?: string) {
+  if (!rawText?.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return [{ label: '识别原文', value: rawText }];
+    }
+
+    const rawObject = parsed as Record<string, unknown>;
+    const preferredKeys = [
+      'type',
+      'name',
+      'mainStat',
+      'extraStat',
+      'price',
+      'level',
+      'quality',
+      'slot',
+      'stats',
+    ];
+
+    return preferredKeys
+      .filter((key) => key in rawObject)
+      .map((key) => ({
+        label: key,
+        value: formatRawValue(rawObject[key]),
+      }));
+  } catch {
+    return [{ label: '识别原文', value: rawText }];
+  }
+}
+
 export function SimulatorPendingReviewPanel({
   canEdit = false,
   initialItems,
   title = '候选装备库管理',
-  description = '支持按状态查看候选装备，搜索用户与角色，查看原图、OCR 原文并直接修改记录。',
+  description = '支持按状态查看候选装备，搜索用户与角色，查看原图、识别摘要并直接修改记录。',
   initialStatus = 'pending',
   availableStatuses = ['pending', 'confirmed', 'replaced'],
   listEndpoint = '/api/admin/simulator/candidate-equipment',
@@ -310,7 +370,7 @@ export function SimulatorPendingReviewPanel({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="space-y-3">
+        <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex flex-wrap gap-2">
               {availableStatuses.map((status) => (
@@ -352,49 +412,51 @@ export function SimulatorPendingReviewPanel({
             </div>
           </div>
 
-          {filteredItems.length === 0 ? (
-            <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
-              {items.length === 0 ? emptyMessage : '当前筛选条件下没有结果。'}
-            </div>
-          ) : (
-            filteredItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setSelectedId(item.id);
-                  setNotice(null);
-                  setError(null);
-                }}
-                className={`w-full rounded-lg border p-4 text-left transition ${
-                  selectedId === item.id
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/40'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="truncate text-sm font-semibold">
-                    {String(item.equipment.name || '未命名装备')}
+          <div className="space-y-3 lg:max-h-[calc(100vh-18rem)] lg:overflow-y-auto lg:pr-1">
+            {filteredItems.length === 0 ? (
+              <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
+                {items.length === 0 ? emptyMessage : '当前筛选条件下没有结果。'}
+              </div>
+            ) : (
+              filteredItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(item.id);
+                    setNotice(null);
+                    setError(null);
+                  }}
+                  className={`w-full rounded-lg border p-4 text-left transition ${
+                    selectedId === item.id
+                      ? 'border-primary bg-primary/5'
+                      : 'hover:border-primary/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-sm font-semibold">
+                      {String(item.equipment.name || '未命名装备')}
+                    </div>
+                    <Badge variant="outline">
+                      {REVIEW_STATUS_LABELS[item.status]}
+                    </Badge>
                   </div>
-                  <Badge variant="outline">
-                    {REVIEW_STATUS_LABELS[item.status]}
-                  </Badge>
-                </div>
-                <div className="text-muted-foreground mt-2 text-xs">
-                  {item.userName} · {item.userEmail}
-                </div>
-                <div className="text-muted-foreground mt-1 text-xs">
-                  角色：{item.characterName}
-                </div>
-                <div className="text-muted-foreground mt-1 text-xs">
-                  来源：{item.source}
-                </div>
-                <div className="text-muted-foreground mt-1 text-xs">
-                  时间：{formatTimestamp(item.timestamp)}
-                </div>
-              </button>
-            ))
-          )}
+                  <div className="text-muted-foreground mt-2 text-xs">
+                    {item.userName} · {item.userEmail}
+                  </div>
+                  <div className="text-muted-foreground mt-1 text-xs">
+                    角色：{item.characterName}
+                  </div>
+                  <div className="text-muted-foreground mt-1 text-xs">
+                    来源：{item.source}
+                  </div>
+                  <div className="text-muted-foreground mt-1 text-xs">
+                    时间：{formatTimestamp(item.timestamp)}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
         </div>
 
         {selectedItem ? (
@@ -565,21 +627,30 @@ export function SimulatorPendingReviewPanel({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-2">
-                <Label htmlFor={selectedFieldId('raw-text')}>
-                  OCR 原始文本
-                </Label>
-                <Textarea
-                  id={selectedFieldId('raw-text')}
-                  rows={14}
-                  value={selectedItem.rawText || ''}
-                  onChange={(e) =>
-                    updateSelectedItem((item) => ({
-                      ...item,
-                      rawText: e.target.value,
-                    }))
-                  }
-                  disabled={!canEdit}
-                />
+                <Label>识别来源摘要</Label>
+                <div className="bg-muted/20 rounded-lg border">
+                  {getRawTextSummary(selectedItem.rawText).length > 0 ? (
+                    <div className="divide-y">
+                      {getRawTextSummary(selectedItem.rawText).map((row) => (
+                        <div
+                          key={row.label}
+                          className="grid grid-cols-[120px_minmax(0,1fr)] gap-3 px-3 py-2 text-sm"
+                        >
+                          <div className="text-muted-foreground">
+                            {row.label}
+                          </div>
+                          <div className="font-medium break-words">
+                            {row.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground px-4 py-12 text-center text-sm">
+                      暂无识别摘要
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>原图预览</Label>

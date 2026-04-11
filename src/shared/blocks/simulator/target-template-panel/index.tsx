@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Plus, Search, Trash2 } from 'lucide-react';
 
-import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -16,6 +15,7 @@ import {
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
+import { formatDateTimeValue } from '@/shared/lib/date';
 import type { AdminBattleTargetTemplateItem } from '@/shared/models/simulator-types';
 
 type Props = {
@@ -155,7 +155,11 @@ export function SimulatorTargetTemplatePanel({
   );
 
   const currentItem = isCreating ? draftItem : selectedItem;
-  const currentItemKey = currentItem ? (isCreating ? 'new' : currentItem.id) : null;
+  const currentItemKey = currentItem
+    ? isCreating
+      ? 'new'
+      : currentItem.id
+    : null;
   const currentFieldId = (field: string) =>
     buildFieldId('target-template', currentItemKey ?? 'empty', field);
 
@@ -312,10 +316,10 @@ export function SimulatorTargetTemplatePanel({
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="space-y-3">
+        <div className="space-y-3 lg:sticky lg:top-6 lg:self-start">
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
                 name="keyword"
                 aria-label="搜索副本、目标名、门派"
@@ -331,44 +335,49 @@ export function SimulatorTargetTemplatePanel({
             </Button>
           </div>
 
-          {filteredItems.length === 0 && !isCreating ? (
-            <div className="rounded-lg border px-4 py-6 text-sm text-muted-foreground">
-              当前没有匹配的目标模板。
-            </div>
-          ) : (
-            filteredItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSelect(item.id)}
-                className={`w-full rounded-lg border p-4 text-left transition ${
-                  !isCreating && selectedId === item.id
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/40'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="truncate text-sm font-semibold">
-                    {item.dungeonName ? `${item.dungeonName} - ${item.name}` : item.name}
+          <div className="space-y-3 lg:max-h-[calc(100vh-15rem)] lg:overflow-y-auto lg:pr-1">
+            {filteredItems.length === 0 && !isCreating ? (
+              <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
+                当前没有匹配的目标模板。
+              </div>
+            ) : (
+              filteredItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelect(item.id)}
+                  className={`w-full rounded-lg border p-4 text-left transition ${
+                    !isCreating && selectedId === item.id
+                      ? 'border-primary bg-primary/5'
+                      : 'hover:border-primary/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="truncate text-sm font-semibold">
+                      {item.dungeonName
+                        ? `${item.dungeonName} - ${item.name}`
+                        : item.name}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        {item.sceneType === 'manual' ? '手动目标' : '副本目标'}
+                      </Badge>
+                      <Badge variant={item.enabled ? 'secondary' : 'outline'}>
+                        {item.enabled ? '启用中' : '停用'}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">
-                      {item.sceneType === 'manual' ? '手动目标' : '副本目标'}
-                    </Badge>
-                    <Badge variant={item.enabled ? 'secondary' : 'outline'}>
-                      {item.enabled ? '启用中' : '停用'}
-                    </Badge>
+                  <div className="text-muted-foreground mt-2 text-xs">
+                    {item.targetType} · {item.level} 级 ·{' '}
+                    {item.formation || '普通阵'}
                   </div>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {item.targetType} · {item.level} 级 · {item.formation || '普通阵'}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  法防 {item.magicDefense} · 防御 {item.defense}
-                </div>
-              </button>
-            ))
-          )}
+                  <div className="text-muted-foreground mt-1 text-xs">
+                    法防 {item.magicDefense} · 防御 {item.defense}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
         </div>
 
         {currentItem ? (
@@ -381,7 +390,7 @@ export function SimulatorTargetTemplatePanel({
                 {currentItem.enabled ? '启用中' : '停用'}
               </Badge>
               {!isCreating ? (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   更新于 {formatDate(currentItem.updatedAt)}
                 </span>
               ) : null}
@@ -395,11 +404,12 @@ export function SimulatorTargetTemplatePanel({
                   value={currentItem.sceneType}
                   onChange={(e) =>
                     patchCurrentItem({
-                      sceneType: e.target.value === 'manual' ? 'manual' : 'dungeon',
+                      sceneType:
+                        e.target.value === 'manual' ? 'manual' : 'dungeon',
                     })
                   }
                   disabled={!canEdit}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="border-input bg-background flex h-10 w-full rounded-md border px-3 py-2 text-sm"
                 >
                   <option value="dungeon">副本目标</option>
                   <option value="manual">手动目标</option>
@@ -450,7 +460,9 @@ export function SimulatorTargetTemplatePanel({
                 <Input
                   id={currentFieldId('level')}
                   value={String(currentItem.level)}
-                  onChange={(e) => patchCurrentItem({ level: toNumber(e.target.value) })}
+                  onChange={(e) =>
+                    patchCurrentItem({ level: toNumber(e.target.value) })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -459,7 +471,9 @@ export function SimulatorTargetTemplatePanel({
                 <Input
                   id={currentFieldId('speed')}
                   value={String(currentItem.speed)}
-                  onChange={(e) => patchCurrentItem({ speed: toNumber(e.target.value) })}
+                  onChange={(e) =>
+                    patchCurrentItem({ speed: toNumber(e.target.value) })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -468,7 +482,9 @@ export function SimulatorTargetTemplatePanel({
                 <Input
                   id={currentFieldId('hp')}
                   value={String(currentItem.hp)}
-                  onChange={(e) => patchCurrentItem({ hp: toNumber(e.target.value) })}
+                  onChange={(e) =>
+                    patchCurrentItem({ hp: toNumber(e.target.value) })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -514,7 +530,9 @@ export function SimulatorTargetTemplatePanel({
                 <Input
                   id={currentFieldId('element')}
                   value={currentItem.element}
-                  onChange={(e) => patchCurrentItem({ element: e.target.value })}
+                  onChange={(e) =>
+                    patchCurrentItem({ element: e.target.value })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -546,8 +564,8 @@ export function SimulatorTargetTemplatePanel({
               <div className="space-y-3 rounded-lg border border-dashed p-4">
                 <div>
                   <h4 className="text-sm font-semibold">手动目标扩展属性</h4>
-                  <p className="text-xs text-muted-foreground">
-                    这些字段会写入模板的 `payload_json`，首页手动目标页会直接读取。
+                  <p className="text-muted-foreground text-xs">
+                    这些字段会同步到首页手动目标页，用于更细的攻防试算。
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
@@ -581,7 +599,11 @@ export function SimulatorTargetTemplatePanel({
                 />
                 启用模板
               </label>
-              <Button type="button" onClick={handleSave} disabled={!canEdit || isSaving}>
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={!canEdit || isSaving}
+              >
                 {isSaving ? '保存中...' : isCreating ? '创建模板' : '保存模板'}
               </Button>
               {!isCreating ? (
@@ -603,13 +625,13 @@ export function SimulatorTargetTemplatePanel({
               </div>
             ) : null}
             {error ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border px-3 py-2 text-sm">
                 {error}
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="rounded-lg border px-4 py-6 text-sm text-muted-foreground">
+          <div className="text-muted-foreground rounded-lg border px-4 py-6 text-sm">
             选择一个目标模板查看详情，或新建一条模板。
           </div>
         )}

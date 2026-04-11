@@ -293,17 +293,23 @@
 对应任务：
 
 - `P1-06`
+- `Admin-P1-05`
 
 当前状态：
 
 - 灵饰/玉魄的独立表建模和快照挂载已经落地
 - 当前快照写入时已经会按灵饰套装名汇总 `total_level / tier / effect_json`
-- 规则中心现已补充灵饰套装档位扩展配置区；后续重点转向“这些档位如何更深地进入完整伤害规则”
-- 玉魄百分比效果目前仍以已知字段解析为主，距离完整属性池配置化还有差距
+- 规则中心现已补充灵饰套装档位扩展配置区，可在 `equipment_extension / ornament_set_rules` 中维护档位 JSON
+- 当前尚未完全收口的是“灵饰套装档位效果如何映射成正式 `rule_damage_modifier` 并进入 `damage-engine`”；换句话说，快照摘要和后台配置入口已完成，档位效果的数值消费仍是后续项
+- 玉魄百分比效果已不再只是展示字段：服务端伤害链路和实验室估值链路都已消费 `spell_ignore_percent`、`spell_damage_percent`，同时支持已持久化 `effectModifiers` 和 `法术忽视 % / 基础法术伤害 %` 文本解析
+- 玉魄属性池配置入口已在规则中心落地，但它目前仍是后台扩展配置 JSON，没有作为 OCR / 入库 / 编辑阶段的强校验来源；更多百分比词条语义也仍需继续补
 
 主要代码：
 
 - `src/shared/services/damage-engine.ts`
+- `src/shared/services/lab-valuation.ts`
+- `src/shared/services/damage-engine.test.ts`
+- `src/shared/services/lab-valuation.test.ts`
 - `src/shared/models/damage-rules.ts`
 - `src/config/db/schema.sqlite.ts`
 - `docs/d1-database-design.md`
@@ -341,13 +347,18 @@
 当前状态：
 
 - 玉魄独立表与快照挂载已经落地
-- 服务端伤害链路已覆盖 `法术忽视 %`、`基础法术伤害 %` 这类关键百分比属性，并已有对应测试
-- 规则中心也已补充玉魄属性池与百分比语义扩展配置区
-- 当前仍未完全收口的是“更完整的属性池边界、更多百分比词条语义，以及后台配置与完整公式消费的一致性”
+- 服务端伤害链路已覆盖 `法术忽视 %`、`基础法术伤害 %` 这类关键百分比属性，并已有 `damage-engine` 回归测试
+- 实验室估值链路也已覆盖上述两类百分比属性，并已有 `lab-valuation` 回归测试
+- 当前装备、实验室席位和候选装备保存会保留 `effectModifiers`，服务端会优先消费持久化 modifier，同时兼容从特效文本解析百分比语义
+- 规则中心已补充玉魄属性池与百分比语义扩展配置区
+- 当前仍未完全收口的是：属性池尚未作为 OCR / 入库 / 编辑阶段的强校验来源，更多百分比词条语义尚未全部数据化，后台配置与完整公式消费之间还没有做到“配置即生效”的统一闭环
 
 主要代码：
 
 - `src/shared/services/damage-engine.ts`
+- `src/shared/services/lab-valuation.ts`
+- `src/shared/services/damage-engine.test.ts`
+- `src/shared/services/lab-valuation.test.ts`
 - `src/shared/models/damage-rules.ts`
 - `src/config/db/schema.sqlite.ts`
 - `docs/project-overview.md`
@@ -468,8 +479,81 @@
 - 生产后台 `/zh/admin/simulator` 最近一轮验收中，`unlabeledCount = 0`、`missingIdOrNameCount = 0`。
 - 同一轮后台页面 Lighthouse Accessibility = `100`。
 - 最近静态核对确认：用户侧 `Security`、`Feedbacks` 和外围模板文案仍未完成产品化收口。
-- 最近本地回归已通过：`pnpm test:simulator` 为 `32 / 32`，`pnpm build` 通过。
-- 已确认的线上部署版本为 `492e97b2-fd80-4b03-a77a-22036e3bb660`。
+- 最近本地回归已通过：`pnpm test:simulator` 为 `34 / 34`，`pnpm build` 通过。
+- 已确认的线上部署版本为 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4`。
+
+## 2.3 2026-04-10 测试任务列表
+
+这份清单用于继续做线上回归与补测，统一约定如下：
+
+- 后台测试账号固定使用：`admin@gmail.com / admin123123`
+- 登录动作本轮不计入测试任务，不做通过 / 失败判定
+- 状态只按已拿到的实际证据标记：
+  - `测试成功`
+  - `测试失败`
+  - `还没有测试`
+
+### A. 前台测试任务
+
+| 测试项 | 状态 | 备注 |
+| --- | --- | --- |
+| 首页 simulator 可正常加载当前角色与当前装备 | 测试成功 | `Fresh Equip QA`、`Codex Star QA` 两个线上账号都已打开首页并加载云端角色数据 |
+| 默认整套装备角色首次点击“保存装备” | 测试成功 | `Fresh Equip QA` 已验证，`PATCH /api/simulator/current/equipment = 200` |
+| 历史老角色带默认整套装备点击“保存装备” | 测试成功 | `Codex Star QA` 已验证，修复前的 `503` 已消失，当前返回 `200` |
+| 多套装备方案保存时不再复用前端临时 `set_1` | 测试成功 | 远端 D1 已核对，`equipment_plan.id` 为真实 UUID，不再是前端临时 id |
+| 装备详情弹窗可正常打开 | 测试成功 | 已打开 `流云法袍` 详情页 |
+| 护甲部位互合规则可从真实后台读取 | 测试成功 | 页面已显示 `星相互合：法术防御 +2`，并命中 `/api/simulator/star-resonance-rules?slot=armor = 200` |
+| `流云法袍` 的互合配置可保存到云端 | 测试成功 | 已确认 `PATCH /api/simulator/current/equipment = 200`，远端 D1 `equipment_plan_item.payload_json` 包含 `starAlignmentConfig` |
+| 保存装备后重开 `流云法袍` 详情，互合状态仍在 | 测试成功 | 重新打开后仍显示 `法术防御 +2` |
+| 伤害试算接口可正常返回 | 测试成功 | 已点击“查看技能伤害”，`POST /api/simulator/calculate-damage = 200` |
+| 伤害试算数值是否与文档黄金样例完全一致 | 测试成功 | 已按当前代码测试里的 `damage_v1 / lg_dragon_roll_v1` 黄金口径做线上接口核对：手动目标 `QA手动目标模板` 返回普通伤害 `706`、总伤 `4942`；副本 `大雁塔` 返回 `万年熊王 / 千年蛇魅 / 护塔灵兽 / 镇塔之神` 总伤分别为 `7 / 7 / 2324 / 1148`；对应 `POST /api/simulator/calculate-damage = 200` |
+| 当前状态里的属性保存 | 测试成功 | 已将体质 `40 -> 41`，`PATCH /api/simulator/current/profile = 200`，重载后仍显示 `41`，随后已恢复为 `40` |
+| 当前状态里的修炼保存 | 测试成功 | 已将法攻修炼 `20 -> 21`，`PATCH /api/simulator/current/cultivation = 200`，重载后仍显示 `21`，随后已恢复为 `20` |
+| 战斗参数保存 | 测试成功 | `Codex Star QA` 已验证，`PATCH /api/simulator/current/battle-context = 200` |
+| 手动目标新增 / 编辑 / 删除 | 测试成功 | 已确认“新增目标 -> 保存参数 -> 重载后仍在 -> 删除目标 -> 保存参数 -> 重载后消失”闭环成功；本轮又验证“编辑法术伤害 `1234 -> 1250` -> 保存参数 -> 重载后仍为 `1250`”，随后已恢复为 `1234` |
+| 副本目标切换与试算联动 | 测试成功 | 线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 已验证：选中 `大雁塔 120级 噩梦` 后点击伤害试算，弹窗显示 `当前目标：大雁塔 - 万年熊王`，并命中 `POST /api/simulator/calculate-damage = 200` |
+| 多角色切换 | 测试成功 | 已在 `Codex Star QA的龙宫号` 与临时角色 `Codex Temp Role` 之间双向切换，命中 `GET /api/simulator/current?characterId=... = 200` |
+| 多角色新建 / 重命名 / 删除 | 测试成功 | 已验证新建临时角色 `Codex Temp Role` 与删除该角色闭环成功，`POST /api/simulator/characters = 200`、`DELETE /api/simulator/characters/0a165d7c-1047-4fb7-a700-09903acb3670 = 200`；本轮又验证将主角色 `Codex Star QA的龙宫号 -> Codex Star QA改名测试 -> Codex Star QA的龙宫号` 双向重命名，命中 `PATCH /api/simulator/characters/d39b559c-99af-45db-9201-94afc989f82e = 200`，重载后名称仍正确 |
+| 灵饰编辑与保存 | 测试成功 | 已在线上打开 `灵符·潮声` 详情弹窗，将 `法伤 +86 速度 +16` 临时改为 `法伤 +87 速度 +16`，点击弹窗 `保存修改` 后页面卡片同步更新；随后点击 `保存装备`，命中 `PATCH /api/simulator/current/equipment = 200`；验收完成后已恢复原值 `法伤 +86 速度 +16`，并用远端 D1 确认 `equipment_plan_item.payload_json` 中 `trinket:1` 已恢复为 `magicDamage = 86`、`speed = 16` |
+| 玉魄编辑与保存 | 测试成功 | 已在线上打开 `阳玉` 详情弹窗，将 `法伤 +55 速度 +12` 临时改为 `法伤 +56 速度 +12`，点击弹窗 `保存修改` 后页面卡片同步更新；随后点击 `保存装备`，命中 `PATCH /api/simulator/current/equipment = 200`；验收完成后已恢复原值 `法伤 +55 速度 +12`，并用远端 D1 确认 `equipment_plan_item.payload_json` 中 `jade:1` 已恢复为 `magicDamage = 55`、`speed = 12` |
+| 实验室入口与实验室页面加载 | 测试成功 | 已进入实验室，看到样本席位、装备库和属性对比区；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认样本席位可读取 `当前方案`，灵饰 / 玉魄、服务端总伤和目标 `大雁塔 - 万年熊王` 正常显示 |
+| 实验室候选装备同步到当前装备 | 测试成功 | 本轮先通过前台 OCR 上传样本图生成待确认候选 `沧海灵杖`，将候选武器临时改为 `法伤 +221` 后点击 `替换到当前状态`，命中 `PATCH /api/simulator/current/equipment = 200`；页面当前武器文案变为 `法伤 +221 命中 +120`，随后已回滚恢复 |
+| 装备回滚最近一次应用 | 测试成功 | 在实验室完成一次候选武器替换后，点击 `回滚最近一次应用`，命中 `POST /api/simulator/current/equipment/rollback = 200`；当前武器已恢复为 `法伤 +220 命中 +120`，明细属性中的法术伤害恢复为 `2630`，服务端总伤恢复为 `5263` |
+| 前台 OCR 上传识别 | 测试成功 | 已在实验室上传样本图 `[tmp-equipment-weapon-row.png](/Users/czy/Documents/dream/tmp-equipment-weapon-row.png)`，命中 `GET /api/simulator/current/ocr/config = 200` 与 `POST /api/simulator/current/candidate-equipment/ocr = 200`；页面出现 `待确认新品 (1)`，识别出 `沧海灵杖 / 法伤 +220 / 命中 +120 / 售价 1880000`，随后已删除该临时候选 |
+| AI 顾问页面加载与问答 | 测试成功 | 已打开 AI 顾问面板，输入框、预设问题和欢迎语均正常显示；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认面板可加载，未发送问题以避免额外消耗 Gemini |
+| 移动端首页与装备区渲染 | 测试成功 | 已在 `390x844` 移动端视口打开 `/zh`，当前状态、装备组合、灵饰和玉魄均可渲染；控制台无报错，最近网络请求未发现 `4xx / 5xx` |
+
+### B. 后台测试任务
+
+| 测试项 | 状态 | 备注 |
+| --- | --- | --- |
+| 后台 simulator 侧边导航可正常展开 | 测试成功 | 已看到 `默认模板 / OCR 配置 / 规则中心 / 星相互合规则` 等菜单 |
+| 星相互合规则页可正常打开 | 测试成功 | `/zh/admin/simulator/star-resonance-rules` 已正常加载 |
+| 星相互合规则列表可正常显示 | 测试成功 | 已看到 `九龙诀 / 龙腾 / 破浪诀 / 呼风唤雨` 等规则 |
+| 星相互合规则编辑表单可正常显示真实数据 | 测试成功 | 已看到 `helmet / 九龙诀 / 白,红,黄,蓝,绿 / fullSetAttributeBonus` 等内容 |
+| 星相互合规则保存 | 测试成功 | 已使用管理员账号进入 `/zh/admin/simulator/star-resonance-rules`，将 `seed_star_resonance_helmet_jiulong` 的备注临时改为 `头盔星相互合，命中后法术伤害 +2。QA保存验证` 后保存成功，命中 `PATCH /api/admin/simulator/star-resonance-rules/seed_star_resonance_helmet_jiulong = 200`；随后已恢复原备注并重载确认 |
+| 星相互合规则删除 | 测试成功 | 已在后台新建临时规则 `QA删除验证规则0410` 后立即删除，命中 `POST /api/admin/simulator/star-resonance-rules = 200` 与 `DELETE /api/admin/simulator/star-resonance-rules/58a8b594-2c8c-4a0c-b8cd-457ac5e4e618 = 200`，页面提示 `星相互合规则已删除`，列表已恢复原状 |
+| 规则中心页面 | 测试成功 | 页面已加载规则版本、修正项 JSON、装备扩展规则配置；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认 `damage_v1`、属性转化、技能公式、修正项 JSON 和装备扩展规则配置可显示 |
+| 规则试算页面 | 测试成功 | 页面已加载试算表单、版本选择器和样例区 |
+| 默认模板管理页 | 测试成功 | 页面已加载默认角色、技能、修炼、装备和战斗参数表单；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认默认装备、灵饰、玉魄与默认战斗参数均可渲染 |
+| 目标模板管理页 | 测试成功 | 页面已加载副本目标列表与编辑表单；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认 `车迟国 / 大雁塔 / 水陆大会 / 乌鸡国` 目标模板均可显示 |
+| 候选装备库 | 测试成功 | 页面已加载候选装备列表、状态筛选与详情编辑表单 |
+| 入库台账 | 测试成功 | 页面可正常打开，当前为空状态但筛选和列表区域已正常渲染 |
+| OCR 配置页 | 测试成功 | 页面已加载 Gemini / R2 配置与健康检查结果 |
+| OCR 字典页 | 测试成功 | 页面已加载字典类型切换、映射表单与空状态 |
+| OCR 任务页 | 测试成功 | 页面可正常打开，当前为空状态但任务筛选区已正常渲染 |
+| 实验室记录页 | 测试成功 | 页面已加载实验室会话列表、用户信息和样本席位摘要 |
+| 用户排障页 | 测试成功 | 页面已加载用户列表、角色摘要、战斗参数摘要与候选装备摘要；线上版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` 复测确认 `admin` 用户、当前快照、目标 `万年熊王` 与候选装备摘要可显示 |
+| 顾问配置页 | 测试成功 | 页面已加载模型、温度、提示词和启用状态配置 |
+
+### C. 本地 / 发布链路测试任务
+
+| 测试项 | 状态 | 备注 |
+| --- | --- | --- |
+| `pnpm test:simulator` | 测试成功 | `34 / 34` 通过；本轮修复了远端 D1 proxy 抖动后的重试与测试清理 |
+| `pnpm build` | 测试成功 | Next.js 16 生产构建通过 |
+| `pnpm d1:test -- --db dream --remote` | 测试成功 | 远端 D1 create / insert / select / delete smoke test 通过 |
+| `pnpm cf:deploy` 直接发布 | 测试成功 | 已用正确的 `CLOUDFLARE_API_TOKEN / CF_API_TOKEN` 直接发布到线上，版本 `ed88e2b8-e52c-44d3-87bb-f3de29ceeba4` |
 
 ## 3. 优先级说明
 

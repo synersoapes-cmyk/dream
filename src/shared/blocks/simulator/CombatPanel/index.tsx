@@ -322,6 +322,44 @@ export function CombatPanel() {
     await saveBattleContext();
   };
 
+  const selectDungeonTarget = async (params: {
+    dungeon: Dungeon;
+    target: Dungeon['targets'][number];
+    defense: number;
+    magicDefense: number;
+  }) => {
+    const persistedTemplateId =
+      typeof params.target.templateId === 'string' &&
+      params.target.templateId.trim().length > 0
+        ? params.target.templateId
+        : undefined;
+    const targetSelectionId = persistedTemplateId || params.target.id;
+    const nextCombatTarget = {
+      templateId: persistedTemplateId,
+      name: params.target.name,
+      defense: params.defense,
+      magicDefense: params.magicDefense,
+      speed: params.target.speed || 0,
+      hp: params.target.hp,
+      level: params.target.level,
+      element: params.target.element,
+      formation: params.target.formation,
+      dungeonName: params.dungeon.name,
+    };
+    const nextSelectedDungeonIds = selectedDungeonIds.includes(targetSelectionId)
+      ? selectedDungeonIds
+      : [...selectedDungeonIds, targetSelectionId].slice(-5);
+
+    updateCombatTarget(nextCombatTarget);
+    setSelectedDungeonIds(nextSelectedDungeonIds);
+    setCombatTab('dungeon');
+    await saveBattleContext({
+      combatTab: 'dungeon',
+      selectedDungeonIds: nextSelectedDungeonIds,
+      combatTarget: nextCombatTarget,
+    });
+  };
+
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
@@ -746,13 +784,37 @@ export function CombatPanel() {
                         {/* 副本头部 */}
                         <button
                           onClick={() => {
+                            const wasExpanded = expandedDungeonIds.has(dungeon.id);
                             const newExpanded = new Set(expandedDungeonIds);
-                            if (newExpanded.has(dungeon.id)) {
+                            if (wasExpanded) {
                               newExpanded.delete(dungeon.id);
                             } else {
                               newExpanded.add(dungeon.id);
                             }
                             setExpandedDungeonIds(newExpanded);
+
+                            if (wasExpanded) {
+                              return;
+                            }
+
+                            const defaultTarget = dungeon.targets[0];
+                            if (!defaultTarget) {
+                              return;
+                            }
+
+                            const currentDefense = dungeonTargetDefense[
+                              defaultTarget.id
+                            ] || {
+                              defense: defaultTarget.defense,
+                              magicDefense: defaultTarget.magicDefense,
+                            };
+
+                            void selectDungeonTarget({
+                              dungeon,
+                              target: defaultTarget,
+                              defense: currentDefense.defense,
+                              magicDefense: currentDefense.magicDefense,
+                            });
                           }}
                           className="flex w-full items-center justify-between p-4 transition-colors hover:bg-slate-800/40"
                         >
@@ -791,44 +853,16 @@ export function CombatPanel() {
                                 defense: target.defense,
                                 magicDefense: target.magicDefense,
                               };
-                              const targetSelectionId =
-                                target.templateId || target.id;
-                              const persistedTemplateId =
-                                typeof target.templateId === 'string' &&
-                                target.templateId.trim().length > 0
-                                  ? target.templateId
-                                  : undefined;
 
                               return (
                                 <div
                                   key={target.id}
                                   onClick={async () => {
-                                    const nextCombatTarget = {
-                                      templateId: persistedTemplateId,
-                                      name: target.name,
+                                    await selectDungeonTarget({
+                                      dungeon,
+                                      target,
                                       defense: currentDefense.defense,
                                       magicDefense: currentDefense.magicDefense,
-                                      speed: target.speed || 0,
-                                      hp: target.hp,
-                                      level: target.level,
-                                      element: target.element,
-                                      formation: target.formation,
-                                      dungeonName: dungeon.name,
-                                    };
-                                    const nextSelectedDungeonIds =
-                                      selectedDungeonIds.includes(targetSelectionId)
-                                        ? selectedDungeonIds
-                                        : [...selectedDungeonIds, targetSelectionId].slice(
-                                            -5
-                                          );
-
-                                    updateCombatTarget(nextCombatTarget);
-                                    setSelectedDungeonIds(nextSelectedDungeonIds);
-                                    setCombatTab('dungeon');
-                                    await saveBattleContext({
-                                      combatTab: 'dungeon',
-                                      selectedDungeonIds: nextSelectedDungeonIds,
-                                      combatTarget: nextCombatTarget,
                                     });
                                   }}
                                   className={`cursor-pointer rounded-lg border p-3 transition-colors ${

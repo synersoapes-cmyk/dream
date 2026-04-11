@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Plus, Save, Trash2 } from 'lucide-react';
 
-import { formatDateTimeValue } from '@/shared/lib/date';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -16,6 +15,7 @@ import {
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { Textarea } from '@/shared/components/ui/textarea';
+import { formatDateTimeValue } from '@/shared/lib/date';
 import type { AdminSimulatorStarResonanceRuleItem } from '@/shared/models/simulator-types';
 
 type Props = {
@@ -79,12 +79,11 @@ export function SimulatorStarResonanceRulePanel({
 }: Props) {
   const [items, setItems] = useState(sortItems(initialItems));
   const [keyword, setKeyword] = useState('');
-  const [selectedId, setSelectedId] = useState(initialItems[0]?.id ?? '__new__');
+  const [selectedId, setSelectedId] = useState(
+    initialItems[0]?.id ?? '__new__'
+  );
   const [isCreating, setIsCreating] = useState(initialItems.length === 0);
   const [draftItem, setDraftItem] = useState<EditableItem>(createBlankItem());
-  const [jsonDraft, setJsonDraft] = useState(
-    JSON.stringify(draftItem.globalBonus, null, 2)
-  );
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,10 +110,6 @@ export function SimulatorStarResonanceRulePanel({
 
   const currentItem = isCreating ? draftItem : selectedItem;
 
-  const syncJsonDraft = (item: EditableItem | null) => {
-    setJsonDraft(JSON.stringify(item?.globalBonus ?? {}, null, 2));
-  };
-
   const patchCurrentItem = (patch: Partial<EditableItem>) => {
     if (isCreating) {
       setDraftItem((current) => ({ ...current, ...patch }));
@@ -135,8 +130,6 @@ export function SimulatorStarResonanceRulePanel({
   const handleSelect = (id: string) => {
     setIsCreating(false);
     setSelectedId(id);
-    const next = items.find((item) => item.id === id) ?? null;
-    syncJsonDraft(next);
     setNotice(null);
     setError(null);
   };
@@ -146,25 +139,30 @@ export function SimulatorStarResonanceRulePanel({
     setIsCreating(true);
     setDraftItem(blank);
     setSelectedId('__new__');
-    syncJsonDraft(blank);
     setNotice(null);
     setError(null);
   };
 
-  const handleSave = async () => {
-    if (!currentItem || !canEdit) {
+  const patchGlobalBonusNumber = (key: string, value: string) => {
+    if (!currentItem) {
       return;
     }
 
-    let parsedGlobalBonus: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(jsonDraft || '{}');
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('全局奖励 JSON 必须是对象');
-      }
-      parsedGlobalBonus = parsed;
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '全局奖励 JSON 无效');
+    patchCurrentItem({
+      globalBonus: {
+        ...(currentItem.globalBonus ?? {}),
+        [key]: toNumber(value),
+      },
+    });
+  };
+
+  const getGlobalBonusNumber = (key: string) => {
+    const value = currentItem?.globalBonus?.[key];
+    return typeof value === 'number' ? value : 0;
+  };
+
+  const handleSave = async () => {
+    if (!currentItem || !canEdit) {
       return;
     }
 
@@ -179,7 +177,7 @@ export function SimulatorStarResonanceRulePanel({
       requiredColors: currentItem.requiredColors,
       bonusAttrType: currentItem.bonusAttrType,
       bonusAttrValue: currentItem.bonusAttrValue,
-      globalBonus: parsedGlobalBonus,
+      globalBonus: currentItem.globalBonus ?? {},
       sort: currentItem.sort,
       enabled: currentItem.enabled,
       notes: currentItem.notes,
@@ -205,13 +203,16 @@ export function SimulatorStarResonanceRulePanel({
       }
 
       const saved = result.data as AdminSimulatorStarResonanceRuleItem;
-      setItems((current) => sortItems([...current.filter((item) => item.id !== saved.id), saved]));
+      setItems((current) =>
+        sortItems([...current.filter((item) => item.id !== saved.id), saved])
+      );
       setSelectedId(saved.id);
       setIsCreating(false);
-      syncJsonDraft(saved);
       setNotice('星相互合规则已保存');
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : '保存星相互合规则失败');
+      setError(
+        saveError instanceof Error ? saveError.message : '保存星相互合规则失败'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -222,7 +223,9 @@ export function SimulatorStarResonanceRulePanel({
       return;
     }
 
-    const confirmed = window.confirm(`确认删除规则「${selectedItem.comboName}」吗？`);
+    const confirmed = window.confirm(
+      `确认删除规则「${selectedItem.comboName}」吗？`
+    );
     if (!confirmed) {
       return;
     }
@@ -247,13 +250,16 @@ export function SimulatorStarResonanceRulePanel({
       setItems(nextItems);
       if (nextItems[0]) {
         setSelectedId(nextItems[0].id);
-        syncJsonDraft(nextItems[0]);
       } else {
         handleCreate();
       }
       setNotice('星相互合规则已删除');
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '删除星相互合规则失败');
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : '删除星相互合规则失败'
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -261,7 +267,7 @@ export function SimulatorStarResonanceRulePanel({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <Card>
+      <Card className="lg:sticky lg:top-6 lg:self-start">
         <CardHeader>
           <CardTitle>规则列表</CardTitle>
           <CardDescription>按部位、组合名和启用状态快速筛选。</CardDescription>
@@ -272,11 +278,16 @@ export function SimulatorStarResonanceRulePanel({
             placeholder="搜索部位 / 组合名 / 说明"
             onChange={(event) => setKeyword(event.target.value)}
           />
-          <Button type="button" className="w-full" onClick={handleCreate} disabled={!canEdit}>
+          <Button
+            type="button"
+            className="w-full"
+            onClick={handleCreate}
+            disabled={!canEdit}
+          >
             <Plus className="mr-2 h-4 w-4" />
             新建规则
           </Button>
-          <div className="space-y-2">
+          <div className="space-y-2 lg:max-h-[calc(100vh-17rem)] lg:overflow-y-auto lg:pr-1">
             {filteredItems.map((item) => {
               const isActive = !isCreating && selectedId === item.id;
               return (
@@ -291,8 +302,15 @@ export function SimulatorStarResonanceRulePanel({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-semibold text-slate-100">{item.comboName}</div>
-                    <Badge variant="outline" className={item.enabled ? 'text-emerald-300' : 'text-slate-400'}>
+                    <div className="truncate text-sm font-semibold text-slate-100">
+                      {item.comboName}
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        item.enabled ? 'text-emerald-300' : 'text-slate-400'
+                      }
+                    >
                       {item.enabled ? '启用' : '停用'}
                     </Badge>
                   </div>
@@ -308,14 +326,18 @@ export function SimulatorStarResonanceRulePanel({
 
       <Card>
         <CardHeader>
-          <CardTitle>{isCreating ? '新建星相互合规则' : '编辑星相互合规则'}</CardTitle>
+          <CardTitle>
+            {isCreating ? '新建星相互合规则' : '编辑星相互合规则'}
+          </CardTitle>
           <CardDescription>
-            单件奖励用于当前部位命中时加成，`globalBonus` 用于定义六件全套奖励。
+            单件奖励用于当前部位命中时加成，全套奖励用于六件都命中后的额外加成。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!currentItem ? (
-            <div className="text-sm text-slate-400">请选择一条规则开始编辑。</div>
+            <div className="text-sm text-slate-400">
+              请选择一条规则开始编辑。
+            </div>
           ) : (
             <>
               <div className="grid gap-4 md:grid-cols-2">
@@ -323,7 +345,9 @@ export function SimulatorStarResonanceRulePanel({
                   <Label>部位</Label>
                   <Input
                     value={currentItem.slot}
-                    onChange={(event) => patchCurrentItem({ slot: event.target.value })}
+                    onChange={(event) =>
+                      patchCurrentItem({ slot: event.target.value })
+                    }
                     disabled={!canEdit}
                   />
                 </div>
@@ -331,7 +355,9 @@ export function SimulatorStarResonanceRulePanel({
                   <Label>组合名</Label>
                   <Input
                     value={currentItem.comboName}
-                    onChange={(event) => patchCurrentItem({ comboName: event.target.value })}
+                    onChange={(event) =>
+                      patchCurrentItem({ comboName: event.target.value })
+                    }
                     disabled={!canEdit}
                   />
                 </div>
@@ -339,7 +365,9 @@ export function SimulatorStarResonanceRulePanel({
                   <Label>单件奖励属性</Label>
                   <Input
                     value={currentItem.bonusAttrType}
-                    onChange={(event) => patchCurrentItem({ bonusAttrType: event.target.value })}
+                    onChange={(event) =>
+                      patchCurrentItem({ bonusAttrType: event.target.value })
+                    }
                     disabled={!canEdit}
                   />
                 </div>
@@ -347,7 +375,11 @@ export function SimulatorStarResonanceRulePanel({
                   <Label>单件奖励值</Label>
                   <Input
                     value={String(currentItem.bonusAttrValue)}
-                    onChange={(event) => patchCurrentItem({ bonusAttrValue: toNumber(event.target.value) })}
+                    onChange={(event) =>
+                      patchCurrentItem({
+                        bonusAttrValue: toNumber(event.target.value),
+                      })
+                    }
                     disabled={!canEdit}
                   />
                 </div>
@@ -371,7 +403,9 @@ export function SimulatorStarResonanceRulePanel({
                   <Label>排序</Label>
                   <Input
                     value={String(currentItem.sort)}
-                    onChange={(event) => patchCurrentItem({ sort: toNumber(event.target.value) })}
+                    onChange={(event) =>
+                      patchCurrentItem({ sort: toNumber(event.target.value) })
+                    }
                     disabled={!canEdit}
                   />
                 </div>
@@ -380,7 +414,10 @@ export function SimulatorStarResonanceRulePanel({
                   <button
                     type="button"
                     className={`inline-flex h-10 items-center rounded-md border px-3 text-sm ${currentItem.enabled ? 'border-emerald-700/50 text-emerald-300' : 'border-slate-700 text-slate-400'}`}
-                    onClick={() => canEdit && patchCurrentItem({ enabled: !currentItem.enabled })}
+                    onClick={() =>
+                      canEdit &&
+                      patchCurrentItem({ enabled: !currentItem.enabled })
+                    }
                     disabled={!canEdit}
                   >
                     {currentItem.enabled ? '已启用' : '已停用'}
@@ -389,20 +426,50 @@ export function SimulatorStarResonanceRulePanel({
               </div>
 
               <div className="space-y-2">
-                <Label>全局奖励 JSON</Label>
-                <Textarea
-                  value={jsonDraft}
-                  onChange={(event) => setJsonDraft(event.target.value)}
-                  className="min-h-40 font-mono text-xs"
-                  disabled={!canEdit}
-                />
+                <Label>六件全套奖励</Label>
+                <div className="grid gap-4 rounded-lg border p-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>全基础属性 +</Label>
+                    <Input
+                      type="number"
+                      value={String(
+                        getGlobalBonusNumber('fullSetAttributeBonus')
+                      )}
+                      onChange={(event) =>
+                        patchGlobalBonusNumber(
+                          'fullSetAttributeBonus',
+                          event.target.value
+                        )
+                      }
+                      disabled={!canEdit}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>额外法伤 +</Label>
+                    <Input
+                      type="number"
+                      value={String(
+                        getGlobalBonusNumber('fullSetMagicDamageBonus')
+                      )}
+                      onChange={(event) =>
+                        patchGlobalBonusNumber(
+                          'fullSetMagicDamageBonus',
+                          event.target.value
+                        )
+                      }
+                      disabled={!canEdit}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2">
                 <Label>备注</Label>
                 <Textarea
                   value={currentItem.notes}
-                  onChange={(event) => patchCurrentItem({ notes: event.target.value })}
+                  onChange={(event) =>
+                    patchCurrentItem({ notes: event.target.value })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -415,11 +482,17 @@ export function SimulatorStarResonanceRulePanel({
                 </div>
               )}
 
-              {notice && <div className="text-sm text-emerald-400">{notice}</div>}
+              {notice && (
+                <div className="text-sm text-emerald-400">{notice}</div>
+              )}
               {error && <div className="text-sm text-red-400">{error}</div>}
 
               <div className="flex flex-wrap gap-3">
-                <Button type="button" onClick={handleSave} disabled={!canEdit || isSaving}>
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!canEdit || isSaving}
+                >
                   <Save className="mr-2 h-4 w-4" />
                   {isSaving ? '保存中...' : '保存规则'}
                 </Button>

@@ -94,64 +94,45 @@
           "is_expand": true,
           "children": [
             {
-              "title": "默认模板",
-              "url": "/admin/simulator/defaults",
-              "icon": "LayoutTemplate"
+              "title": "工作台",
+              "url": "/admin/simulator",
+              "match_path": "exact",
+              "icon": "LayoutDashboard"
             },
             {
-              "title": "顾问配置",
-              "url": "/admin/simulator/advisor",
-              "icon": "Bot"
-            },
-            {
-              "title": "OCR 配置",
-              "url": "/admin/simulator/ocr",
-              "icon": "Key"
-            },
-            {
-              "title": "候选装备库",
+              "title": "处理入库",
               "url": "/admin/simulator/candidate-equipment",
-              "icon": "Box"
-            },
-            {
-              "title": "入库台账",
-              "url": "/admin/simulator/inventory",
-              "icon": "Box"
-            },
-            {
-              "title": "OCR 任务",
-              "url": "/admin/simulator/ocr-jobs",
-              "icon": "History"
-            },
-            {
-              "title": "OCR 字典",
-              "url": "/admin/simulator/ocr-dictionary",
-              "icon": "BookOpenText"
-            },
-            {
-              "title": "目标模板",
-              "url": "/admin/simulator/target-templates",
-              "icon": "Target"
+              "active_urls": [
+                "/admin/simulator/inventory",
+                "/admin/simulator/ocr-jobs",
+                "/admin/simulator/ocr-dictionary"
+              ],
+              "icon": "ScanLine"
             },
             {
               "title": "用户排障",
               "url": "/admin/simulator/user-diagnostics",
+              "active_urls": ["/admin/simulator/lab-sessions"],
               "icon": "SearchCheck"
             },
             {
-              "title": "实验室记录",
-              "url": "/admin/simulator/lab-sessions",
-              "icon": "Beaker"
-            },
-            {
-              "title": "规则中心",
+              "title": "调整规则",
               "url": "/admin/simulator/rule-center",
+              "active_urls": [
+                "/admin/simulator/star-resonance-rules",
+                "/admin/simulator/rule-playground"
+              ],
               "icon": "Scale"
             },
             {
-              "title": "规则试算",
-              "url": "/admin/simulator/rule-playground",
-              "icon": "Calculator"
+              "title": "基础配置",
+              "url": "/admin/simulator/defaults",
+              "active_urls": [
+                "/admin/simulator/advisor",
+                "/admin/simulator/ocr",
+                "/admin/simulator/target-templates"
+              ],
+              "icon": "SlidersHorizontal"
             }
           ]
         }

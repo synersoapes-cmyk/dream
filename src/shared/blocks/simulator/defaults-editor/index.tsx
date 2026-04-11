@@ -146,7 +146,7 @@ const EQUIPMENT_SLOT_OPTIONS: string[] = [
   'trinket4',
   'jade1',
   'jade2',
-] ;
+];
 
 const ATTR_GROUP_OPTIONS: string[] = ['base', 'extra'];
 
@@ -159,7 +159,7 @@ const CULTIVATION_TYPE_OPTIONS: string[] = [
   'petPhysicalDefense',
   'petMagicAttack',
   'petMagicDefense',
-] ;
+];
 
 const PROFILE_NUMBER_FIELDS: Array<{
   key: keyof SimulatorSeedProfile;
@@ -202,7 +202,11 @@ const BATTLE_CONTEXT_FIELDS: Array<{
   { key: 'targetDefense', label: '目标防御', type: 'number' },
   { key: 'targetMagicDefense', label: '目标法防', type: 'number' },
   { key: 'targetSpeed', label: '目标速度', type: 'number' },
-  { key: 'targetMagicDefenseCultivation', label: '目标法抗修炼', type: 'number' },
+  {
+    key: 'targetMagicDefenseCultivation',
+    label: '目标法抗修炼',
+    type: 'number',
+  },
   { key: 'targetElement', label: '目标五行' },
   { key: 'targetFormation', label: '目标阵法' },
 ];
@@ -233,37 +237,37 @@ export function SimulatorDefaultsEditor({
     () =>
       parseJson<SimulatorSeedCharacterMeta>(
         initialConfig.characterMeta,
-        EMPTY_CHARACTER_META,
+        EMPTY_CHARACTER_META
       ),
-    [initialConfig.characterMeta],
+    [initialConfig.characterMeta]
   );
 
   const initialProfile = useMemo(
     () => parseJson<SimulatorSeedProfile>(initialConfig.profile, EMPTY_PROFILE),
-    [initialConfig.profile],
+    [initialConfig.profile]
   );
 
   const initialSkills = useMemo(
     () => parseJson<SimulatorSeedSkill[]>(initialConfig.skills, []),
-    [initialConfig.skills],
+    [initialConfig.skills]
   );
 
   const initialCultivations = useMemo(
     () => parseJson<SimulatorSeedCultivation[]>(initialConfig.cultivations, []),
-    [initialConfig.cultivations],
+    [initialConfig.cultivations]
   );
 
   const initialEquipments = useMemo(
     () => parseJson<SimulatorSeedEquipment[]>(initialConfig.equipments, []),
-    [initialConfig.equipments],
+    [initialConfig.equipments]
   );
   const initialBattleContext = useMemo(
     () =>
       parseJson<SimulatorSeedBattleContext>(
         initialConfig.battleContext,
-        EMPTY_BATTLE_CONTEXT,
+        EMPTY_BATTLE_CONTEXT
       ),
-    [initialConfig.battleContext],
+    [initialConfig.battleContext]
   );
 
   const [characterMeta, setCharacterMeta] =
@@ -284,7 +288,7 @@ export function SimulatorDefaultsEditor({
 
   const updateProfileNumber = (
     key: keyof SimulatorSeedProfile,
-    value: string,
+    value: string
   ) => {
     setProfile((current) => ({
       ...current,
@@ -295,7 +299,7 @@ export function SimulatorDefaultsEditor({
   const updateSkill = (
     index: number,
     key: keyof SimulatorSeedSkill,
-    value: string,
+    value: string
   ) => {
     setSkills((current) =>
       current.map((item, itemIndex) =>
@@ -307,15 +311,15 @@ export function SimulatorDefaultsEditor({
                   ? value
                   : toNumber(value),
             }
-          : item,
-      ),
+          : item
+      )
     );
   };
 
   const updateCultivation = (
     index: number,
     key: keyof SimulatorSeedCultivation,
-    value: string,
+    value: string
   ) => {
     setCultivations((current) =>
       current.map((item, itemIndex) =>
@@ -324,15 +328,15 @@ export function SimulatorDefaultsEditor({
               ...item,
               [key]: key === 'cultivationType' ? value : toNumber(value),
             }
-          : item,
-      ),
+          : item
+      )
     );
   };
 
   const updateEquipment = (
     index: number,
     key: EquipmentScalarKey,
-    value: string,
+    value: string
   ) => {
     setEquipments((current) =>
       current.map((item, itemIndex) =>
@@ -347,8 +351,8 @@ export function SimulatorDefaultsEditor({
                   ? value
                   : toNumber(value),
             }
-          : item,
-      ),
+          : item
+      )
     );
   };
 
@@ -356,7 +360,7 @@ export function SimulatorDefaultsEditor({
     equipmentIndex: number,
     attrIndex: number,
     key: EquipmentAttrScalarKey,
-    value: string,
+    value: string
   ) => {
     setEquipments((current) =>
       current.map((item, itemIndex) =>
@@ -372,17 +376,17 @@ export function SimulatorDefaultsEditor({
                           ? value
                           : toNumber(value),
                     }
-                  : attr,
+                  : attr
               ),
             }
-          : item,
-      ),
+          : item
+      )
     );
   };
 
   const updateBattleContext = (
     key: keyof SimulatorSeedBattleContext,
-    value: string,
+    value: string
   ) => {
     setBattleContext((current) => ({
       ...current,
@@ -425,7 +429,9 @@ export function SimulatorDefaultsEditor({
             throw new Error(`非法属性分组: ${attr.attrGroup || '空值'}`);
           }
           if (attr.attrValue < 0) {
-            throw new Error(`属性值不能为负数: ${attr.attrType || '未命名属性'}`);
+            throw new Error(
+              `属性值不能为负数: ${attr.attrType || '未命名属性'}`
+            );
           }
         }
       }
@@ -453,26 +459,26 @@ export function SimulatorDefaultsEditor({
       setSkills(
         parseJson<SimulatorSeedSkill[]>(
           payload.data['simulator.default.skills'],
-          [],
-        ),
+          []
+        )
       );
       setCultivations(
         parseJson<SimulatorSeedCultivation[]>(
           payload.data['simulator.default.cultivations'],
-          [],
-        ),
+          []
+        )
       );
       setEquipments(
         parseJson<SimulatorSeedEquipment[]>(
           payload.data['simulator.default.equipments'],
-          [],
-        ),
+          []
+        )
       );
       setBattleContext(
         parseJson<SimulatorSeedBattleContext>(
           payload.data['simulator.default.battle_context'],
-          EMPTY_BATTLE_CONTEXT,
-        ),
+          EMPTY_BATTLE_CONTEXT
+        )
       );
       setSuccess('默认模板已保存到 D1 config');
     } catch (saveError) {
@@ -486,9 +492,8 @@ export function SimulatorDefaultsEditor({
     <div className="space-y-6">
       {isReadOnly && (
         <Card>
-          <CardContent className="pt-6 text-sm text-muted-foreground">
-            You can view simulator defaults here. Saving changes requires
-            `admin.settings.write`.
+          <CardContent className="text-muted-foreground pt-6 text-sm">
+            当前账号只能查看默认模板，保存修改需要后台设置写入权限。
           </CardContent>
         </Card>
       )}
@@ -573,7 +578,7 @@ export function SimulatorDefaultsEditor({
         <CardHeader>
           <CardTitle>默认基础属性</CardTitle>
           <CardDescription>
-            这里是新角色首次生成时写入 `character_profile` 的默认值。
+            这里是新角色首次生成时使用的面板和加点默认值。
           </CardDescription>
         </CardHeader>
         <CardContent className={`grid gap-4 md:grid-cols-4 ${editorLockClass}`}>
@@ -601,20 +606,6 @@ export function SimulatorDefaultsEditor({
               />
             </div>
           ))}
-          <div className="space-y-2 md:col-span-4">
-            <Label htmlFor="rawBodyJson">rawBodyJson</Label>
-            <Textarea
-              id="rawBodyJson"
-              rows={6}
-              value={profile.rawBodyJson}
-              onChange={(e) =>
-                setProfile((current) => ({
-                  ...current,
-                  rawBodyJson: e.target.value,
-                }))
-              }
-            />
-          </div>
         </CardContent>
       </Card>
 
@@ -622,7 +613,7 @@ export function SimulatorDefaultsEditor({
         <CardHeader>
           <CardTitle>默认技能</CardTitle>
           <CardDescription>
-            这里已经改成可增删行编辑，不需要再手写整个 JSON 数组。
+            逐行维护新角色默认技能，保存后会用于后续新用户。
           </CardDescription>
         </CardHeader>
         <CardContent className={`space-y-4 ${editorLockClass}`}>
@@ -635,84 +626,86 @@ export function SimulatorDefaultsEditor({
                 key={`${skill.skillCode}-${index}`}
                 className="grid gap-3 rounded-lg border p-4 md:grid-cols-5"
               >
-              <div className="space-y-2">
-                <Label htmlFor={skillFieldId('code')}>技能代码</Label>
-                <Input
-                  id={skillFieldId('code')}
-                  name={skillFieldId('code')}
-                  value={skill.skillCode}
-                  onChange={(e) =>
-                    updateSkill(index, 'skillCode', e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={skillFieldId('name')}>技能名称</Label>
-                <Input
-                  id={skillFieldId('name')}
-                  name={skillFieldId('name')}
-                  value={skill.skillName}
-                  onChange={(e) =>
-                    updateSkill(index, 'skillName', e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={skillFieldId('base-level')}>基础等级</Label>
-                <Input
-                  id={skillFieldId('base-level')}
-                  name={skillFieldId('base-level')}
-                  type="number"
-                  value={skill.baseLevel}
-                  onChange={(e) =>
-                    updateSkill(index, 'baseLevel', e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={skillFieldId('extra-level')}>额外等级</Label>
-                <Input
-                  id={skillFieldId('extra-level')}
-                  name={skillFieldId('extra-level')}
-                  type="number"
-                  value={skill.extraLevel}
-                  onChange={(e) =>
-                    updateSkill(index, 'extraLevel', e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={skillFieldId('final-level')}>最终等级</Label>
-                <div className="flex gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor={skillFieldId('code')}>技能代码</Label>
                   <Input
-                    id={skillFieldId('final-level')}
-                    name={skillFieldId('final-level')}
-                    type="number"
-                    value={skill.finalLevel}
+                    id={skillFieldId('code')}
+                    name={skillFieldId('code')}
+                    value={skill.skillCode}
                     onChange={(e) =>
-                      updateSkill(index, 'finalLevel', e.target.value)
+                      updateSkill(index, 'skillCode', e.target.value)
                     }
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setSkills((current) =>
-                        current.filter((_, itemIndex) => itemIndex !== index),
-                      )
-                    }
-                  >
-                    删除
-                  </Button>
                 </div>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor={skillFieldId('name')}>技能名称</Label>
+                  <Input
+                    id={skillFieldId('name')}
+                    name={skillFieldId('name')}
+                    value={skill.skillName}
+                    onChange={(e) =>
+                      updateSkill(index, 'skillName', e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={skillFieldId('base-level')}>基础等级</Label>
+                  <Input
+                    id={skillFieldId('base-level')}
+                    name={skillFieldId('base-level')}
+                    type="number"
+                    value={skill.baseLevel}
+                    onChange={(e) =>
+                      updateSkill(index, 'baseLevel', e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={skillFieldId('extra-level')}>额外等级</Label>
+                  <Input
+                    id={skillFieldId('extra-level')}
+                    name={skillFieldId('extra-level')}
+                    type="number"
+                    value={skill.extraLevel}
+                    onChange={(e) =>
+                      updateSkill(index, 'extraLevel', e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={skillFieldId('final-level')}>最终等级</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id={skillFieldId('final-level')}
+                      name={skillFieldId('final-level')}
+                      type="number"
+                      value={skill.finalLevel}
+                      onChange={(e) =>
+                        updateSkill(index, 'finalLevel', e.target.value)
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setSkills((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index)
+                        )
+                      }
+                    >
+                      删除
+                    </Button>
+                  </div>
+                </div>
               </div>
             );
           })}
           <Button
             type="button"
             variant="outline"
-            onClick={() => setSkills((current) => [...current, { ...EMPTY_SKILL }])}
+            onClick={() =>
+              setSkills((current) => [...current, { ...EMPTY_SKILL }])
+            }
           >
             新增技能
           </Button>
@@ -731,17 +724,17 @@ export function SimulatorDefaultsEditor({
             const cultivationTypeLabelId = buildFieldId(
               'simulator-defaults-cultivation',
               index,
-              'type-label',
+              'type-label'
             );
             const cultivationTypeId = buildFieldId(
               'simulator-defaults-cultivation',
               index,
-              'type',
+              'type'
             );
             const cultivationLevelId = buildFieldId(
               'simulator-defaults-cultivation',
               index,
-              'level',
+              'level'
             );
 
             return (
@@ -749,55 +742,55 @@ export function SimulatorDefaultsEditor({
                 key={`${cultivation.cultivationType}-${index}`}
                 className="grid gap-3 rounded-lg border p-4 md:grid-cols-[2fr_1fr_auto]"
               >
-              <div className="space-y-2">
-                <Label id={cultivationTypeLabelId}>修炼类型</Label>
-                <Select
-                  value={cultivation.cultivationType}
-                  onValueChange={(value) =>
-                    updateCultivation(index, 'cultivationType', value)
-                  }
-                >
-                  <SelectTrigger
-                    id={cultivationTypeId}
-                    aria-labelledby={cultivationTypeLabelId}
-                    className="w-full"
+                <div className="space-y-2">
+                  <Label id={cultivationTypeLabelId}>修炼类型</Label>
+                  <Select
+                    value={cultivation.cultivationType}
+                    onValueChange={(value) =>
+                      updateCultivation(index, 'cultivationType', value)
+                    }
                   >
-                    <SelectValue placeholder="选择修炼类型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CULTIVATION_TYPE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={cultivationLevelId}>等级</Label>
-                <Input
-                  id={cultivationLevelId}
-                  name={cultivationLevelId}
-                  type="number"
-                  value={cultivation.level}
-                  onChange={(e) =>
-                    updateCultivation(index, 'level', e.target.value)
-                  }
-                />
-              </div>
-              <div className="flex items-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    setCultivations((current) =>
-                      current.filter((_, itemIndex) => itemIndex !== index),
-                    )
-                  }
-                >
-                  删除
-                </Button>
-              </div>
+                    <SelectTrigger
+                      id={cultivationTypeId}
+                      aria-labelledby={cultivationTypeLabelId}
+                      className="w-full"
+                    >
+                      <SelectValue placeholder="选择修炼类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CULTIVATION_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={cultivationLevelId}>等级</Label>
+                  <Input
+                    id={cultivationLevelId}
+                    name={cultivationLevelId}
+                    type="number"
+                    value={cultivation.level}
+                    onChange={(e) =>
+                      updateCultivation(index, 'level', e.target.value)
+                    }
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setCultivations((current) =>
+                        current.filter((_, itemIndex) => itemIndex !== index)
+                      )
+                    }
+                  >
+                    删除
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -805,7 +798,10 @@ export function SimulatorDefaultsEditor({
             type="button"
             variant="outline"
             onClick={() =>
-              setCultivations((current) => [...current, { ...EMPTY_CULTIVATION }])
+              setCultivations((current) => [
+                ...current,
+                { ...EMPTY_CULTIVATION },
+              ])
             }
           >
             新增修炼
@@ -832,245 +828,256 @@ export function SimulatorDefaultsEditor({
                 key={`${equipment.slot}-${index}`}
                 className="space-y-4 rounded-lg border p-4"
               >
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="space-y-2">
-                  <Label id={slotLabelId}>槽位</Label>
-                  <Select
-                    value={equipment.slot}
-                  onValueChange={(value) => updateEquipment(index, 'slot', value)}
-                >
-                  <SelectTrigger
-                      id={equipmentFieldId('slot')}
-                      aria-labelledby={slotLabelId}
-                      className="w-full"
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label id={slotLabelId}>槽位</Label>
+                    <Select
+                      value={equipment.slot}
+                      onValueChange={(value) =>
+                        updateEquipment(index, 'slot', value)
+                      }
                     >
-                      <SelectValue placeholder="选择槽位" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EQUIPMENT_SLOT_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label id={snapshotSlotLabelId}>快照槽位</Label>
-                  <Select
-                    value={equipment.snapshotSlot}
-                  onValueChange={(value) =>
-                      updateEquipment(index, 'snapshotSlot', value)
-                    }
-                  >
-                    <SelectTrigger
-                      id={equipmentFieldId('snapshot-slot')}
-                      aria-labelledby={snapshotSlotLabelId}
-                      className="w-full"
-                    >
-                      <SelectValue placeholder="选择快照槽位" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EQUIPMENT_SLOT_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={equipmentFieldId('name')}>名称</Label>
-                  <Input
-                    id={equipmentFieldId('name')}
-                    name={equipmentFieldId('name')}
-                    value={equipment.name}
-                    onChange={(e) => updateEquipment(index, 'name', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={equipmentFieldId('quality')}>品质</Label>
-                  <Input
-                    id={equipmentFieldId('quality')}
-                    name={equipmentFieldId('quality')}
-                    value={equipment.quality}
-                    onChange={(e) =>
-                      updateEquipment(index, 'quality', e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={equipmentFieldId('level')}>等级</Label>
-                  <Input
-                    id={equipmentFieldId('level')}
-                    name={equipmentFieldId('level')}
-                    type="number"
-                    value={equipment.level}
-                    onChange={(e) =>
-                      updateEquipment(index, 'level', e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={equipmentFieldId('price')}>价格</Label>
-                  <Input
-                    id={equipmentFieldId('price')}
-                    name={equipmentFieldId('price')}
-                    type="number"
-                    value={equipment.price}
-                    onChange={(e) =>
-                      updateEquipment(index, 'price', e.target.value)
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={equipmentFieldId('refine-level')}>精炼等级</Label>
-                  <Input
-                    id={equipmentFieldId('refine-level')}
-                    name={equipmentFieldId('refine-level')}
-                    type="number"
-                    value={equipment.refineLevel}
-                    onChange={(e) =>
-                      updateEquipment(index, 'refineLevel', e.target.value)
-                    }
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setEquipments((current) =>
-                        current.filter((_, itemIndex) => itemIndex !== index),
-                      )
-                    }
-                  >
-                    删除
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>属性项</Label>
-                <div className="space-y-3">
-                  {equipment.attrs.map((attr, attrIndex) => {
-                    const attrFieldId = (...parts: Array<string | number>) =>
-                      equipmentFieldId('attr', attrIndex, ...parts);
-                    const attrGroupLabelId = attrFieldId('group-label');
-
-                    return (
-                      <div
-                        key={`${attr.attrType}-${attrIndex}`}
-                        className="grid gap-3 rounded-md border p-3 md:grid-cols-[2fr_1fr_1fr_auto]"
+                      <SelectTrigger
+                        id={equipmentFieldId('slot')}
+                        aria-labelledby={slotLabelId}
+                        className="w-full"
                       >
-                            <div className="space-y-2">
-                              <Label htmlFor={attrFieldId('type')}>属性类型</Label>
-                              <Input
-                                id={attrFieldId('type')}
-                                name={attrFieldId('type')}
-                                value={attr.attrType}
-                                onChange={(e) =>
-                                  updateEquipmentAttr(
-                                    index,
-                                    attrIndex,
-                                    'attrType',
-                                    e.target.value,
-                                  )
-                                }
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor={attrFieldId('value')}>属性值</Label>
-                              <Input
-                                id={attrFieldId('value')}
-                                name={attrFieldId('value')}
-                                type="number"
-                                value={attr.attrValue}
-                                onChange={(e) =>
-                                  updateEquipmentAttr(
-                                    index,
-                                    attrIndex,
-                                    'attrValue',
-                                    e.target.value,
-                                  )
-                                }
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label id={attrGroupLabelId}>分组</Label>
-                              <Select
-                                value={attr.attrGroup}
-                                onValueChange={(value) =>
-                                  updateEquipmentAttr(
-                                    index,
-                                    attrIndex,
-                                    'attrGroup',
-                                    value,
-                                  )
-                                }
-                              >
-                                <SelectTrigger
-                                  id={attrFieldId('group')}
-                                  aria-labelledby={attrGroupLabelId}
-                                  className="w-full"
-                                >
-                                  <SelectValue placeholder="选择分组" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {ATTR_GROUP_OPTIONS.map((option) => (
-                                    <SelectItem key={option} value={option}>
-                                      {option}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="flex items-end">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() =>
-                                  setEquipments((current) =>
-                                    current.map((item, itemIndex) =>
-                                      itemIndex === index
-                                        ? {
-                                            ...item,
-                                            attrs: item.attrs.filter(
-                                              (_, currentAttrIndex) =>
-                                                currentAttrIndex !== attrIndex,
-                                            ),
-                                          }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              >
-                                删除属性
-                              </Button>
-                            </div>
-                      </div>
-                    );
-                  })}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setEquipments((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                attrs: [...item.attrs, { ...EMPTY_EQUIPMENT_ATTR }],
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                  >
-                    新增属性
-                  </Button>
+                        <SelectValue placeholder="选择槽位" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EQUIPMENT_SLOT_OPTIONS.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label id={snapshotSlotLabelId}>快照槽位</Label>
+                    <Select
+                      value={equipment.snapshotSlot}
+                      onValueChange={(value) =>
+                        updateEquipment(index, 'snapshotSlot', value)
+                      }
+                    >
+                      <SelectTrigger
+                        id={equipmentFieldId('snapshot-slot')}
+                        aria-labelledby={snapshotSlotLabelId}
+                        className="w-full"
+                      >
+                        <SelectValue placeholder="选择快照槽位" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EQUIPMENT_SLOT_OPTIONS.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={equipmentFieldId('name')}>名称</Label>
+                    <Input
+                      id={equipmentFieldId('name')}
+                      name={equipmentFieldId('name')}
+                      value={equipment.name}
+                      onChange={(e) =>
+                        updateEquipment(index, 'name', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={equipmentFieldId('quality')}>品质</Label>
+                    <Input
+                      id={equipmentFieldId('quality')}
+                      name={equipmentFieldId('quality')}
+                      value={equipment.quality}
+                      onChange={(e) =>
+                        updateEquipment(index, 'quality', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={equipmentFieldId('level')}>等级</Label>
+                    <Input
+                      id={equipmentFieldId('level')}
+                      name={equipmentFieldId('level')}
+                      type="number"
+                      value={equipment.level}
+                      onChange={(e) =>
+                        updateEquipment(index, 'level', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={equipmentFieldId('price')}>价格</Label>
+                    <Input
+                      id={equipmentFieldId('price')}
+                      name={equipmentFieldId('price')}
+                      type="number"
+                      value={equipment.price}
+                      onChange={(e) =>
+                        updateEquipment(index, 'price', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={equipmentFieldId('refine-level')}>
+                      精炼等级
+                    </Label>
+                    <Input
+                      id={equipmentFieldId('refine-level')}
+                      name={equipmentFieldId('refine-level')}
+                      type="number"
+                      value={equipment.refineLevel}
+                      onChange={(e) =>
+                        updateEquipment(index, 'refineLevel', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setEquipments((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index)
+                        )
+                      }
+                    >
+                      删除
+                    </Button>
+                  </div>
                 </div>
-              </div>
+
+                <div className="space-y-2">
+                  <Label>属性项</Label>
+                  <div className="space-y-3">
+                    {equipment.attrs.map((attr, attrIndex) => {
+                      const attrFieldId = (...parts: Array<string | number>) =>
+                        equipmentFieldId('attr', attrIndex, ...parts);
+                      const attrGroupLabelId = attrFieldId('group-label');
+
+                      return (
+                        <div
+                          key={`${attr.attrType}-${attrIndex}`}
+                          className="grid gap-3 rounded-md border p-3 md:grid-cols-[2fr_1fr_1fr_auto]"
+                        >
+                          <div className="space-y-2">
+                            <Label htmlFor={attrFieldId('type')}>
+                              属性类型
+                            </Label>
+                            <Input
+                              id={attrFieldId('type')}
+                              name={attrFieldId('type')}
+                              value={attr.attrType}
+                              onChange={(e) =>
+                                updateEquipmentAttr(
+                                  index,
+                                  attrIndex,
+                                  'attrType',
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={attrFieldId('value')}>属性值</Label>
+                            <Input
+                              id={attrFieldId('value')}
+                              name={attrFieldId('value')}
+                              type="number"
+                              value={attr.attrValue}
+                              onChange={(e) =>
+                                updateEquipmentAttr(
+                                  index,
+                                  attrIndex,
+                                  'attrValue',
+                                  e.target.value
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label id={attrGroupLabelId}>分组</Label>
+                            <Select
+                              value={attr.attrGroup}
+                              onValueChange={(value) =>
+                                updateEquipmentAttr(
+                                  index,
+                                  attrIndex,
+                                  'attrGroup',
+                                  value
+                                )
+                              }
+                            >
+                              <SelectTrigger
+                                id={attrFieldId('group')}
+                                aria-labelledby={attrGroupLabelId}
+                                className="w-full"
+                              >
+                                <SelectValue placeholder="选择分组" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ATTR_GROUP_OPTIONS.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex items-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() =>
+                                setEquipments((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? {
+                                          ...item,
+                                          attrs: item.attrs.filter(
+                                            (_, currentAttrIndex) =>
+                                              currentAttrIndex !== attrIndex
+                                          ),
+                                        }
+                                      : item
+                                  )
+                                )
+                              }
+                            >
+                              删除属性
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setEquipments((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  attrs: [
+                                    ...item.attrs,
+                                    { ...EMPTY_EQUIPMENT_ATTR },
+                                  ],
+                                }
+                              : item
+                          )
+                        )
+                      }
+                    >
+                      新增属性
+                    </Button>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -1085,7 +1092,7 @@ export function SimulatorDefaultsEditor({
           </Button>
         </CardContent>
         <CardFooter className="justify-between">
-          <div className="text-sm text-muted-foreground">
+          <div className="text-muted-foreground text-sm">
             只影响后续新建档案，不会覆盖已有用户角色数据。
           </div>
           <div className="flex items-center gap-3">
@@ -1104,14 +1111,18 @@ export function SimulatorDefaultsEditor({
         <CardHeader>
           <CardTitle>默认战斗参数</CardTitle>
           <CardDescription>
-            这部分会写入新用户默认快照的 `snapshot_battle_context`，用于首次进入实验室时的战斗环境基线。
+            这部分用于新用户首次进入实验室时的战斗环境基线。
           </CardDescription>
         </CardHeader>
         <CardContent className={`grid gap-4 md:grid-cols-4 ${editorLockClass}`}>
           {BATTLE_CONTEXT_FIELDS.map((field) => (
             <div
               key={field.key}
-              className={field.key === 'targetName' ? 'space-y-2 md:col-span-2' : 'space-y-2'}
+              className={
+                field.key === 'targetName'
+                  ? 'space-y-2 md:col-span-2'
+                  : 'space-y-2'
+              }
             >
               <Label htmlFor={field.key}>{field.label}</Label>
               <Input

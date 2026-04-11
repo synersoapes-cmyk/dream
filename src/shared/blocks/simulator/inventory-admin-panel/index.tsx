@@ -329,7 +329,7 @@ export function SimulatorInventoryAdminPanel({
                   {canEdit && item.status !== 'active' ? (
                     <div className="text-muted-foreground mt-2 text-xs">
                       台账状态改为{item.status === 'sold' ? '已售出' : '已作废'}
-                      后， 候选装备会同步标记为 `replaced`。
+                      后，候选装备会同步标记为已替换。
                     </div>
                   ) : null}
                 </div>

@@ -27,6 +27,8 @@ export interface NavItem {
   text?: string;
   description?: string;
   url?: string;
+  active_urls?: string[];
+  match_path?: 'exact' | 'prefix';
   target?: string;
   type?: string;
   icon_url?: string;

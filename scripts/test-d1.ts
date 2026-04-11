@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, execSync } from 'child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 type CliOptions = {
@@ -130,10 +129,6 @@ function resolveExecuteTarget(options: CliOptions): string {
 }
 
 function runWranglerSql(sql: string, options: CliOptions): string {
-  const tempDir = mkdtempSync(join(tmpdir(), 'dream-d1-test-'));
-  const sqlFile = join(tempDir, 'query.sql');
-  writeFileSync(sqlFile, sql, 'utf8');
-
   const executeTarget = resolveExecuteTarget(options);
   const args = ['wrangler', 'd1', 'execute', executeTarget];
 
@@ -147,26 +142,22 @@ function runWranglerSql(sql: string, options: CliOptions): string {
     args.push('--config', options.wranglerFile);
   }
 
-  args.push('--file', sqlFile, '--json');
+  args.push('--command', sql, '--json');
 
-  try {
-    if (process.platform === 'win32') {
-      const command = buildWindowsCommand(args);
-      return execSync(command, {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    }
-
-    return execFileSync('npx', args, {
+  if (process.platform === 'win32') {
+    const command = buildWindowsCommand(args);
+    return execSync(command, {
       cwd: process.cwd(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
   }
+
+  return execFileSync('npx', args, {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 function buildWindowsCommand(args: string[]): string {

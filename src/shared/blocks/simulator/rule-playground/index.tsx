@@ -82,10 +82,6 @@ function buildFieldId(...parts: Array<string | number>) {
     .join('-');
 }
 
-function prettyJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
 function normalizeString(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback;
 }
@@ -413,37 +409,40 @@ export function RulePlaygroundPanel({
 
   const selectedVersionLabelId = buildFieldId(
     'rule-playground',
-    'selected-version-label',
+    'selected-version-label'
   );
   const selectedVersionTriggerId = buildFieldId(
     'rule-playground',
-    'selected-version',
+    'selected-version'
   );
   const skillCodeId = buildFieldId('rule-playground', 'skill-code');
   const targetCountId = buildFieldId('rule-playground', 'target-count');
   const targetMagicDefenseId = buildFieldId(
     'rule-playground',
-    'target-magic-defense',
+    'target-magic-defense'
   );
   const formationCounterLabelId = buildFieldId(
     'rule-playground',
-    'formation-counter-label',
+    'formation-counter-label'
   );
-  const formationCounterId = buildFieldId('rule-playground', 'formation-counter');
+  const formationCounterId = buildFieldId(
+    'rule-playground',
+    'formation-counter'
+  );
   const elementRelationLabelId = buildFieldId(
     'rule-playground',
-    'element-relation-label',
+    'element-relation-label'
   );
   const elementRelationId = buildFieldId('rule-playground', 'element-relation');
   const shenmuValueId = buildFieldId('rule-playground', 'shenmu-value');
   const magicResultId = buildFieldId('rule-playground', 'magic-result');
   const transformCardFactorId = buildFieldId(
     'rule-playground',
-    'transform-card-factor',
+    'transform-card-factor'
   );
   const panelMagicDamageOverrideId = buildFieldId(
     'rule-playground',
-    'panel-magic-damage-override',
+    'panel-magic-damage-override'
   );
   const saveCaseNameId = buildFieldId('rule-playground', 'save-case-name');
   const saveCaseNotesId = buildFieldId('rule-playground', 'save-case-notes');
@@ -584,7 +583,9 @@ export function RulePlaygroundPanel({
                 />
               </div>
               <div className="space-y-2 md:col-span-3">
-                <Label htmlFor={panelMagicDamageOverrideId}>面板法伤覆盖值</Label>
+                <Label htmlFor={panelMagicDamageOverrideId}>
+                  面板法伤覆盖值
+                </Label>
                 <Input
                   id={panelMagicDamageOverrideId}
                   name={panelMagicDamageOverrideId}
@@ -676,10 +677,26 @@ export function RulePlaygroundPanel({
               </div>
               {selectedResult && (
                 <div className="bg-muted/40 text-muted-foreground rounded-md p-3 text-xs">
-                  <div>当前保存输入：</div>
-                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">
-                    {prettyJson(currentInputPayload)}
-                  </pre>
+                  <div className="mb-2 font-medium">当前保存内容</div>
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    <div>技能：{String(currentInputPayload.skillCode)}</div>
+                    <div>
+                      目标数量：{String(currentInputPayload.targetCount)}
+                    </div>
+                    <div>
+                      目标法防：
+                      {String(currentInputPayload.targetMagicDefense)}
+                    </div>
+                    <div>
+                      阵法：{String(currentInputPayload.formationCounterState)}
+                    </div>
+                    <div>
+                      五行：{String(currentInputPayload.elementRelation)}
+                    </div>
+                    <div>
+                      变身卡：{String(currentInputPayload.transformCardFactor)}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

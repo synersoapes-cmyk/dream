@@ -41,6 +41,9 @@ function isTransientD1Error(error: unknown): boolean {
   return (
     combined.includes('network connection lost') ||
     combined.includes('failed to parse body as json') ||
+    combined.includes('fetch failed') ||
+    combined.includes('econnreset') ||
+    combined.includes('socket disconnected') ||
     combined.includes('d1_error') ||
     combined.includes('internal_server_error')
   );
@@ -69,6 +72,7 @@ export async function withTransientD1Retry<T>(
       );
 
       await resetD1DevBindingCache();
+      await initD1ContextForDev();
       await new Promise((resolve) => setTimeout(resolve, attempt * 150));
     }
   }

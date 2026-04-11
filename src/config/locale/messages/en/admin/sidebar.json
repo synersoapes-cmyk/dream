@@ -94,64 +94,45 @@
           "is_expand": true,
           "children": [
             {
-              "title": "Defaults",
-              "url": "/admin/simulator/defaults",
-              "icon": "LayoutTemplate"
+              "title": "Workbench",
+              "url": "/admin/simulator",
+              "match_path": "exact",
+              "icon": "LayoutDashboard"
             },
             {
-              "title": "Advisor Config",
-              "url": "/admin/simulator/advisor",
-              "icon": "Bot"
-            },
-            {
-              "title": "OCR Config",
-              "url": "/admin/simulator/ocr",
-              "icon": "Key"
-            },
-            {
-              "title": "Candidate Library",
+              "title": "Intake",
               "url": "/admin/simulator/candidate-equipment",
-              "icon": "Box"
+              "active_urls": [
+                "/admin/simulator/inventory",
+                "/admin/simulator/ocr-jobs",
+                "/admin/simulator/ocr-dictionary"
+              ],
+              "icon": "ScanLine"
             },
             {
-              "title": "Inventory Ledger",
-              "url": "/admin/simulator/inventory",
-              "icon": "Box"
-            },
-            {
-              "title": "OCR Jobs",
-              "url": "/admin/simulator/ocr-jobs",
-              "icon": "History"
-            },
-            {
-              "title": "OCR Dictionary",
-              "url": "/admin/simulator/ocr-dictionary",
-              "icon": "BookOpenText"
-            },
-            {
-              "title": "Target Templates",
-              "url": "/admin/simulator/target-templates",
-              "icon": "Target"
-            },
-            {
-              "title": "User Diagnostics",
+              "title": "Support",
               "url": "/admin/simulator/user-diagnostics",
+              "active_urls": ["/admin/simulator/lab-sessions"],
               "icon": "SearchCheck"
             },
             {
-              "title": "Lab Sessions",
-              "url": "/admin/simulator/lab-sessions",
-              "icon": "Beaker"
-            },
-            {
-              "title": "Rule Center",
+              "title": "Rules",
               "url": "/admin/simulator/rule-center",
+              "active_urls": [
+                "/admin/simulator/star-resonance-rules",
+                "/admin/simulator/rule-playground"
+              ],
               "icon": "Scale"
             },
             {
-              "title": "Rule Playground",
-              "url": "/admin/simulator/rule-playground",
-              "icon": "Calculator"
+              "title": "Setup",
+              "url": "/admin/simulator/defaults",
+              "active_urls": [
+                "/admin/simulator/advisor",
+                "/admin/simulator/ocr",
+                "/admin/simulator/target-templates"
+              ],
+              "icon": "SlidersHorizontal"
             }
           ]
         }

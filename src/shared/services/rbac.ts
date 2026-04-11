@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 
 import { db } from '@/core/db';
+import { resetD1DevBindingCache } from '@/core/db/d1';
 import { permission, role, rolePermission, userRole } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import { getAllConfigs } from '@/shared/models/config';
@@ -37,6 +38,69 @@ export enum RoleStatus {
   ACTIVE = 'active',
   DISABLED = 'disabled',
   DELETED = 'deleted',
+}
+
+function getErrorMessages(error: unknown): string[] {
+  const messages: string[] = [];
+  let current = error;
+  let depth = 0;
+
+  while (current && depth < 5) {
+    if (current instanceof Error) {
+      messages.push(current.message);
+      current = (current as Error & { cause?: unknown }).cause;
+      depth += 1;
+      continue;
+    }
+
+    break;
+  }
+
+  return messages;
+}
+
+function isTransientD1Error(error: unknown) {
+  const combined = getErrorMessages(error).join(' | ').toLowerCase();
+
+  return (
+    combined.includes('failed to parse body as json') ||
+    combined.includes('error code: 1031') ||
+    combined.includes('network connection lost') ||
+    combined.includes('d1_error') ||
+    combined.includes('internal_server_error')
+  );
+}
+
+async function withTransientD1Retry<T>(
+  label: string,
+  operation: () => Promise<T>,
+  maxAttempts = 3
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (!isTransientD1Error(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.warn(
+        `[rbac] transient D1 error during ${label}, retrying (${attempt}/${maxAttempts})`,
+        error
+      );
+
+      await resetD1DevBindingCache().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 150));
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Unknown RBAC D1 error during ${label}`);
 }
 
 /**
@@ -216,28 +280,30 @@ export async function assignPermissionsToRole(
  */
 export const getUserRoles = cache(async (userId: string): Promise<Role[]> => {
   const now = new Date();
-  const result = await db()
-    .select({
-      id: role.id,
-      name: role.name,
-      title: role.title,
-      description: role.description,
-      status: role.status,
-      createdAt: role.createdAt,
-      updatedAt: role.updatedAt,
-      sort: role.sort,
-    })
-    .from(userRole)
-    .innerJoin(role, eq(userRole.roleId, role.id))
-    .where(
-      and(
-        eq(userRole.userId, userId),
-        eq(role.status, RoleStatus.ACTIVE),
-        // Check if role is not expired
-        // Either expiresAt is null or expiresAt > now
-        or(isNull(userRole.expiresAt), gt(userRole.expiresAt, now))
+  const result = await withTransientD1Retry<Role[]>('getUserRoles', () =>
+    db()
+      .select({
+        id: role.id,
+        name: role.name,
+        title: role.title,
+        description: role.description,
+        status: role.status,
+        createdAt: role.createdAt,
+        updatedAt: role.updatedAt,
+        sort: role.sort,
+      })
+      .from(userRole)
+      .innerJoin(role, eq(userRole.roleId, role.id))
+      .where(
+        and(
+          eq(userRole.userId, userId),
+          eq(role.status, RoleStatus.ACTIVE),
+          // Check if role is not expired
+          // Either expiresAt is null or expiresAt > now
+          or(isNull(userRole.expiresAt), gt(userRole.expiresAt, now))
+        )
       )
-    );
+  );
 
   return result;
 });
@@ -252,20 +318,24 @@ export const getUserPermissions = cache(
 
     const roleIds = roles.map((r) => r.id);
 
-    const result = await db()
-      .selectDistinct({
-        id: permission.id,
-        code: permission.code,
-        resource: permission.resource,
-        action: permission.action,
-        title: permission.title,
-        description: permission.description,
-        createdAt: permission.createdAt,
-        updatedAt: permission.updatedAt,
-      })
-      .from(rolePermission)
-      .innerJoin(permission, eq(rolePermission.permissionId, permission.id))
-      .where(inArray(rolePermission.roleId, roleIds));
+    const result = await withTransientD1Retry<Permission[]>(
+      'getUserPermissions',
+      () =>
+        db()
+          .selectDistinct({
+            id: permission.id,
+            code: permission.code,
+            resource: permission.resource,
+            action: permission.action,
+            title: permission.title,
+            description: permission.description,
+            createdAt: permission.createdAt,
+            updatedAt: permission.updatedAt,
+          })
+          .from(rolePermission)
+          .innerJoin(permission, eq(rolePermission.permissionId, permission.id))
+          .where(inArray(rolePermission.roleId, roleIds))
+    );
 
     return result;
   }

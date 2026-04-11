@@ -39,7 +39,7 @@ export default async function SimulatorCandidateEquipmentAdminPage({
           canEdit={Boolean(writableUser)}
           initialItems={items}
           title="候选装备库管理"
-          description="这里汇总所有 pending / confirmed / replaced 候选装备，便于按用户排查脏数据、重复数据和 OCR 识别误差。"
+          description="这里汇总待确认、已确认和已替换的候选装备，便于按用户排查脏数据、重复数据和 OCR 识别误差。"
           initialStatus="all"
           availableStatuses={['all', 'pending', 'confirmed', 'replaced']}
           listEndpoint="/api/admin/simulator/candidate-equipment"

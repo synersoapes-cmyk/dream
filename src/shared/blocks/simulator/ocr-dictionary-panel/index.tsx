@@ -29,7 +29,12 @@ type DictionaryItem = {
   updatedAt: number;
 };
 
-type DictType = 'all' | 'equipment_name' | 'skill_name' | 'attr_name' | 'set_name';
+type DictType =
+  | 'all'
+  | 'equipment_name'
+  | 'skill_name'
+  | 'attr_name'
+  | 'set_name';
 
 type Props = {
   canEdit?: boolean;
@@ -87,12 +92,19 @@ export function SimulatorOcrDictionaryPanel({
         dictType,
         limit: '200',
       });
-      const response = await fetch(`/api/admin/simulator/ocr-dictionary?${query}`, {
-        method: 'GET',
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        `/api/admin/simulator/ocr-dictionary?${query}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      );
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取 OCR 字典失败');
       }
 
@@ -152,13 +164,16 @@ export function SimulatorOcrDictionaryPanel({
     setNotice(null);
 
     try {
-      const response = await fetch(`/api/admin/simulator/ocr-dictionary/${item.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(item),
-      });
+      const response = await fetch(
+        `/api/admin/simulator/ocr-dictionary/${item.id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(item),
+        }
+      );
       const payload = await response.json();
       if (!response.ok || payload?.code !== 0 || !payload?.data) {
         throw new Error(payload?.message || '保存 OCR 字典失败');
@@ -182,9 +197,12 @@ export function SimulatorOcrDictionaryPanel({
     setNotice(null);
 
     try {
-      const response = await fetch(`/api/admin/simulator/ocr-dictionary/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await fetch(
+        `/api/admin/simulator/ocr-dictionary/${id}`,
+        {
+          method: 'DELETE',
+        }
+      );
       const payload = await response.json();
       if (!response.ok || payload?.code !== 0) {
         throw new Error(payload?.message || '删除 OCR 字典失败');
@@ -207,20 +225,26 @@ export function SimulatorOcrDictionaryPanel({
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex flex-wrap gap-2">
-          {(['all', 'equipment_name', 'skill_name', 'attr_name', 'set_name'] as const).map(
-            (dictType) => (
-              <Button
-                key={dictType}
-                type="button"
-                variant={activeType === dictType ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => void handleLoad(dictType)}
-                disabled={isLoading}
-              >
-                {DICT_TYPE_LABELS[dictType]}
-              </Button>
-            )
-          )}
+          {(
+            [
+              'all',
+              'equipment_name',
+              'skill_name',
+              'attr_name',
+              'set_name',
+            ] as const
+          ).map((dictType) => (
+            <Button
+              key={dictType}
+              type="button"
+              variant={activeType === dictType ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => void handleLoad(dictType)}
+              disabled={isLoading}
+            >
+              {DICT_TYPE_LABELS[dictType]}
+            </Button>
+          ))}
         </div>
 
         <div className="grid gap-4 rounded-lg border p-4 md:grid-cols-5">
@@ -229,7 +253,7 @@ export function SimulatorOcrDictionaryPanel({
             <select
               id="ocr-dict-type"
               className={cn(
-                'border-input bg-background flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow]',
+                'border-input bg-background flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none',
                 'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'
               )}
               value={draft.dictType}
@@ -293,7 +317,10 @@ export function SimulatorOcrDictionaryPanel({
               type="checkbox"
               checked={draft.enabled}
               onChange={(e) =>
-                setDraft((current) => ({ ...current, enabled: e.target.checked }))
+                setDraft((current) => ({
+                  ...current,
+                  enabled: e.target.checked,
+                }))
               }
               disabled={!canEdit}
             />
@@ -318,12 +345,15 @@ export function SimulatorOcrDictionaryPanel({
             </div>
           ) : (
             visibleItems.map((item) => (
-              <div key={item.id} className="grid gap-3 rounded-lg border p-4 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_100px_110px_160px]">
+              <div
+                key={item.id}
+                className="grid gap-3 rounded-lg border p-4 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_100px_110px_160px]"
+              >
                 <div className="space-y-2">
                   <Label>类型</Label>
                   <select
                     className={cn(
-                      'border-input bg-background flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow]',
+                      'border-input bg-background flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none',
                       'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'
                     )}
                     value={item.dictType}
@@ -384,7 +414,10 @@ export function SimulatorOcrDictionaryPanel({
                       setItems((current) =>
                         current.map((entry) =>
                           entry.id === item.id
-                            ? { ...entry, priority: Number(e.target.value) || 0 }
+                            ? {
+                                ...entry,
+                                priority: Number(e.target.value) || 0,
+                              }
                             : entry
                         )
                       )
@@ -451,7 +484,7 @@ export function SimulatorOcrDictionaryPanel({
           </div>
         ) : null}
         {error ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-lg border px-3 py-2 text-sm">
             {error}
           </div>
         ) : null}

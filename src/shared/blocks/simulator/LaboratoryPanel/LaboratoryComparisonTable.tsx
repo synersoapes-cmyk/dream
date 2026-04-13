@@ -5,16 +5,23 @@ import type {
   BaseAttributes,
   Equipment,
   ExperimentSeat,
+  MeridianConfig,
   Treasure,
 } from '@/features/simulator/store/gameTypes';
+import { getVisibleExperimentSeats } from '@/features/simulator/utils/simulatorExperimentSeats';
 
 import {
   getSimulatorSlotLabel,
   matchesSimulatorSlotDefinition,
   SIMULATOR_RUNE_STONE_SLOT_DEFINITIONS,
 } from '@/shared/lib/simulator-slot-config';
+import type { RegularSetRuntimeRule } from '@/shared/lib/simulator-regular-set';
 import type { LabValuationSeatResult } from '@/shared/services/lab-valuation';
 
+import {
+  buildLaboratoryMagicDamageCostLabel,
+  buildLaboratoryMarginalWarning,
+} from '@/shared/lib/laboratory-outcome-summary';
 import {
   calculateEquipmentTotalStats,
   getFallbackSeatTotalDamage,
@@ -27,10 +34,13 @@ type Props = {
   experimentSeats: ExperimentSeat[];
   sampleEquipment: Equipment[];
   baseAttributes: BaseAttributes;
+  bodyStrength: number;
+  meridian: MeridianConfig;
   treasure: Treasure | null;
   labValuationBySeatId: Record<string, LabValuationSeatResult>;
   labValuationError: string | null;
   isLoadingLabValuation: boolean;
+  regularSetRules?: RegularSetRuntimeRule[];
 };
 
 type TableSeatData = {
@@ -46,19 +56,28 @@ export function LaboratoryComparisonTable({
   experimentSeats,
   sampleEquipment,
   baseAttributes,
+  bodyStrength,
+  meridian,
   treasure,
   labValuationBySeatId,
   labValuationError,
   isLoadingLabValuation,
+  regularSetRules,
 }: Props) {
-  const displaySeats = experimentSeats.slice(0, 2);
+  const displaySeats = getVisibleExperimentSeats(experimentSeats);
   const allSeatsData: TableSeatData[] = displaySeats.map((seat) => {
     const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
     const { totals, totalPrice } = calculateEquipmentTotalStats(seatEquip);
     const seatCombatStats = computeDerivedStats(
       baseAttributes,
       seatEquip,
-      treasure
+      treasure,
+      {
+        bodyStrength,
+        meridian,
+        regularSetRules,
+        runeSkillBaselineEquipment: sampleEquipment,
+      }
     );
     const seatLabValuation = labValuationBySeatId[seat.id];
 
@@ -380,9 +399,68 @@ export function LaboratoryComparisonTable({
                 )}
               </tr>
 
+              <tr className="border-b border-yellow-800/10 hover:bg-slate-800/20">
+                <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
+                  总伤增益百分比
+                </td>
+                {allSeatsData.map(
+                  ({ seat, seatCombatStats, seatLabValuation }, index) => {
+                    const isServiceUnavailable =
+                      Boolean(labValuationError) && !seatLabValuation;
+                    const fallbackTotalDamage =
+                      getFallbackSeatTotalDamage(seatCombatStats);
+                    const fallbackSampleTotalDamage =
+                      getFallbackSeatTotalDamage(
+                        sampleSeatData?.seatCombatStats ?? seatCombatStats
+                      );
+                    const totalDamage =
+                      seatLabValuation?.totalDamage ?? fallbackTotalDamage;
+                    const sampleTotalDamage =
+                      sampleSeatData?.seatLabValuation?.totalDamage ??
+                      fallbackSampleTotalDamage;
+                    const damageGainPercent =
+                      index === 0
+                        ? null
+                        : (seatLabValuation?.comparison?.damageGainPercent ??
+                          (sampleTotalDamage > 0
+                            ? ((totalDamage - sampleTotalDamage) /
+                                sampleTotalDamage) *
+                              100
+                            : null));
+
+                    return (
+                      <td key={seat.id} className="p-2.5 text-center text-xs">
+                        {seat.isSample ? (
+                          <span className="text-slate-500">—</span>
+                        ) : isLoadingLabValuation && !seatLabValuation ? (
+                          <span className="text-slate-500">计算中</span>
+                        ) : isServiceUnavailable ? (
+                          <span className="text-amber-300">不可用</span>
+                        ) : damageGainPercent === null ? (
+                          <span className="text-slate-500">—</span>
+                        ) : (
+                          <span
+                            className={
+                              damageGainPercent > 0
+                                ? 'text-green-400'
+                                : damageGainPercent < 0
+                                  ? 'text-red-400'
+                                  : 'text-slate-400'
+                            }
+                          >
+                            {damageGainPercent > 0 ? '+' : ''}
+                            {damageGainPercent.toFixed(1)}%
+                          </span>
+                        )}
+                      </td>
+                    );
+                  }
+                )}
+              </tr>
+
               <tr className="hover:bg-slate-800/20">
                 <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
-                  1点伤害成本
+                  1点法伤成本
                 </td>
                 {allSeatsData.map(
                   ({ seat, totalPrice, seatCombatStats, seatLabValuation }) => {
@@ -396,27 +474,20 @@ export function LaboratoryComparisonTable({
                       );
                     }
 
-                    const fallbackTotalDamage =
-                      getFallbackSeatTotalDamage(seatCombatStats);
-                    const fallbackSampleTotalDamage =
-                      getFallbackSeatTotalDamage(
-                        sampleSeatData?.seatCombatStats ?? seatCombatStats
-                      );
-                    const totalDamage =
-                      seatLabValuation?.totalDamage ?? fallbackTotalDamage;
-                    const sampleTotalDamage =
-                      sampleSeatData?.seatLabValuation?.totalDamage ??
-                      fallbackSampleTotalDamage;
-                    const damageDiff = totalDamage - sampleTotalDamage;
                     const priceDiff =
                       seatLabValuation?.comparison?.priceDiff ??
                       totalPrice - (sampleSeatData?.totalPrice ?? 0);
-                    const costPerDamage =
-                      seatLabValuation?.comparison?.costPerDamage ??
-                      (damageDiff > 0 ? priceDiff / damageDiff : 0);
-                    const costLabel = seatLabValuation?.comparison?.costLabel;
-                    const shouldShowNumericCost =
-                      !costLabel || costLabel === '-';
+                    const magicDamageDiff =
+                      seatLabValuation?.comparison?.magicDamageDiff ??
+                      (seatCombatStats.magicDamage -
+                        (sampleSeatData?.seatCombatStats.magicDamage ??
+                          seatCombatStats.magicDamage));
+                    const costLabel =
+                      seatLabValuation?.comparison?.magicDamageCostLabel ??
+                      buildLaboratoryMagicDamageCostLabel({
+                        diffPrice: priceDiff,
+                        magicDamageDiff,
+                      });
 
                     return (
                       <td key={seat.id} className="p-2.5 text-center text-xs">
@@ -426,14 +497,60 @@ export function LaboratoryComparisonTable({
                           <span className="text-amber-300">不可用</span>
                         ) : costLabel && costLabel !== '-' ? (
                           <span className="text-[#fff064]">{costLabel}</span>
-                        ) : damageDiff <= 0 ? (
+                        ) : magicDamageDiff <= 0 ? (
                           <span className="text-slate-500">—</span>
                         ) : (
-                          <div className="text-[#fff064]">
-                            {shouldShowNumericCost
-                              ? `¥${Math.round(costPerDamage)}`
-                              : costLabel}
-                          </div>
+                          <div className="text-[#fff064]">{costLabel}</div>
+                        )}
+                      </td>
+                    );
+                  }
+                )}
+              </tr>
+
+              <tr className="hover:bg-slate-800/20">
+                <td className="border-r border-yellow-800/20 p-2.5 text-xs font-medium text-slate-300">
+                  边际效益评估
+                </td>
+                {allSeatsData.map(
+                  ({ seat, totalPrice, seatCombatStats, seatLabValuation }) => {
+                    const isServiceUnavailable =
+                      Boolean(labValuationError) && !seatLabValuation;
+                    if (seat.isSample) {
+                      return (
+                        <td key={seat.id} className="p-2.5 text-center text-xs">
+                          <span className="text-slate-500">—</span>
+                        </td>
+                      );
+                    }
+
+                    const priceDiff =
+                      seatLabValuation?.comparison?.priceDiff ??
+                      totalPrice - (sampleSeatData?.totalPrice ?? 0);
+                    const magicDamageDiff =
+                      seatLabValuation?.comparison?.magicDamageDiff ??
+                      (seatCombatStats.magicDamage -
+                        (sampleSeatData?.seatCombatStats.magicDamage ??
+                          seatCombatStats.magicDamage));
+                    const marginalWarning =
+                      seatLabValuation?.comparison?.marginalWarning ??
+                      buildLaboratoryMarginalWarning({
+                        diffPrice: priceDiff,
+                        magicDamageDiff,
+                      });
+
+                    return (
+                      <td key={seat.id} className="p-2.5 text-center text-xs">
+                        {isLoadingLabValuation && !seatLabValuation ? (
+                          <span className="text-slate-500">计算中</span>
+                        ) : isServiceUnavailable ? (
+                          <span className="text-amber-300">不可用</span>
+                        ) : marginalWarning ? (
+                          <span className="text-amber-300">
+                            {marginalWarning}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
                         )}
                       </td>
                     );

@@ -6,18 +6,42 @@ import type {
   Equipment,
   EquipmentSet,
   ExperimentSeat,
+  MeridianConfig,
   Treasure,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { Upload } from 'lucide-react';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
+import { SIMULATOR_PRIMARY_EQUIPMENT_TYPES } from '@/shared/lib/simulator-equipment';
+import {
+  formatEquipmentExtraAttributeSummary,
+  sumEquipmentExtraAttributeTotals,
+} from '@/shared/lib/simulator-extra-attribute-summary';
+import {
+  buildActiveRegularSetSummaries,
+  formatActiveRegularSetSummary,
+  type RegularSetRuntimeRule,
+} from '@/shared/lib/simulator-regular-set';
+import {
+  buildRuneComboDropWarnings,
+  diffActiveRuneComboEffects,
+} from '@/shared/lib/simulator-rune-bonus';
+import {
+  buildLaboratoryOutcomeSummary,
+  buildLaboratoryMagicDamageCostLabel,
+  buildLaboratoryMarginalWarning,
+  formatLaboratoryDamageDelta,
+  getLaboratoryOutcomeTone,
+} from '@/shared/lib/laboratory-outcome-summary';
 import { matchesSimulatorSlotDefinition } from '@/shared/lib/simulator-slot-config';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import type { LabValuationSeatResult } from '@/shared/services/lab-valuation';
 
 import {
   calculateEquipmentTotalStats,
+  describeSeatInheritance,
+  getFallbackSeatTotalDamage,
   getSeatDisplayName,
   LABORATORY_CATEGORIES,
 } from './laboratory-utils';
@@ -27,7 +51,10 @@ type LaboratorySelectedSlot = {
   slotType: Equipment['type'];
   slotSlot?: number;
   slotLabel: string;
+  baseEquip?: Equipment;
   currentEquip?: Equipment;
+  inheritGemstones?: boolean;
+  inheritRuneStones?: boolean;
 };
 
 type Props = {
@@ -41,11 +68,14 @@ type Props = {
   onSelectSlot: (selection: LaboratorySelectedSlot) => void;
   onClearDetailSelection: () => void;
   baseAttributes: BaseAttributes;
+  bodyStrength: number;
+  meridian: MeridianConfig;
   treasure: Treasure | null;
   baseSampleStats: ReturnType<typeof calculateEquipmentTotalStats>;
   seatLabValuation?: LabValuationSeatResult;
   labValuationError: string | null;
   isLoadingLabValuation: boolean;
+  regularSetRules?: RegularSetRuntimeRule[];
 };
 
 export function LaboratorySeatCard({
@@ -59,33 +89,74 @@ export function LaboratorySeatCard({
   onSelectSlot,
   onClearDetailSelection,
   baseAttributes,
+  bodyStrength,
+  meridian,
   treasure,
   baseSampleStats,
   seatLabValuation,
   labValuationError,
   isLoadingLabValuation,
+  regularSetRules,
 }: Props) {
   const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
   const { totals, totalPrice } = calculateEquipmentTotalStats(seatEquip);
   const seatCombatStats = computeDerivedStats(
     baseAttributes,
     seatEquip,
-    treasure
+    treasure,
+    {
+      bodyStrength,
+      meridian,
+      regularSetRules,
+      runeSkillBaselineEquipment: sampleEquipment,
+    }
   );
   const baseCombatStats = computeDerivedStats(
     baseAttributes,
     sampleEquipment,
-    treasure
+    treasure,
+    {
+      bodyStrength,
+      meridian,
+      regularSetRules,
+      runeSkillBaselineEquipment: sampleEquipment,
+    }
   );
 
   const seatRuneSets = getEquipmentRuneStoneSetInfo(seatEquip);
   const baseRuneSets = getEquipmentRuneStoneSetInfo(sampleEquipment);
+  const seatPrimaryExtraAttributeSummary = formatEquipmentExtraAttributeSummary(
+    sumEquipmentExtraAttributeTotals(
+      seatEquip.filter((item) =>
+        (SIMULATOR_PRIMARY_EQUIPMENT_TYPES as readonly string[]).includes(
+          item.type
+        )
+      )
+    )
+  );
+  const seatRegularSetSummary = buildActiveRegularSetSummaries(
+    seatEquip
+      .filter((item) =>
+        (SIMULATOR_PRIMARY_EQUIPMENT_TYPES as readonly string[]).includes(
+          item.type
+        )
+      )
+      .map((item) => ({
+        slot: item.type,
+        setName: item.setName,
+      })),
+    regularSetRules
+  ).map((item) => formatActiveRegularSetSummary(item));
   const addedSets = seatRuneSets.filter(
     (value) => !baseRuneSets.includes(value)
   );
   const removedSets = baseRuneSets.filter(
     (value) => !seatRuneSets.includes(value)
   );
+  const runeComboDiffs = seat.isSample
+    ? []
+    : diffActiveRuneComboEffects(sampleEquipment, seatEquip);
+  const runeComboWarnings = buildRuneComboDropWarnings(runeComboDiffs);
 
   let seatRuneStoneInfo = seatRuneSets[0] || '';
   if (!seat.isSample && addedSets.length > 0) {
@@ -153,26 +224,37 @@ export function LaboratorySeatCard({
       displayDiffs[key] = diffs[key];
     }
   });
+  const inheritanceBadges = seat.isSample
+    ? []
+    : describeSeatInheritance({
+        inheritGemstones: seat.inheritGemstones,
+        inheritRuneStones: seat.inheritRuneStones,
+      });
 
-  let costPerDamageDisplay = seatLabValuation?.comparison?.costLabel || '-';
+  const magicDamageDiff =
+    seatLabValuation?.comparison?.magicDamageDiff ?? (combatDiffs.magicDamage || 0);
+  let magicDamageCostDisplay =
+    seatLabValuation?.comparison?.magicDamageCostLabel || '-';
+  const fallbackSampleTotalDamage = getFallbackSeatTotalDamage(baseCombatStats);
+  const totalDamageGainPercent =
+    seatLabValuation?.comparison?.damageGainPercent ??
+    (fallbackSampleTotalDamage > 0
+      ? (totalDamageDiff / fallbackSampleTotalDamage) * 100
+      : null);
   if (!seatLabValuation?.comparison && !isServiceUnavailable) {
-    if (totalDamageDiff > 0) {
-      if (diffPrice > 0) {
-        costPerDamageDisplay = `¥ ${(diffPrice / totalDamageDiff).toFixed(1)}`;
-      } else {
-        costPerDamageDisplay = '收益';
-      }
-    } else if (totalDamageDiff < 0) {
-      if (diffPrice < 0) {
-        costPerDamageDisplay = `省 ¥ ${Math.abs(diffPrice / totalDamageDiff).toFixed(1)}`;
-      } else {
-        costPerDamageDisplay = '纯亏';
-      }
-    } else {
-      costPerDamageDisplay =
-        diffPrice > 0 ? '只花钱不提升' : diffPrice < 0 ? '纯省钱' : '-';
-    }
+    magicDamageCostDisplay = buildLaboratoryMagicDamageCostLabel({
+      diffPrice,
+      magicDamageDiff,
+    });
   }
+  const marginalWarning =
+    seatLabValuation?.comparison?.marginalWarning ??
+    (!isServiceUnavailable
+      ? buildLaboratoryMarginalWarning({
+          diffPrice,
+          magicDamageDiff,
+        })
+      : null);
 
   const handleSelectSlot = (selection: LaboratorySelectedSlot) => {
     if (seat.isSample) {
@@ -183,6 +265,13 @@ export function LaboratorySeatCard({
     onClearDetailSelection();
   };
 
+  const outcomeSummary = buildLaboratoryOutcomeSummary({
+    totalDamageDiff,
+    diffPrice,
+  });
+  const damageDeltaText = formatLaboratoryDamageDelta(totalDamageDiff);
+  const damageTone = getLaboratoryOutcomeTone(totalDamageDiff);
+
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden rounded-xl border border-yellow-800/40 bg-slate-900/60 p-4">
       <div className="mb-3 flex flex-shrink-0 items-center justify-between border-b border-yellow-800/30 pb-2">
@@ -192,6 +281,18 @@ export function LaboratorySeatCard({
           >
             {getSeatDisplayName(seat, experimentSeats)}
           </h3>
+          {!seat.isSample && (
+            <div className="flex flex-wrap gap-1">
+              {inheritanceBadges.map((badge) => (
+                <span
+                  key={badge}
+                  className="rounded border border-cyan-700/40 bg-cyan-950/30 px-1.5 py-0.5 text-[10px] text-cyan-300"
+                >
+                  {badge}
+                </span>
+              ))}
+            </div>
+          )}
           {seat.isSample && (
             <select
               id={`sample-seat-set-${seat.id}`}
@@ -233,7 +334,7 @@ export function LaboratorySeatCard({
               </div>
               <div className="space-y-2">
                 {category.slots.map((slotDef) => {
-                  const equipment = seatEquip.find((item) =>
+                  const equipment = seat.equipment.find((item) =>
                     matchesSimulatorSlotDefinition(slotDef, item)
                   );
                   const currentEquip = sampleEquipment.find((item) =>
@@ -256,7 +357,10 @@ export function LaboratorySeatCard({
                             slotType: slotDef.type,
                             slotSlot: slotDef.slot,
                             slotLabel: slotDef.label,
-                            currentEquip,
+                            baseEquip: currentEquip,
+                            currentEquip: equipment,
+                            inheritGemstones: seat.inheritGemstones,
+                            inheritRuneStones: seat.inheritRuneStones,
                           })
                         }
                         className={`flex items-center gap-2 rounded-lg border border-slate-800/50 bg-slate-900/40 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/40 hover:bg-slate-900/60' : ''}`}
@@ -281,6 +385,10 @@ export function LaboratorySeatCard({
                             slotType: slotDef.type,
                             slotSlot: slotDef.slot,
                             slotLabel: slotDef.label,
+                            baseEquip: currentEquip,
+                            currentEquip: equipment,
+                            inheritGemstones: seat.inheritGemstones,
+                            inheritRuneStones: seat.inheritRuneStones,
                           })
                         }
                         className={`flex items-center gap-2 rounded-lg border border-slate-800/50 bg-slate-900/40 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/40 hover:bg-slate-900/60' : ''}`}
@@ -302,7 +410,10 @@ export function LaboratorySeatCard({
                           slotType: slotDef.type,
                           slotSlot: slotDef.slot,
                           slotLabel: slotDef.label,
+                          baseEquip: currentEquip,
                           currentEquip: equipment,
+                          inheritGemstones: seat.inheritGemstones,
+                          inheritRuneStones: seat.inheritRuneStones,
                         })
                       }
                       className={`flex rounded-lg border border-slate-700/80 bg-slate-800/80 p-2.5 text-xs shadow-sm ${!seat.isSample ? 'cursor-pointer transition-all hover:border-yellow-600/60 hover:bg-slate-800' : ''}`}
@@ -377,6 +488,42 @@ export function LaboratorySeatCard({
           </div>
         )}
 
+        {seatPrimaryExtraAttributeSummary.length > 0 && (
+          <div className="rounded-lg bg-slate-950/40 p-3">
+            <div className="mb-2 text-xs font-bold text-amber-300">
+              双加汇总
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {seatPrimaryExtraAttributeSummary.map((item) => (
+                <span
+                  key={item}
+                  className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-1 text-[11px] text-amber-100"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {seatRegularSetSummary.length > 0 && (
+          <div className="rounded-lg bg-slate-950/40 p-3">
+            <div className="mb-2 text-xs font-bold text-emerald-300">
+              常规套装效果
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {seatRegularSetSummary.map((item) => (
+                <span
+                  key={item}
+                  className="rounded border border-emerald-500/40 bg-emerald-950/40 px-2 py-1 text-[11px] text-emerald-100"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="rounded-lg bg-slate-950/40 p-3">
           <div className="mb-2 text-xs font-bold text-yellow-400">
             属性及伤害变化
@@ -421,6 +568,64 @@ export function LaboratorySeatCard({
                   <div className="text-xs text-cyan-400">{runeStoneChange}</div>
                 </div>
               )}
+
+              {runeComboDiffs.length > 0 && (
+                <div className="mt-3 border-t border-yellow-800/30 pt-2">
+                  <div className="mb-1.5 text-xs font-bold text-amber-300">
+                    符石技能变化
+                  </div>
+                  <div className="space-y-1">
+                    {runeComboDiffs.map((item) => {
+                      const isPositive = item.deltaBonusValue > 0;
+                      const isNegative = item.deltaBonusValue < 0;
+
+                      return (
+                        <div
+                          key={item.comboName}
+                          className="flex items-center justify-between gap-3 text-xs"
+                        >
+                          <span className="text-slate-300">
+                            {item.effectLabel}
+                          </span>
+                          <span
+                            className={
+                              isPositive
+                                ? 'text-green-400'
+                                : isNegative
+                                  ? 'text-red-400'
+                                  : 'text-slate-400'
+                            }
+                          >
+                            {item.nextBonusValue > 0
+                              ? `+${item.nextBonusValue}`
+                              : '未激活'}
+                            {isNegative
+                              ? ` (${item.deltaBonusValue})`
+                              : isPositive
+                                ? ` (+${item.deltaBonusValue})`
+                                : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {runeComboWarnings.length > 0 && (
+                <div className="mt-3 rounded-lg border border-red-600/40 bg-red-950/20 px-3 py-2">
+                  <div className="mb-1 text-xs font-bold text-red-300">
+                    符石跌落预警
+                  </div>
+                  <div className="space-y-1">
+                    {runeComboWarnings.map((warning) => (
+                      <div key={warning} className="text-xs text-red-200">
+                        {warning}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -434,23 +639,58 @@ export function LaboratorySeatCard({
         ) : (
           <div className="space-y-1">
             <div className="flex justify-between text-xs font-bold">
-              <span className="text-yellow-100">服务端总伤提升:</span>
+              <span className="text-yellow-100">伤害结论:</span>
               {isServiceUnavailable ? (
                 <span className="text-amber-300">不可用</span>
               ) : (
                 <span
                   className={
-                    totalDamageDiff > 0
+                    damageTone === 'positive'
                       ? 'text-green-400'
-                      : totalDamageDiff < 0
+                      : damageTone === 'negative'
                         ? 'text-red-400'
                         : 'text-slate-400'
                   }
                 >
-                  {totalDamageDiff > 0 ? '+' : ''}
-                  {Math.round(totalDamageDiff)}
+                  {damageDeltaText}
                 </span>
               )}
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">收益摘要:</span>
+              <span
+                className={
+                  damageTone === 'positive'
+                    ? 'text-green-400'
+                    : damageTone === 'negative'
+                      ? 'text-red-400'
+                      : 'text-slate-400'
+                }
+              >
+                {isServiceUnavailable ? '不可用' : outcomeSummary}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400">总伤增益百分比:</span>
+              <span
+                className={
+                  isServiceUnavailable
+                    ? 'text-amber-300'
+                    : totalDamageGainPercent === null
+                      ? 'text-slate-500'
+                      : totalDamageGainPercent > 0
+                        ? 'text-green-400'
+                        : totalDamageGainPercent < 0
+                          ? 'text-red-400'
+                          : 'text-slate-400'
+                }
+              >
+                {isServiceUnavailable
+                  ? '不可用'
+                  : totalDamageGainPercent === null
+                    ? '—'
+                    : `${totalDamageGainPercent > 0 ? '+' : ''}${totalDamageGainPercent.toFixed(1)}%`}
+              </span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-slate-400">差价成本:</span>
@@ -462,20 +702,23 @@ export function LaboratorySeatCard({
               </span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-400">单点伤害成本:</span>
+              <span className="text-slate-400">1点法伤成本:</span>
               <span className="text-yellow-400">
                 {isServiceUnavailable
                   ? '不可用'
                   : isLoadingLabValuation &&
                       !seatLabValuation?.comparison &&
-                      costPerDamageDisplay === '-'
+                      magicDamageCostDisplay === '-'
                     ? '计算中'
-                    : costPerDamageDisplay}
-                {!isServiceUnavailable && costPerDamageDisplay.includes('¥')
-                  ? ' / 点'
-                  : ''}
+                    : magicDamageCostDisplay}
               </span>
             </div>
+            {marginalWarning ? (
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="text-slate-400">边际效益:</span>
+                <span className="text-amber-300">{marginalWarning}</span>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

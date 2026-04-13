@@ -152,6 +152,76 @@ test('equipment set CRUD actions create duplicate remove and reorder plans', () 
   assert.equal(state.equipmentSets[2]?.isActive, true);
 });
 
+test('laboratory compare seats are capped at two visible comparison seats', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    experimentSeats: [
+      {
+        id: 'sample',
+        name: '样本席位',
+        isSample: true,
+        equipment: [],
+      },
+    ],
+    equipment: [createEquipment('weapon_current', 'weapon', 100)],
+  }));
+
+  useGameStore.getState().addExperimentSeat();
+  useGameStore.getState().addExperimentSeat();
+  useGameStore.getState().addExperimentSeat();
+
+  const state = useGameStore.getState();
+  const compareSeats = state.experimentSeats.filter((seat) => !seat.isSample);
+  assert.equal(compareSeats.length, 2);
+  assert.equal(compareSeats[0]?.name, '对比席位1');
+  assert.equal(compareSeats[1]?.name, '对比席位2');
+  assert.equal(compareSeats[0]?.inheritGemstones, true);
+  assert.equal(compareSeats[0]?.inheritRuneStones, true);
+  assert.equal(compareSeats[1]?.inheritGemstones, true);
+  assert.equal(compareSeats[1]?.inheritRuneStones, true);
+});
+
+test('laboratory compare seat updates persist inheritance strategy per seat', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    experimentSeats: [
+      {
+        id: 'sample',
+        name: '样本席位',
+        isSample: true,
+        inheritGemstones: false,
+        inheritRuneStones: false,
+        equipment: [],
+      },
+      {
+        id: 'comp_1',
+        name: '对比席位1',
+        isSample: false,
+        inheritGemstones: true,
+        inheritRuneStones: true,
+        equipment: [],
+      },
+    ],
+  }));
+
+  useGameStore.getState().updateExperimentSeatEquipment(
+    'comp_1',
+    createEquipment('weapon_override', 'weapon', 180),
+    {
+      inheritGemstones: false,
+      inheritRuneStones: true,
+    }
+  );
+
+  const compareSeat = useGameStore
+    .getState()
+    .experimentSeats.find((seat) => seat.id === 'comp_1');
+
+  assert.equal(compareSeat?.equipment[0]?.id, 'weapon_override');
+  assert.equal(compareSeat?.inheritGemstones, false);
+  assert.equal(compareSeat?.inheritRuneStones, true);
+});
+
 test('status mode keeps cloud combat stats when equipment changes locally', () => {
   const cloudCombatStats = {
     hp: 3850,
@@ -224,6 +294,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
       level: 89,
       hp: 3850,
       magic: 210,
+      potentialPoints: 0,
       physique: 40,
       strength: 20,
       endurance: 30,
@@ -254,6 +325,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
     activeSetIndex: 0,
     skills: [],
     cultivation: {
+      bodyStrength: 0,
       physicalAttack: 0,
       physicalDefense: 0,
       magicAttack: 0,
@@ -262,6 +334,14 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
       petPhysicalDefense: 0,
       petMagicAttack: 0,
       petMagicDefense: 0,
+    },
+    meridian: {
+      physique: 0,
+      magic: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
     },
     treasure: null,
     combatTarget: target,
@@ -273,6 +353,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
         level: 89,
         hp: 3850,
         magic: 210,
+        potentialPoints: 0,
         physique: 40,
         strength: 20,
         endurance: 30,
@@ -283,6 +364,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
       equipment: cloneEquipment(cloudEquipment),
       skills: [],
       cultivation: {
+        bodyStrength: 0,
         physicalAttack: 0,
         physicalDefense: 0,
         magicAttack: 0,
@@ -292,8 +374,32 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
         petMagicAttack: 0,
         petMagicDefense: 0,
       },
+      meridian: {
+        physique: 0,
+        magic: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+      },
       element: '水',
       formation: '天覆阵',
+    },
+    battleContext: {
+      selfFormation: '天覆阵',
+      selfElement: '水',
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      weather: '',
+      transformCardFactor: 1,
+      splitTargetCount: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targetMagicDefenseResult: 0,
+      targetMagicDefenseCultivation: 0,
+      targetDefenseState: '',
+      specialMagicDamageReductionFactor: 1,
+      targetFormation: '地载阵',
     },
   };
 
@@ -320,4 +426,837 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
   assert.equal(state.combatStats.magicDamage, 1460);
   assert.equal(state.combatStats.speed, 540);
   assert.equal(state.combatStats.magicDefense, 1180);
+});
+
+test('restoring status mode can resume auto recalculation from synced cloud snapshot', () => {
+  const cloudEquipment = [createEquipment('cloud_weapon', 'weapon', 120)];
+  const cloudState: SyncedCloudState = {
+    currentCharacter: {
+      id: 'cloud_2',
+      name: 'Cloud Character',
+      school: '龙宫',
+      level: 89,
+    },
+    baseAttributes: {
+      level: 0,
+      hp: 0,
+      magic: 100,
+      potentialPoints: 0,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    combatStats: {
+      hp: 0,
+      magic: 350,
+      hit: 0,
+      damage: 0,
+      magicDamage: 70,
+      defense: 0,
+      magicDefense: 70,
+      speed: 0,
+      dodge: 0,
+      spiritualPower: 70,
+    },
+    equipment: cloneEquipment(cloudEquipment),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '当前方案',
+        items: cloneEquipment(cloudEquipment),
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+    skills: [],
+    cultivation: {
+      bodyStrength: 0,
+      physicalAttack: 0,
+      physicalDefense: 0,
+      magicAttack: 0,
+      magicDefense: 0,
+      petPhysicalAttack: 0,
+      petPhysicalDefense: 0,
+      petMagicAttack: 0,
+      petMagicDefense: 0,
+    },
+    meridian: {
+      physique: 0,
+      magic: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+    },
+    treasure: null,
+    combatTarget: {
+      name: '手动目标1',
+      level: 89,
+      hp: 0,
+      defense: 0,
+      magicDefense: 0,
+      speed: 0,
+      element: '水',
+      formation: '天覆阵',
+    },
+    formation: '天覆阵',
+    playerSetup: {
+      level: 0,
+      faction: '龙宫',
+      baseStats: {
+        level: 0,
+        hp: 0,
+        magic: 100,
+        potentialPoints: 0,
+        physique: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+        faction: '龙宫',
+      },
+      equipment: cloneEquipment(cloudEquipment),
+      skills: [],
+      cultivation: {
+        bodyStrength: 0,
+        physicalAttack: 0,
+        physicalDefense: 0,
+        magicAttack: 0,
+        magicDefense: 0,
+        petPhysicalAttack: 0,
+        petPhysicalDefense: 0,
+        petMagicAttack: 0,
+        petMagicDefense: 0,
+      },
+      meridian: {
+        physique: 0,
+        magic: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+      },
+      element: '水',
+      formation: '天覆阵',
+    },
+    battleContext: {
+      selfFormation: '天覆阵',
+      selfElement: '水',
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      weather: '',
+      transformCardFactor: 1,
+      splitTargetCount: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targetMagicDefenseResult: 0,
+      targetMagicDefenseCultivation: 0,
+      targetDefenseState: '',
+      specialMagicDamageReductionFactor: 1,
+      targetFormation: '天覆阵',
+    },
+  };
+
+  useGameStore.setState((state) => ({
+    ...state,
+    syncedCloudState: cloudState,
+    autoRecalculateDerivedStats: false,
+    combatStats: {
+      ...cloudState.combatStats,
+      magicDamage: 999,
+    },
+    equipment: [createEquipment('lab_weapon', 'weapon', 220)],
+  }));
+
+  useGameStore
+    .getState()
+    .setAutoRecalculateDerivedStats(true, { restoreCloudState: true });
+
+  let state = useGameStore.getState();
+  assert.equal(state.autoRecalculateDerivedStats, true);
+  assert.equal(state.equipment[0]?.id, 'cloud_weapon');
+  assert.equal(state.combatStats.magicDamage, 190);
+  assert.equal(state.combatStats.magicDefense, 70);
+
+  useGameStore.getState().updateMeridian('magic', 10);
+
+  state = useGameStore.getState();
+  assert.equal(state.combatStats.magicDamage, 197);
+  assert.equal(state.combatStats.magicDefense, 77);
+  assert.equal(state.combatStats.spiritualPower, 77);
+});
+
+test('recalculateCombatStats applies formation speed factor from player setup', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 109,
+      hp: 804,
+      magic: 230,
+      potentialPoints: 0,
+      physique: 40,
+      strength: 15,
+      endurance: 35,
+      agility: 20,
+      magicPower: 610,
+      faction: '龙宫',
+    },
+    equipment: [],
+    treasure: null,
+    playerSetup: {
+      ...state.playerSetup,
+      formation: '天覆阵',
+    },
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  assert.equal(useGameStore.getState().combatStats.speed, 21);
+
+  useGameStore.setState((state) => ({
+    ...state,
+    playerSetup: {
+      ...state.playerSetup,
+      formation: '普通阵',
+    },
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  assert.equal(useGameStore.getState().combatStats.speed, 23);
+});
+
+test('allocatePotentialPoints spends remaining points and updates panel stats for all-magic allocation', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 0,
+      hp: 0,
+      magic: 100,
+      potentialPoints: 10,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    equipment: [],
+    treasure: null,
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  const before = useGameStore.getState();
+
+  useGameStore.getState().allocatePotentialPoints('magic', 10);
+
+  const after = useGameStore.getState();
+  assert.equal(after.baseAttributes.magic, before.baseAttributes.magic + 10);
+  assert.equal(after.baseAttributes.potentialPoints, 0);
+  assert.equal(after.combatStats.magic, (before.combatStats.magic ?? 0) + 35);
+  assert.equal(
+    after.combatStats.magicDamage,
+    (before.combatStats.magicDamage ?? 0) + 7
+  );
+  assert.equal(
+    after.combatStats.magicDefense,
+    (before.combatStats.magicDefense ?? 0) + 7
+  );
+});
+
+test('bodyStrength cultivation scales hp when physique changes', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 0,
+      hp: 100,
+      magic: 0,
+      potentialPoints: 0,
+      physique: 10,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    cultivation: {
+      ...state.cultivation,
+      bodyStrength: 20,
+    },
+    equipment: [],
+    treasure: null,
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  assert.equal(useGameStore.getState().combatStats.hp, 654);
+
+  useGameStore.getState().updateBaseAttribute('physique', 20);
+  assert.equal(useGameStore.getState().combatStats.hp, 708);
+});
+
+test('meridian magic bonus updates panel stats immediately', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 0,
+      hp: 0,
+      magic: 100,
+      potentialPoints: 0,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    meridian: {
+      ...state.meridian,
+      magic: 0,
+    },
+    equipment: [],
+    treasure: null,
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  const before = useGameStore.getState().combatStats;
+
+  useGameStore.getState().updateMeridian('magic', 10);
+
+  const after = useGameStore.getState().combatStats;
+  assert.equal(after.magic, (before.magic ?? 0) + 35);
+  assert.equal(after.magicDamage, (before.magicDamage ?? 0) + 7);
+  assert.equal(after.magicDefense, (before.magicDefense ?? 0) + 7);
+  assert.equal(after.spiritualPower, (before.spiritualPower ?? 0) + 7);
+});
+
+test('setActiveRegularSetRules updates current combat panel stats immediately', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    activeRegularSetRules: [],
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 0,
+      hp: 0,
+      magic: 100,
+      potentialPoints: 0,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    meridian: {
+      ...state.meridian,
+      physique: 0,
+      magic: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+    },
+    equipment: [
+      {
+        id: 'weapon_set_live',
+        name: '套装武器',
+        type: 'weapon',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+      {
+        id: 'helmet_set_live',
+        name: '套装头盔',
+        type: 'helmet',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+      {
+        id: 'armor_set_live',
+        name: '套装衣服',
+        type: 'armor',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+    ],
+    treasure: null,
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  const before = useGameStore.getState().combatStats;
+
+  useGameStore.getState().setActiveRegularSetRules([
+    {
+      setName: '*',
+      enabled: true,
+      tiers: [
+        {
+          tier: 3,
+          minCount: 3,
+          effects: [{ targetKey: 'magic', value: 12 }],
+        },
+      ],
+    },
+  ]);
+
+  const after = useGameStore.getState().combatStats;
+  assert.equal(after.magic, (before.magic ?? 0) + 7);
+  assert.equal(after.magicDamage, 78);
+  assert.equal(after.magicDefense, 78);
+});
+
+test('restoreCloudState keeps active regular set rules for later recalculation', () => {
+  const cloudState: SyncedCloudState = {
+    currentCharacter: {
+      id: 'cloud_regular_set',
+      name: 'Cloud Character',
+      school: '龙宫',
+      level: 0,
+    },
+    baseAttributes: {
+      level: 0,
+      hp: 0,
+      magic: 100,
+      potentialPoints: 0,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+      faction: '龙宫',
+    },
+    combatStats: {
+      hp: 0,
+      magic: 350,
+      hit: 0,
+      damage: 0,
+      magicDamage: 70,
+      defense: 0,
+      magicDefense: 70,
+      speed: 0,
+      dodge: 0,
+      spiritualPower: 70,
+    },
+    equipment: [
+      {
+        id: 'weapon_set_cloud',
+        name: '套装武器',
+        type: 'weapon',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+      {
+        id: 'helmet_set_cloud',
+        name: '套装头盔',
+        type: 'helmet',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+      {
+        id: 'armor_set_cloud',
+        name: '套装衣服',
+        type: 'armor',
+        setName: '炎魔神套',
+        mainStat: '测试属性',
+        baseStats: {},
+        stats: {},
+      },
+    ],
+    equipmentSets: [
+      {
+        id: 'set_cloud_regular',
+        name: '当前方案',
+        items: [
+          {
+            id: 'weapon_set_cloud',
+            name: '套装武器',
+            type: 'weapon',
+            setName: '炎魔神套',
+            mainStat: '测试属性',
+            baseStats: {},
+            stats: {},
+          },
+          {
+            id: 'helmet_set_cloud',
+            name: '套装头盔',
+            type: 'helmet',
+            setName: '炎魔神套',
+            mainStat: '测试属性',
+            baseStats: {},
+            stats: {},
+          },
+          {
+            id: 'armor_set_cloud',
+            name: '套装衣服',
+            type: 'armor',
+            setName: '炎魔神套',
+            mainStat: '测试属性',
+            baseStats: {},
+            stats: {},
+          },
+        ],
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+    skills: [],
+    cultivation: {
+      bodyStrength: 0,
+      physicalAttack: 0,
+      physicalDefense: 0,
+      magicAttack: 0,
+      magicDefense: 0,
+      petPhysicalAttack: 0,
+      petPhysicalDefense: 0,
+      petMagicAttack: 0,
+      petMagicDefense: 0,
+    },
+    meridian: {
+      physique: 0,
+      magic: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+    },
+    treasure: null,
+    combatTarget: {
+      name: '手动目标1',
+      level: 89,
+      hp: 0,
+      defense: 0,
+      magicDefense: 0,
+      speed: 0,
+      element: '水',
+      formation: '天覆阵',
+    },
+    formation: '天覆阵',
+    playerSetup: {
+      level: 0,
+      faction: '龙宫',
+      baseStats: {
+        level: 0,
+        hp: 0,
+        magic: 100,
+        potentialPoints: 0,
+        physique: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+        faction: '龙宫',
+      },
+      equipment: [
+        {
+          id: 'weapon_set_cloud',
+          name: '套装武器',
+          type: 'weapon',
+          setName: '炎魔神套',
+          mainStat: '测试属性',
+          baseStats: {},
+          stats: {},
+        },
+        {
+          id: 'helmet_set_cloud',
+          name: '套装头盔',
+          type: 'helmet',
+          setName: '炎魔神套',
+          mainStat: '测试属性',
+          baseStats: {},
+          stats: {},
+        },
+        {
+          id: 'armor_set_cloud',
+          name: '套装衣服',
+          type: 'armor',
+          setName: '炎魔神套',
+          mainStat: '测试属性',
+          baseStats: {},
+          stats: {},
+        },
+      ],
+      skills: [],
+      cultivation: {
+        bodyStrength: 0,
+        physicalAttack: 0,
+        physicalDefense: 0,
+        magicAttack: 0,
+        magicDefense: 0,
+        petPhysicalAttack: 0,
+        petPhysicalDefense: 0,
+        petMagicAttack: 0,
+        petMagicDefense: 0,
+      },
+      meridian: {
+        physique: 0,
+        magic: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+      },
+      element: '水',
+      formation: '天覆阵',
+    },
+    battleContext: {
+      selfFormation: '天覆阵',
+      selfElement: '水',
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      weather: '',
+      transformCardFactor: 1,
+      splitTargetCount: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targetMagicDefenseResult: 0,
+      targetMagicDefenseCultivation: 0,
+      targetDefenseState: '',
+      specialMagicDamageReductionFactor: 1,
+      targetFormation: '天覆阵',
+    },
+  };
+
+  useGameStore.setState((state) => ({
+    ...state,
+    syncedCloudState: cloudState,
+    autoRecalculateDerivedStats: false,
+    activeRegularSetRules: [
+      {
+        setName: '*',
+        enabled: true,
+        tiers: [
+          {
+            tier: 3,
+            minCount: 3,
+            effects: [{ targetKey: 'magic', value: 12 }],
+          },
+        ],
+      },
+    ],
+  }));
+
+  useGameStore
+    .getState()
+    .setAutoRecalculateDerivedStats(true, { restoreCloudState: true });
+
+  const state = useGameStore.getState();
+  assert.equal(state.activeRegularSetRules.length, 1);
+  assert.equal(state.combatStats.magic, 392);
+  assert.equal(state.combatStats.magicDamage, 78);
+  assert.equal(state.combatStats.magicDefense, 78);
+});
+
+test('recalculateCombatStats uses synced baseline equipment to avoid double counting jiulong panel spirit', () => {
+  const jiulongHelmet: Equipment = {
+    id: 'helmet_jiulong_live',
+    name: '当前九龙诀头盔',
+    type: 'helmet',
+    mainStat: '防御 +80',
+    baseStats: {},
+    stats: {},
+    luckyHoles: '5',
+    activeRuneStoneSet: 0,
+    runeStoneSetsNames: ['九龙诀'],
+    runeStoneSets: [
+      [
+        { id: 'rune_1', type: 'white', stats: {} },
+        { id: 'rune_2', type: 'red', stats: {} },
+        { id: 'rune_3', type: 'yellow', stats: {} },
+        { id: 'rune_4', type: 'blue', stats: {} },
+        { id: 'rune_5', type: 'green', stats: {} },
+      ],
+    ],
+  };
+
+  const plainHelmet: Equipment = {
+    ...jiulongHelmet,
+    id: 'helmet_plain',
+    name: '普通头盔',
+    runeStoneSetsNames: ['九龙诀'],
+    luckyHoles: '0',
+    runeStoneSets: [[]],
+  };
+
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: true,
+    baseAttributes: {
+      ...state.baseAttributes,
+      level: 0,
+      hp: 0,
+      magic: 0,
+      potentialPoints: 0,
+      physique: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 520,
+      faction: '龙宫',
+    },
+    cultivation: {
+      ...state.cultivation,
+      bodyStrength: 0,
+    },
+    meridian: {
+      ...state.meridian,
+      physique: 0,
+      magic: 0,
+      strength: 0,
+      endurance: 0,
+      agility: 0,
+      magicPower: 0,
+    },
+    treasure: null,
+    equipment: [jiulongHelmet],
+    syncedCloudState: {
+      ...(state.syncedCloudState ?? {
+        currentCharacter: null,
+        combatTarget: {
+          name: '手动目标1',
+          level: 0,
+          hp: 0,
+          defense: 0,
+          magicDefense: 0,
+          speed: 0,
+          element: '水',
+          formation: '普通阵',
+        },
+        formation: '普通阵',
+        playerSetup: {
+          ...state.playerSetup,
+          level: 0,
+          faction: '龙宫',
+          baseStats: {
+            ...state.baseAttributes,
+            level: 0,
+            hp: 0,
+            magic: 0,
+            potentialPoints: 0,
+            physique: 0,
+            strength: 0,
+            endurance: 0,
+            agility: 0,
+            magicPower: 520,
+            faction: '龙宫',
+          },
+          equipment: [jiulongHelmet],
+          skills: [],
+          cultivation: {
+            ...state.cultivation,
+            bodyStrength: 0,
+          },
+          meridian: {
+            ...state.meridian,
+            physique: 0,
+            magic: 0,
+            strength: 0,
+            endurance: 0,
+            agility: 0,
+            magicPower: 0,
+          },
+          element: '水',
+          formation: '普通阵',
+        },
+        battleContext: {
+          selfFormation: '普通阵',
+          selfElement: '水',
+          formationCounterState: '无克/普通',
+          elementRelation: '无克/普通',
+          weather: '',
+          transformCardFactor: 1,
+          splitTargetCount: 1,
+          shenmuValue: 0,
+          magicResult: 0,
+          targetMagicDefenseResult: 0,
+          targetMagicDefenseCultivation: 0,
+          targetDefenseState: '',
+          specialMagicDamageReductionFactor: 1,
+          targetFormation: '普通阵',
+        },
+      }),
+      baseAttributes: {
+        ...state.baseAttributes,
+        level: 0,
+        hp: 0,
+        magic: 0,
+        potentialPoints: 0,
+        physique: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 520,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 0,
+        magic: 0,
+        hit: 0,
+        damage: 0,
+        magicDamage: 520,
+        defense: 0,
+        magicDefense: 520,
+        speed: 0,
+        dodge: 0,
+        spiritualPower: 520,
+      },
+      equipment: [jiulongHelmet],
+      equipmentSets: [
+        {
+          id: 'set_jiulong_live',
+          name: '当前方案',
+          items: [jiulongHelmet],
+          isActive: true,
+        },
+      ],
+      activeSetIndex: 0,
+      skills: [],
+      cultivation: {
+        ...state.cultivation,
+        bodyStrength: 0,
+      },
+      meridian: {
+        ...state.meridian,
+        physique: 0,
+        magic: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+      },
+      treasure: null,
+    },
+    playerSetup: {
+      ...state.playerSetup,
+      formation: '普通阵',
+    },
+  }));
+
+  useGameStore.getState().recalculateCombatStats();
+  assert.equal(useGameStore.getState().combatStats.spiritualPower, 520);
+  assert.equal(useGameStore.getState().combatStats.magicDamage, 520);
+
+  useGameStore.getState().updateEquipment(plainHelmet);
+
+  assert.equal(useGameStore.getState().combatStats.spiritualPower, 514);
+  assert.equal(useGameStore.getState().combatStats.magicDamage, 514);
+  assert.equal(useGameStore.getState().combatStats.magicDefense, 514);
 });

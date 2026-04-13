@@ -1,4 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
+import { LABORATORY_MAX_VISIBLE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
 import { getDamageRuleSet } from '@/shared/models/damage-rules';
 import { getSimulatorCharacterBundle } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
@@ -73,6 +74,11 @@ export async function POST(req: Request) {
     if (seats.length === 0) {
       return respErr('lab valuation seats are required');
     }
+    if (seats.length > LABORATORY_MAX_VISIBLE_SEATS) {
+      return respErr(
+        `实验室当前最多支持 ${LABORATORY_MAX_VISIBLE_SEATS} 个试算席位（含样本席位）`
+      );
+    }
 
     const result = calculateLabValuationFromRuleSet({
       bundle,
@@ -139,6 +145,46 @@ export async function POST(req: Request) {
               stats: isRecord(body.treasure.stats) ? body.treasure.stats : {},
             }
           : null,
+        battleContext: isRecord(body?.battleContext)
+          ? {
+              selfFormation:
+                typeof body.battleContext.selfFormation === 'string'
+                  ? body.battleContext.selfFormation
+                  : bundle.battleContext?.selfFormation,
+              selfElement:
+                typeof body.battleContext.selfElement === 'string'
+                  ? body.battleContext.selfElement
+                  : bundle.battleContext?.selfElement,
+              transformCardFactor:
+                body.battleContext.transformCardFactor === undefined
+                  ? bundle.battleContext?.transformCardFactor
+                  : toFiniteNumber(body.battleContext.transformCardFactor, 1),
+              shenmuValue:
+                body.battleContext.shenmuValue === undefined
+                  ? bundle.battleContext?.shenmuValue
+                  : toFiniteNumber(body.battleContext.shenmuValue),
+              magicResult:
+                body.battleContext.magicResult === undefined
+                  ? bundle.battleContext?.magicResult
+                  : toFiniteNumber(body.battleContext.magicResult),
+              targetMagicDefenseCultivation:
+                body.battleContext.targetMagicDefenseCultivation === undefined
+                  ? bundle.battleContext?.targetMagicDefenseCultivation
+                  : toFiniteNumber(
+                      body.battleContext.targetMagicDefenseCultivation
+                    ),
+            }
+          : bundle.battleContext
+            ? {
+                selfFormation: bundle.battleContext.selfFormation,
+                selfElement: bundle.battleContext.selfElement,
+                transformCardFactor: bundle.battleContext.transformCardFactor,
+                shenmuValue: bundle.battleContext.shenmuValue,
+                magicResult: bundle.battleContext.magicResult,
+                targetMagicDefenseCultivation:
+                  bundle.battleContext.targetMagicDefenseCultivation,
+              }
+            : null,
         target: {
           name:
             typeof body?.target?.name === 'string'
@@ -153,6 +199,14 @@ export async function POST(req: Request) {
             body?.target?.magicDefenseCultivation === undefined
               ? undefined
               : toFiniteNumber(body.target.magicDefenseCultivation),
+          element:
+            typeof body?.target?.element === 'string'
+              ? body.target.element
+              : bundle.battleContext?.targetElement,
+          formation:
+            typeof body?.target?.formation === 'string'
+              ? body.target.formation
+              : bundle.battleContext?.targetFormation,
         },
         skillCode:
           typeof body?.skillCode === 'string' ? body.skillCode : undefined,

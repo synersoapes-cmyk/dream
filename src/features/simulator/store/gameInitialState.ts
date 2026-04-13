@@ -9,6 +9,7 @@ export const initialBaseAttributes: BaseAttributes = {
   level: 109,
   hp: 4200,
   magic: 650,
+  potentialPoints: 0,
   physique: 120,
   magicPower: 780,
   strength: 90,
@@ -52,6 +53,12 @@ const cloneEffectModifiers = (
 ): Equipment['effectModifiers'] =>
   equipment.effectModifiers?.map((modifier) => ({ ...modifier }));
 
+const cloneGemstones = (equipment: Equipment): Equipment['gemstones'] =>
+  equipment.gemstones?.map((gemstone) => ({
+    ...gemstone,
+    stats: gemstone.stats ? { ...gemstone.stats } : undefined,
+  }));
+
 const cloneEquipment = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
@@ -61,6 +68,7 @@ const cloneEquipment = (equipment: Equipment): Equipment => ({
     : undefined,
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
+  gemstones: cloneGemstones(equipment),
   runeStoneSets: cloneRuneStoneSets(equipment),
   runeStoneSetsNames: equipment.runeStoneSetsNames
     ? [...equipment.runeStoneSetsNames]

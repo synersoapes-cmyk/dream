@@ -35,8 +35,53 @@ function getErrorMessages(error: unknown): string[] {
   return messages;
 }
 
+function getErrorDetails(error: unknown): Array<Record<string, unknown>> {
+  const details: Array<Record<string, unknown>> = [];
+  let current = error;
+  let depth = 0;
+
+  while (current && depth < 5) {
+    if (current instanceof Error) {
+      const candidate = current as Error & {
+        cause?: unknown;
+        code?: unknown;
+        errno?: unknown;
+      };
+
+      details.push({
+        name: candidate.name,
+        message: candidate.message,
+        code: candidate.code,
+        errno: candidate.errno,
+      });
+      current = candidate.cause;
+      depth += 1;
+      continue;
+    }
+
+    if (isRecord(current)) {
+      details.push(current);
+    } else {
+      details.push({ value: String(current) });
+    }
+    break;
+  }
+
+  return details;
+}
+
+export function formatErrorForLog(error: unknown) {
+  return {
+    messages: getErrorMessages(error),
+    details: getErrorDetails(error),
+  };
+}
+
 function isTransientD1Error(error: unknown): boolean {
   const combined = getErrorMessages(error).join(' | ').toLowerCase();
+  const isLocalDevSchemaMiss =
+    process.env.NODE_ENV !== 'production' &&
+    combined.includes('no such table');
 
   return (
     combined.includes('network connection lost') ||
@@ -45,7 +90,8 @@ function isTransientD1Error(error: unknown): boolean {
     combined.includes('econnreset') ||
     combined.includes('socket disconnected') ||
     combined.includes('d1_error') ||
-    combined.includes('internal_server_error')
+    combined.includes('internal_server_error') ||
+    isLocalDevSchemaMiss
   );
 }
 
@@ -68,7 +114,7 @@ export async function withTransientD1Retry<T>(
 
       console.warn(
         `[simulator] transient D1 error during ${label}, retrying (${attempt}/${maxAttempts})`,
-        error
+        formatErrorForLog(error)
       );
 
       await resetD1DevBindingCache();

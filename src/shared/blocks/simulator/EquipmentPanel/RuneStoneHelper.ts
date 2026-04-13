@@ -1,9 +1,48 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
+import { resolveRuneComboActivation } from '@/shared/lib/simulator-rune-combo';
 
 function toText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function toPositiveHoleCount(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
+}
+
+function getRuneStoneSetDisplayState(eq: Equipment): string | null {
+  if (
+    !Array.isArray(eq.runeStoneSetsNames) ||
+    eq.runeStoneSetsNames.length === 0
+  ) {
+    return null;
+  }
+
+  const activeIndex = eq.activeRuneStoneSet ?? 0;
+  const setName =
+    toText(eq.runeStoneSetsNames[activeIndex]) ??
+    toText(eq.runeStoneSetsNames[0]);
+
+  if (!setName) {
+    return null;
+  }
+
+  const luckyHoles = toPositiveHoleCount(eq.luckyHoles);
+  const activeRuneSet =
+    eq.runeStoneSets?.[activeIndex] ?? eq.runeStoneSets?.[0] ?? [];
+  const comboActivation = resolveRuneComboActivation(eq);
+
+  if (
+    luckyHoles === 0 ||
+    (Array.isArray(activeRuneSet) && activeRuneSet.length === 0) ||
+    !comboActivation.isActivated
+  ) {
+    return '未激活';
+  }
+
+  return setName.split(/[:：]/)[0].trim();
 }
 
 export function getEquipmentRuneStoneSetInfo(
@@ -12,20 +51,9 @@ export function getEquipmentRuneStoneSetInfo(
   const runeStoneInfo: string[] = [];
 
   equipments.forEach((eq) => {
-    if (
-      !Array.isArray(eq.runeStoneSetsNames) ||
-      eq.runeStoneSetsNames.length === 0
-    ) {
-      return;
-    }
-
-    const activeIndex = eq.activeRuneStoneSet ?? 0;
-    const setName =
-      toText(eq.runeStoneSetsNames[activeIndex]) ??
-      toText(eq.runeStoneSetsNames[0]);
-
-    if (setName) {
-      runeStoneInfo.push(setName.split(/[:：]/)[0].trim());
+    const displayState = getRuneStoneSetDisplayState(eq);
+    if (displayState) {
+      runeStoneInfo.push(displayState);
     }
   });
 

@@ -192,7 +192,11 @@ export async function generateSimulatorAdvisorReply(params: {
       .trim();
 
     if (text) {
-      return text;
+      return {
+        reply: text,
+        provider: 'gemini',
+        model,
+      };
     }
 
     lastError = new Error('AI 顾问没有返回内容');

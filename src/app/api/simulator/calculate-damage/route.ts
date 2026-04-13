@@ -38,6 +38,16 @@ export async function POST(req: Request) {
             item?.shenmuValue === undefined ? undefined : toFiniteNumber(item?.shenmuValue),
           magicResult:
             item?.magicResult === undefined ? undefined : toFiniteNumber(item?.magicResult),
+          magicDefenseResult:
+            item?.magicDefenseResult === undefined
+              ? undefined
+              : toFiniteNumber(item?.magicDefenseResult),
+          defenseState:
+            typeof item?.defenseState === 'string' ? item.defenseState : undefined,
+          specialMagicDamageReductionFactor:
+            item?.specialMagicDamageReductionFactor === undefined
+              ? undefined
+              : toFiniteNumber(item?.specialMagicDamageReductionFactor, 1),
         }))
       : undefined;
 
@@ -49,6 +59,16 @@ export async function POST(req: Request) {
       ruleVersionCode:
         typeof body?.ruleVersionCode === 'string' ? body.ruleVersionCode : undefined,
       targetCount: toFiniteNumber(body?.targetCount, 1),
+      selfFormation:
+        typeof body?.selfFormation === 'string' ? body.selfFormation : undefined,
+      targetFormation:
+        typeof body?.targetFormation === 'string'
+          ? body.targetFormation
+          : undefined,
+      selfElement:
+        typeof body?.selfElement === 'string' ? body.selfElement : undefined,
+      targetElement:
+        typeof body?.targetElement === 'string' ? body.targetElement : undefined,
       formationFactor:
         body?.formationFactor === undefined ? undefined : toFiniteNumber(body.formationFactor, 1),
       formationCounterState:
@@ -61,6 +81,7 @@ export async function POST(req: Request) {
         body?.transformCardFactor === undefined
           ? undefined
           : toFiniteNumber(body.transformCardFactor, 1),
+      weather: typeof body?.weather === 'string' ? body.weather : undefined,
       shenmuValue:
         body?.shenmuValue === undefined ? undefined : toFiniteNumber(body.shenmuValue),
       magicResult:
@@ -69,6 +90,10 @@ export async function POST(req: Request) {
         body?.targetMagicDefense === undefined
           ? undefined
           : toFiniteNumber(body.targetMagicDefense),
+      targetMagicDefenseResult:
+        body?.targetMagicDefenseResult === undefined
+          ? undefined
+          : toFiniteNumber(body.targetMagicDefenseResult),
       targetSpeed:
         body?.targetSpeed === undefined
           ? undefined
@@ -77,6 +102,14 @@ export async function POST(req: Request) {
         body?.targetMagicDefenseCultivation === undefined
           ? undefined
           : toFiniteNumber(body.targetMagicDefenseCultivation),
+      targetDefenseState:
+        typeof body?.targetDefenseState === 'string'
+          ? body.targetDefenseState
+          : undefined,
+      specialMagicDamageReductionFactor:
+        body?.specialMagicDamageReductionFactor === undefined
+          ? undefined
+          : toFiniteNumber(body.specialMagicDamageReductionFactor, 1),
       targetName: typeof body?.targetName === 'string' ? body.targetName : undefined,
       activeBonusRuleCodes: Array.isArray(body?.activeBonusRuleCodes)
         ? body.activeBonusRuleCodes
@@ -87,6 +120,22 @@ export async function POST(req: Request) {
         body?.panelMagicDamageOverride === undefined
           ? undefined
           : toFiniteNumber(body.panelMagicDamageOverride),
+      luohanFactor:
+        body?.luohanFactor === undefined
+          ? undefined
+          : toFiniteNumber(body.luohanFactor, 1),
+      damageVarianceFactor:
+        body?.damageVarianceFactor === undefined
+          ? undefined
+          : toFiniteNumber(body.damageVarianceFactor, 1),
+      criticalChance:
+        body?.criticalChance === undefined
+          ? undefined
+          : toFiniteNumber(body.criticalChance, 0),
+      criticalExpectationMultiplier:
+        body?.criticalExpectationMultiplier === undefined
+          ? undefined
+          : toFiniteNumber(body.criticalExpectationMultiplier, 2),
       targets,
     });
 

@@ -1,13 +1,51 @@
-import type { Cultivation, Skill, Treasure } from './gameTypes';
+import type {
+  Cultivation,
+  MeridianConfig,
+  Skill,
+  Treasure,
+} from './gameTypes';
 
 const defaultPhysicalSkills: Skill[] = [
-  { name: '横扫千军', level: 140, type: 'physical', targets: 1 },
-  { name: '后发制人', level: 130, type: 'physical', targets: 1 },
-  { name: '破釜沉舟', level: 125, type: 'physical', targets: 3 },
-  { name: '安神诀', level: 110, type: 'magic', targets: 1 },
+  {
+    name: '横扫千军',
+    level: 140,
+    baseLevel: 140,
+    extraLevel: 0,
+    finalLevel: 140,
+    type: 'physical',
+    targets: 1,
+  },
+  {
+    name: '后发制人',
+    level: 130,
+    baseLevel: 130,
+    extraLevel: 0,
+    finalLevel: 130,
+    type: 'physical',
+    targets: 1,
+  },
+  {
+    name: '破釜沉舟',
+    level: 125,
+    baseLevel: 125,
+    extraLevel: 0,
+    finalLevel: 125,
+    type: 'physical',
+    targets: 3,
+  },
+  {
+    name: '安神诀',
+    level: 110,
+    baseLevel: 110,
+    extraLevel: 0,
+    finalLevel: 110,
+    type: 'magic',
+    targets: 1,
+  },
 ];
 
 const defaultPhysicalCultivation: Cultivation = {
+  bodyStrength: 0,
   physicalAttack: 25,
   physicalDefense: 20,
   magicAttack: 0,
@@ -16,6 +54,15 @@ const defaultPhysicalCultivation: Cultivation = {
   petPhysicalDefense: 20,
   petMagicAttack: 20,
   petMagicDefense: 20,
+};
+
+const defaultMeridianConfig: MeridianConfig = {
+  physique: 0,
+  magic: 0,
+  strength: 0,
+  endurance: 0,
+  agility: 0,
+  magicPower: 0,
 };
 
 const cloneSkillList = (skills: Skill[]): Skill[] =>
@@ -30,6 +77,10 @@ export const createDefaultPhysicalSkills = (): Skill[] =>
 
 export const createDefaultPhysicalCultivation = (): Cultivation =>
   cloneCultivation(defaultPhysicalCultivation);
+
+export const createDefaultMeridianConfig = (): MeridianConfig => ({
+  ...defaultMeridianConfig,
+});
 
 export const createDefaultPhysicalTreasure = (): Treasure => ({
   id: 't1',

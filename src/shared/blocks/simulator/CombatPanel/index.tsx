@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createInitialManualTargets } from '@/features/simulator/store/gameRuntimeSeeds';
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import type {
   Dungeon,
   EnemyTarget,
@@ -11,12 +12,20 @@ import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulato
 import {
   buildDungeonDatabaseFromTemplates,
   buildManualTargetsFromTemplates,
+  mergeDungeonDatabases,
 } from '@/features/simulator/utils/targetTemplates';
+import {
+  resolveBattleContextDerivedFields,
+  SIMULATOR_FORMATION_OPTIONS,
+} from '@/shared/lib/simulator-battle-context';
+import {
+  getSimulatorNetworkErrorMessage,
+  isNavigatorOffline,
+} from '@/shared/lib/simulator-network';
 import {
   Check,
   ChevronDown,
   Edit2,
-  Flame,
   Minus,
   Plus,
   RefreshCw,
@@ -28,6 +37,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
@@ -108,6 +118,7 @@ export function CombatPanel() {
   const setSelectedDungeonIds = useGameStore(
     (state) => state.setSelectedDungeonIds
   );
+  const syncedCloudState = useGameStore((state) => state.syncedCloudState);
 
   const [expandedTargetIds, setExpandedTargetIds] = useState<Set<string>>(
     new Set([manualTargets[0]?.id])
@@ -128,6 +139,13 @@ export function CombatPanel() {
     string | null
   >(null);
   const [targetDungeons, setTargetDungeons] = useState<Dungeon[]>([]);
+  const [weather, setWeather] = useState('');
+  const [targetDefenseState, setTargetDefenseState] = useState('');
+  const [targetMagicDefenseResult, setTargetMagicDefenseResult] = useState(0);
+  const [
+    specialMagicDamageReductionFactor,
+    setSpecialMagicDamageReductionFactor,
+  ] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,7 +175,14 @@ export function CombatPanel() {
           dungeonPayload?.code === 0 &&
           Array.isArray(dungeonPayload?.data)
         ) {
-          setTargetDungeons(buildDungeonDatabaseFromTemplates(dungeonPayload.data));
+          setTargetDungeons(
+            mergeDungeonDatabases(
+              buildDungeonDatabaseFromTemplates(dungeonPayload.data),
+              DUNGEON_DATABASE
+            )
+          );
+        } else {
+          setTargetDungeons(DUNGEON_DATABASE);
         }
 
         if (
@@ -177,7 +202,11 @@ export function CombatPanel() {
             });
           }
         }
-      } catch {}
+      } catch {
+        if (!cancelled) {
+          setTargetDungeons(DUNGEON_DATABASE);
+        }
+      }
     };
 
     void loadTemplates();
@@ -204,31 +233,21 @@ export function CombatPanel() {
     });
   }, [manualTargets]);
 
-  const elementRelation = useMemo(() => {
-    const selfElement = playerSetup.element;
-    const targetElement = combatTarget.element;
-
-    if (!selfElement || !targetElement) return '无克/普通';
-
-    const relationMap: Record<string, string> = {
-      '金-木': '克制',
-      '木-土': '克制',
-      '土-水': '克制',
-      '水-火': '克制',
-      '火-金': '克制',
-      '木-金': '被克制',
-      '土-木': '被克制',
-      '水-土': '被克制',
-      '火-水': '被克制',
-      '金-火': '被克制',
-    };
-
-    return relationMap[`${selfElement}-${targetElement}`] || '无克/普通';
-  }, [playerSetup.element, combatTarget.element]);
-
   useEffect(() => {
     // 移除默认选中逻辑，因为现在是多选，且不强制选中
   }, [selectedDungeonIds]);
+
+  useEffect(() => {
+    const persistedBattleContext = syncedCloudState?.battleContext;
+    setWeather(persistedBattleContext?.weather ?? '');
+    setTargetDefenseState(persistedBattleContext?.targetDefenseState ?? '');
+    setTargetMagicDefenseResult(
+      persistedBattleContext?.targetMagicDefenseResult ?? 0
+    );
+    setSpecialMagicDamageReductionFactor(
+      persistedBattleContext?.specialMagicDamageReductionFactor ?? 1
+    );
+  }, [syncedCloudState?.battleContext]);
 
   const toggleDungeonSelection = (id: string) => {
     if (selectedDungeonIds.includes(id)) {
@@ -244,6 +263,10 @@ export function CombatPanel() {
     useGameStore.setState((state) => ({
       playerSetup: { ...state.playerSetup, ...updates },
     }));
+
+    if ('formation' in updates && useGameStore.getState().autoRecalculateDerivedStats) {
+      useGameStore.getState().recalculateCombatStats();
+    }
   };
 
   const updateTargetNumericStat = <K extends keyof EnemyTarget>(
@@ -264,10 +287,21 @@ export function CombatPanel() {
     setSaveBattleContextError(null);
 
     try {
+      if (isNavigatorOffline()) {
+        throw new Error('OFFLINE');
+      }
+
       const nextCombatTab = overrides?.combatTab ?? combatTab;
       const nextSelectedDungeonIds =
         overrides?.selectedDungeonIds ?? selectedDungeonIds;
       const nextCombatTarget = overrides?.combatTarget ?? combatTarget;
+      const derivedBattleContext = resolveBattleContextDerivedFields({
+        selfFormation: playerSetup.formation,
+        targetFormation: nextCombatTarget.formation,
+        selfElement: playerSetup.element,
+        targetElement: nextCombatTarget.element,
+      });
+      const persistedBattleContext = syncedCloudState?.battleContext;
 
       const response = await fetch('/api/simulator/current/battle-context', {
         method: 'PATCH',
@@ -280,12 +314,12 @@ export function CombatPanel() {
           manualTargets,
           selfFormation: playerSetup.formation,
           selfElement: playerSetup.element,
-          formationCounterState: '无克/普通',
-          elementRelation,
-          transformCardFactor: 1,
+          formationCounterState: derivedBattleContext.formationCounterState,
+          elementRelation: derivedBattleContext.elementRelation,
+          transformCardFactor: persistedBattleContext?.transformCardFactor ?? 1,
           splitTargetCount: selectedSkill?.targets || 1,
-          shenmuValue: 0,
-          magicResult: 0,
+          shenmuValue: persistedBattleContext?.shenmuValue ?? 0,
+          magicResult: persistedBattleContext?.magicResult ?? 0,
           targetTemplateId: nextCombatTarget.templateId || null,
           targetName: nextCombatTarget.name,
           targetLevel: nextCombatTarget.level || 0,
@@ -293,9 +327,14 @@ export function CombatPanel() {
           targetDefense: nextCombatTarget.defense || 0,
           targetMagicDefense: nextCombatTarget.magicDefense || 0,
           targetSpeed: nextCombatTarget.speed || 0,
-          targetMagicDefenseCultivation: 0,
+          targetMagicDefenseCultivation:
+            persistedBattleContext?.targetMagicDefenseCultivation ?? 0,
           targetElement: nextCombatTarget.element || '',
           targetFormation: nextCombatTarget.formation || '普通阵',
+          weather,
+          targetDefenseState,
+          targetMagicDefenseResult,
+          specialMagicDamageReductionFactor,
         }),
       });
 
@@ -310,9 +349,17 @@ export function CombatPanel() {
       setSaveBattleContextMessage('战斗参数已保存到云端');
     } catch (error) {
       console.error('Failed to save simulator battle context:', error);
-      setSaveBattleContextError(
-        error instanceof Error ? error.message : '保存失败'
-      );
+      const message =
+        error instanceof Error && error.message === 'OFFLINE'
+          ? '请检查网络'
+          : getSimulatorNetworkErrorMessage(error, '保存失败');
+      setSaveBattleContextError(message);
+      toast.error(message, {
+        description:
+          message === '请检查网络'
+            ? '当前网络不可用，战斗参数还没有同步到云端。'
+            : undefined,
+      });
     } finally {
       setIsSavingBattleContext(false);
     }
@@ -414,91 +461,177 @@ export function CombatPanel() {
         {/* 内容区域 */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex h-full flex-col p-5">
+            <div className="mb-4 rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
+              <div className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2">
+                <Sparkles className="h-4 w-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-yellow-400">
+                  战场修正
+                </h3>
+                <button
+                  onClick={handleSaveBattleContext}
+                  disabled={isSavingBattleContext}
+                  className="ml-auto flex items-center gap-1 rounded-lg border border-yellow-700/40 bg-yellow-900/20 px-2 py-1 text-xs text-yellow-200 transition-colors hover:bg-yellow-900/40 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${isSavingBattleContext ? 'animate-spin' : ''}`}
+                  />
+                  <span>{isSavingBattleContext ? '保存中' : '保存参数'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div>
+                  <Label
+                    id="battle-player-element-label"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    我方五行
+                  </Label>
+                  <SimpleSelect
+                    triggerId="battle-player-element-select"
+                    ariaLabelledBy="battle-player-element-label"
+                    value={playerSetup.element}
+                    onValueChange={(val) =>
+                      updatePlayerSetup({
+                        element: val as typeof playerSetup.element,
+                      })
+                    }
+                    className="h-9 py-1 text-sm"
+                  >
+                    {['金', '木', '水', '火', '土'].map((e) => (
+                      <option key={e} value={e}>
+                        {e}
+                      </option>
+                    ))}
+                  </SimpleSelect>
+                </div>
+
+                <div>
+                  <Label
+                    id="battle-player-formation-label"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    我方阵法
+                  </Label>
+                  <SimpleSelect
+                    triggerId="battle-player-formation-select"
+                    ariaLabelledBy="battle-player-formation-label"
+                    value={playerSetup.formation}
+                    onValueChange={(val) => updatePlayerSetup({ formation: val })}
+                    className="h-9 py-1 text-sm"
+                  >
+                    {[...SIMULATOR_FORMATION_OPTIONS].map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </SimpleSelect>
+                </div>
+
+                <div>
+                  <Label
+                    id="battle-weather-label"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    天气
+                  </Label>
+                  <SimpleSelect
+                    triggerId="battle-weather-select"
+                    ariaLabelledBy="battle-weather-label"
+                    value={weather || '无天气'}
+                    onValueChange={(val) =>
+                      setWeather(val === '无天气' ? '' : val)
+                    }
+                    className="h-9 py-1 text-sm"
+                  >
+                    {['无天气', '雨天'].map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </SimpleSelect>
+                </div>
+
+                <div>
+                  <Label
+                    id="battle-target-defense-state-label"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    目标状态
+                  </Label>
+                  <SimpleSelect
+                    triggerId="battle-target-defense-state-select"
+                    ariaLabelledBy="battle-target-defense-state-label"
+                    value={targetDefenseState || '普通'}
+                    onValueChange={(val) =>
+                      setTargetDefenseState(val === '普通' ? '' : val)
+                    }
+                    className="h-9 py-1 text-sm"
+                  >
+                    {['普通', '防御'].map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </SimpleSelect>
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="battle-target-magic-defense-result"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    目标法防结果
+                  </Label>
+                  <Input
+                    id="battle-target-magic-defense-result"
+                    value={targetMagicDefenseResult}
+                    type="number"
+                    min={0}
+                    step={1}
+                    onChange={(e) =>
+                      setTargetMagicDefenseResult(
+                        Math.max(0, Number(e.target.value) || 0)
+                      )
+                    }
+                    className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+                  />
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="battle-special-magic-damage-reduction-factor"
+                    className="mb-2 block text-xs text-yellow-100"
+                  >
+                    法术减伤系数
+                  </Label>
+                  <Input
+                    id="battle-special-magic-damage-reduction-factor"
+                    value={specialMagicDamageReductionFactor}
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onChange={(e) =>
+                      setSpecialMagicDamageReductionFactor(
+                        Math.min(1, Math.max(0, Number(e.target.value) || 0))
+                      )
+                    }
+                    className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+                  />
+                </div>
+              </div>
+
+              <p className="mt-3 text-[11px] leading-5 text-yellow-100/60">
+                `雨天` 当前按龙宫法伤整体 `+10%` 处理；`目标状态=防御`
+                只做状态记录，不影响当前法伤；`法术减伤系数` 填 `0.6`
+                表示仅保留 60% 非结果伤害。
+              </p>
+            </div>
+
             {/* 手动目标设置 */}
             {combatTab === 'manual' && (
               <div className="space-y-4">
-                {/* 我方设置 */}
-                <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
-                  <div className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2">
-                    <Flame className="h-4 w-4 text-blue-400" />
-                    <h3 className="text-sm font-bold text-yellow-400">
-                      我方设置
-                    </h3>
-                    <button
-                      onClick={handleSaveBattleContext}
-                      disabled={isSavingBattleContext}
-                      className="ml-auto flex items-center gap-1 rounded-lg border border-yellow-700/40 bg-yellow-900/20 px-2 py-1 text-xs text-yellow-200 transition-colors hover:bg-yellow-900/40 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw
-                        className={`h-3 w-3 ${isSavingBattleContext ? 'animate-spin' : ''}`}
-                      />
-                      <span>
-                        {isSavingBattleContext ? '保存中' : '保存参数'}
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label
-                        id="player-element-label"
-                        className="mb-2 block text-xs text-yellow-100"
-                      >
-                        我方五行
-                      </Label>
-                      <SimpleSelect
-                        triggerId="player-element-select"
-                        ariaLabelledBy="player-element-label"
-                        value={playerSetup.element}
-                        onValueChange={(val) =>
-                          updatePlayerSetup({
-                            element: val as typeof playerSetup.element,
-                          })
-                        }
-                        className="h-9 py-1 text-sm"
-                      >
-                        {['金', '木', '水', '火', '土'].map((e) => (
-                          <option key={e} value={e}>
-                            {e}
-                          </option>
-                        ))}
-                      </SimpleSelect>
-                    </div>
-
-                    <div>
-                      <Label
-                        id="player-formation-label"
-                        className="mb-2 block text-xs text-yellow-100"
-                      >
-                        我方阵法
-                      </Label>
-                      <SimpleSelect
-                        triggerId="player-formation-select"
-                        ariaLabelledBy="player-formation-label"
-                        value={playerSetup.formation}
-                        onValueChange={(val) =>
-                          updatePlayerSetup({ formation: val })
-                        }
-                        className="h-9 py-1 text-sm"
-                      >
-                        {[
-                          '天覆阵',
-                          '地载阵',
-                          '虎翼阵',
-                          '鸟翔阵',
-                          '龙飞阵',
-                          '云垂阵',
-                          '蛇蟠阵',
-                        ].map((f) => (
-                          <option key={f} value={f}>
-                            {f}
-                          </option>
-                        ))}
-                      </SimpleSelect>
-                    </div>
-                  </div>
-                </div>
-
                 {/* 敌方目标列表 */}
                 <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
                   <div className="mb-3 flex items-center justify-between border-b border-yellow-800/30 pb-2">
@@ -658,13 +791,7 @@ export function CombatPanel() {
                                   className="h-8 py-1 text-xs"
                                 >
                                   {[
-                                    '天覆阵',
-                                    '地载阵',
-                                    '虎翼阵',
-                                    '鸟翔阵',
-                                    '龙飞阵',
-                                    '云垂阵',
-                                    '蛇蟠阵',
+                                    ...SIMULATOR_FORMATION_OPTIONS,
                                   ].map((f) => (
                                     <option key={f} value={f}>
                                       {f}

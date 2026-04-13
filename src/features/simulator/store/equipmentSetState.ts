@@ -13,6 +13,12 @@ const cloneEffectModifiers = (
 ): Equipment['effectModifiers'] =>
   equipment.effectModifiers?.map((modifier) => ({ ...modifier }));
 
+const cloneGemstones = (equipment: Equipment): Equipment['gemstones'] =>
+  equipment.gemstones?.map((gemstone) => ({
+    ...gemstone,
+    stats: gemstone.stats ? { ...gemstone.stats } : undefined,
+  }));
+
 export const cloneEquipmentItem = (equipment: Equipment): Equipment => ({
   ...equipment,
   highlights: equipment.highlights ? [...equipment.highlights] : undefined,
@@ -30,6 +36,7 @@ export const cloneEquipmentItem = (equipment: Equipment): Equipment => ({
     : undefined,
   baseStats: { ...equipment.baseStats },
   stats: { ...equipment.stats },
+  gemstones: cloneGemstones(equipment),
   runeStoneSets: cloneRuneStoneSets(equipment),
   runeStoneSetsNames: equipment.runeStoneSetsNames
     ? [...equipment.runeStoneSetsNames]

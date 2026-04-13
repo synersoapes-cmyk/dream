@@ -1,4 +1,5 @@
 import type { Equipment, GameState } from '@/features/simulator/store/gameTypes';
+import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
 
 function toFiniteNumber(value: unknown) {
   const parsed = Number(value);
@@ -85,7 +86,7 @@ export function buildSimulatorAdvisorContext(state: GameState) {
           highlights: item.equipment.highlights ?? [],
         },
       })),
-    laboratory: compareSeats.slice(0, 3).map((seat) => ({
+    laboratory: compareSeats.slice(0, LABORATORY_MAX_COMPARE_SEATS).map((seat) => ({
       id: seat.id,
       name: seat.name,
       equipmentCount: seat.equipment.length,

@@ -4,7 +4,13 @@ import {
 } from './equipmentSetState';
 import { computeDerivedStats } from './gameLogic';
 import { createDefaultManualTarget } from './gameRuntimeSeeds';
-import type { Equipment, GameState } from './gameTypes';
+import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
+import type {
+  Equipment,
+  GameState,
+  MeridianConfig,
+  PotentialAllocationTarget,
+} from './gameTypes';
 
 type StoreSet = (
   updater:
@@ -24,7 +30,7 @@ export const createExperimentSeatActions = (set: StoreSet) => ({
   addExperimentSeat: () => {
     set((state) => {
       const compSeats = state.experimentSeats.filter((s) => !s.isSample);
-      if (compSeats.length >= 5) return state;
+      if (compSeats.length >= LABORATORY_MAX_COMPARE_SEATS) return state;
       const newId = `comp_${Date.now()}`;
       return {
         experimentSeats: [
@@ -33,6 +39,8 @@ export const createExperimentSeatActions = (set: StoreSet) => ({
             id: newId,
             name: `对比席位${compSeats.length + 1}`,
             isSample: false,
+            inheritGemstones: true,
+            inheritRuneStones: true,
             equipment: state.equipment,
           },
         ],
@@ -48,7 +56,14 @@ export const createExperimentSeatActions = (set: StoreSet) => ({
       };
     });
   },
-  updateExperimentSeatEquipment: (seatId: string, equipment: Equipment) => {
+  updateExperimentSeatEquipment: (
+    seatId: string,
+    equipment: Equipment,
+    options?: {
+      inheritGemstones?: boolean;
+      inheritRuneStones?: boolean;
+    }
+  ) => {
     set((state) => ({
       experimentSeats: state.experimentSeats.map((seat) => {
         if (seat.id !== seatId || seat.isSample) return seat;
@@ -60,7 +75,14 @@ export const createExperimentSeatActions = (set: StoreSet) => ({
         const newEquipment = [...seat.equipment];
         if (existingIndex >= 0) newEquipment[existingIndex] = equipment;
         else newEquipment.push(equipment);
-        return { ...seat, equipment: newEquipment };
+        return {
+          ...seat,
+          equipment: newEquipment,
+          inheritGemstones:
+            options?.inheritGemstones ?? seat.inheritGemstones ?? true,
+          inheritRuneStones:
+            options?.inheritRuneStones ?? seat.inheritRuneStones ?? true,
+        };
       }),
     }));
   },
@@ -222,6 +244,7 @@ export const createHistoryAndLogActions = (set: StoreSet, get: StoreGet) => ({
       combatStats: { ...state.combatStats },
       equipment: JSON.parse(JSON.stringify(state.equipment)),
       cultivation: { ...state.cultivation },
+      meridian: { ...state.meridian },
       combatTarget: { ...state.combatTarget },
     };
 
@@ -262,6 +285,7 @@ export const createHistoryAndLogActions = (set: StoreSet, get: StoreGet) => ({
       combatStats,
       equipment,
       cultivation,
+      meridian,
       combatTarget,
     } = snapshot.state;
     const updates: Partial<GameState> = {};
@@ -269,6 +293,7 @@ export const createHistoryAndLogActions = (set: StoreSet, get: StoreGet) => ({
     if (combatStats) updates.combatStats = combatStats;
     if (equipment) updates.equipment = equipment;
     if (cultivation) updates.cultivation = cultivation;
+    if (meridian) updates.meridian = meridian;
     if (combatTarget) updates.combatTarget = combatTarget;
     set((state) => {
       if (!equipment) {
@@ -315,8 +340,23 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
     }
   },
   recalculateCombatStats: () => {
-    const { baseAttributes, equipment, treasure } = get();
-    const newStats = computeDerivedStats(baseAttributes, equipment, treasure);
+    const {
+      baseAttributes,
+      cultivation,
+      equipment,
+      meridian,
+      syncedCloudState,
+      treasure,
+      playerSetup,
+      activeRegularSetRules,
+    } = get();
+    const newStats = computeDerivedStats(baseAttributes, equipment, treasure, {
+      bodyStrength: cultivation.bodyStrength,
+      formation: playerSetup.formation,
+      meridian,
+      regularSetRules: activeRegularSetRules,
+      runeSkillBaselineEquipment: syncedCloudState?.equipment ?? [],
+    });
     Object.keys(newStats).forEach((key) => {
       const k = key as keyof typeof newStats;
       newStats[k] = Math.round(newStats[k]);
@@ -340,6 +380,36 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
       get().recalculateCombatStats();
     }
   },
+  allocatePotentialPoints: (
+    key: PotentialAllocationTarget,
+    amount: number
+  ) => {
+    set((state) => {
+      const available = Math.max(
+        0,
+        Math.floor(Number(state.baseAttributes.potentialPoints ?? 0))
+      );
+      const requested = Math.max(0, Math.floor(Number(amount ?? 0)));
+      const applied = Math.min(available, requested);
+
+      if (applied <= 0) {
+        return state;
+      }
+
+      const currentValue = Number(state.baseAttributes[key] ?? 0);
+
+      return {
+        baseAttributes: {
+          ...state.baseAttributes,
+          [key]: currentValue + applied,
+          potentialPoints: available - applied,
+        },
+      };
+    });
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
   updateCombatStat: (key: keyof GameState['combatStats'], value: number) => {
     set((state) => ({
       combatStats: { ...state.combatStats, [key]: value },
@@ -348,6 +418,14 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
   updateCultivation: (key: keyof GameState['cultivation'], value: number) => {
     set((state) => ({
       cultivation: { ...state.cultivation, [key]: value },
+    }));
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
+  updateMeridian: (key: keyof MeridianConfig, value: number) => {
+    set((state) => ({
+      meridian: { ...state.meridian, [key]: value },
     }));
     if (get().autoRecalculateDerivedStats) {
       get().recalculateCombatStats();

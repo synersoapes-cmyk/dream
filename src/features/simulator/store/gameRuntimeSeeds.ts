@@ -58,6 +58,8 @@ export const createInitialExperimentSeats = (): ExperimentSeat[] => [
     id: 'sample',
     name: '样本席位',
     isSample: true,
+    inheritGemstones: false,
+    inheritRuneStones: false,
     equipment: [],
   },
 ];

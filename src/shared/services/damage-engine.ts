@@ -11,11 +11,32 @@ import {
   type SimulatorCharacterDomain,
   type SimulatorNumericMap,
 } from '@/shared/models/simulator-domain';
+import type { StarAlignmentConfig } from '@/features/simulator/store/gameTypes';
+import {
+  extractActiveRuneSetMeta,
+  isStrictStarAlignmentConfigActive,
+  normalizeRuneColor,
+} from '@/shared/lib/simulator-equipment-meta';
+import {
+  resolveElementRelationFromElements,
+  resolveFormationBaseDamageFactor,
+  resolveFormationCounterState,
+  resolveFormationSpeedFactor,
+} from '@/shared/lib/simulator-battle-context';
+import {
+  buildActiveOrnamentSetSummaries,
+  parseOrnamentSetRulesConfig,
+  type ActiveOrnamentSetRuntimeEffect,
+} from '@/shared/lib/simulator-ornament-set';
+import {
+  parseRegularSetRulesConfig,
+  resolveRegularSetAttributeBonuses,
+} from '@/shared/lib/simulator-regular-set';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 type JsonObject = Record<string, unknown>;
 
-const DEFAULT_SELF_FORMATION_FACTOR = 1.2;
+const DEFAULT_SELF_FORMATION_FACTOR = 1;
 const DEFAULT_FORMATION_COUNTER_STATE = '无克/普通';
 
 export type DamageEngineTargetInput = {
@@ -25,6 +46,9 @@ export type DamageEngineTargetInput = {
   magicDefenseCultivation?: number;
   shenmuValue?: number;
   magicResult?: number;
+  magicDefenseResult?: number;
+  defenseState?: string;
+  specialMagicDamageReductionFactor?: number;
 };
 
 export type DamageEngineRequest = {
@@ -33,18 +57,30 @@ export type DamageEngineRequest = {
   ruleVersionId?: string;
   ruleVersionCode?: string;
   targetCount?: number;
+  selfFormation?: string;
+  targetFormation?: string;
+  selfElement?: string;
+  targetElement?: string;
   formationFactor?: number;
   formationCounterState?: string;
   elementRelation?: string;
   transformCardFactor?: number;
+  weather?: string;
   shenmuValue?: number;
   magicResult?: number;
   targetMagicDefense?: number;
+  targetMagicDefenseResult?: number;
   targetSpeed?: number;
   targetMagicDefenseCultivation?: number;
+  targetDefenseState?: string;
+  specialMagicDamageReductionFactor?: number;
   targetName?: string;
   activeBonusRuleCodes?: string[];
   panelMagicDamageOverride?: number;
+  luohanFactor?: number;
+  damageVarianceFactor?: number;
+  criticalChance?: number;
+  criticalExpectationMultiplier?: number;
   targets?: DamageEngineTargetInput[];
 };
 
@@ -54,6 +90,8 @@ export type DamageEngineTargetResult = {
   critDamage: number;
   totalDamage: number;
   totalCritDamage: number;
+  expectedDamage?: number;
+  expectedTotalDamage?: number;
   breakdown: JsonObject;
 };
 
@@ -104,6 +142,33 @@ function clampTargetCount(value: number | undefined) {
 
 function roundForBreakdown(value: number, digits = 2) {
   return Number(value.toFixed(digits));
+}
+
+function clampMin(value: unknown, fallback: number, min: number) {
+  return Math.max(min, toFiniteNumber(value, fallback));
+}
+
+function clampRatio(value: unknown, fallback: number) {
+  const parsed = toFiniteNumber(value, fallback);
+  if (parsed <= 0) {
+    return 0;
+  }
+  if (parsed >= 1) {
+    return 1;
+  }
+  return parsed;
+}
+
+function resolveWeatherFactor(params: {
+  school: string;
+  weather?: string;
+}) {
+  return params.school === '龙宫' && params.weather === '雨天' ? 1.1 : 1;
+}
+
+function resolveMagicTargetDefenseFactor(_value?: string) {
+  // 防御指令只影响物理伤害，当前龙宫法伤链路显式保持不变。
+  return 1;
 }
 
 function buildRuleInputValues(
@@ -251,27 +316,6 @@ function matchesConditionValue(
   return String(expected) === actual;
 }
 
-const RUNE_COLOR_ALIAS: Record<string, string> = {
-  red: '红',
-  blue: '蓝',
-  green: '绿',
-  yellow: '黄',
-  gold: '黄',
-  white: '白',
-  black: '黑',
-  purple: '紫',
-  orange: '橙',
-  红: '红',
-  蓝: '蓝',
-  绿: '绿',
-  黄: '黄',
-  金: '黄',
-  白: '白',
-  黑: '黑',
-  紫: '紫',
-  橙: '橙',
-};
-
 const PRIMARY_EQUIPMENT_SLOTS = new Set([
   'weapon',
   'helmet',
@@ -324,30 +368,29 @@ type StarBonusResolution = {
   }>;
 };
 
-function normalizeRuneColor(value: unknown) {
-  if (typeof value !== 'string') {
-    return null;
-  }
+type ActivePanelStatBonusRule = {
+  ruleCode: string;
+  skillCode: string;
+  skillName: string;
+  bonusValue: number;
+  activeCount: number;
+  targetKeys: string[];
+};
 
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
+type IgnoredBonusRule = {
+  ruleCode: string;
+  skillCode: string;
+  skillName: string;
+  ignoredCount: number;
+  reason: 'limit_exceeded';
+};
 
-  const exactMatch =
-    RUNE_COLOR_ALIAS[trimmed.toLowerCase()] ?? RUNE_COLOR_ALIAS[trimmed];
-  if (exactMatch) {
-    return exactMatch;
-  }
-
-  for (const [alias, normalized] of Object.entries(RUNE_COLOR_ALIAS)) {
-    if (trimmed.toLowerCase().includes(alias.toLowerCase())) {
-      return normalized;
-    }
-  }
-
-  return null;
-}
+type OrnamentSetBonusResolution = {
+  panelStatBonuses: Record<string, number>;
+  attributeSourceBonuses: Record<string, number>;
+  skillDamageAddends: ActiveOrnamentSetRuntimeEffect[];
+  activeSets: ReturnType<typeof buildActiveOrnamentSetSummaries>;
+};
 
 function isDisabledStarBonus(value: unknown) {
   if (typeof value !== 'string') {
@@ -368,7 +411,70 @@ function parseStarBonusValue(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function toStarAlignmentConfig(
+  value: unknown
+): StarAlignmentConfig | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id =
+    typeof record.id === 'string' && record.id.trim().length > 0
+      ? record.id.trim()
+      : '';
+  const label =
+    typeof record.label === 'string' && record.label.trim().length > 0
+      ? record.label.trim()
+      : '';
+  const attrType =
+    typeof record.attrType === 'string' && record.attrType.trim().length > 0
+      ? record.attrType.trim()
+      : '';
+  const attrValue = Number(record.attrValue);
+
+  if (!id || !label || !attrType || !Number.isFinite(attrValue)) {
+    return undefined;
+  }
+
+  const colors = Array.isArray(record.colors)
+    ? record.colors
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : undefined;
+
+  return {
+    id,
+    label,
+    attrType,
+    attrValue,
+    comboName:
+      typeof record.comboName === 'string' && record.comboName.trim().length > 0
+        ? record.comboName.trim()
+        : undefined,
+    colors: colors && colors.length > 0 ? colors : undefined,
+  };
+}
+
 function resolveStarPositionBonus(value: unknown) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const label =
+      typeof record.label === 'string' && record.label.trim().length > 0
+        ? record.label.trim()
+        : '';
+    const targetKey =
+      typeof record.attrType === 'string' && record.attrType.trim().length > 0
+        ? record.attrType.trim()
+        : '';
+    const parsedValue = toFiniteNumber(record.attrValue, Number.NaN);
+
+    if (label && targetKey && Number.isFinite(parsedValue)) {
+      return { label, targetKey, value: parsedValue };
+    }
+  }
+
   if (isDisabledStarBonus(value)) {
     return null;
   }
@@ -388,12 +494,40 @@ function resolveStarPositionBonus(value: unknown) {
   return null;
 }
 
-function resolveStarAlignmentBonus(value: unknown) {
-  if (isDisabledStarBonus(value)) {
+function resolveStarAlignmentBonus(params: {
+  value: unknown;
+  config: unknown;
+  notes: unknown;
+}) {
+  const structuredConfig = toStarAlignmentConfig(params.config);
+  if (structuredConfig) {
+    const label = structuredConfig.label;
+    const targetKey = structuredConfig.attrType;
+    const parsedValue = toFiniteNumber(structuredConfig.attrValue, Number.NaN);
+
+    if (
+      label &&
+      targetKey &&
+      Number.isFinite(parsedValue) &&
+      isStrictStarAlignmentConfigActive({
+        notes: params.notes,
+        config: structuredConfig,
+      })
+    ) {
+      return {
+        label,
+        targetKey,
+        value: parsedValue,
+        strictMatched: true,
+      };
+    }
+  }
+
+  if (isDisabledStarBonus(params.value)) {
     return null;
   }
 
-  const label = String(value).trim();
+  const label = String(params.value).trim();
   const parsedValue = parseStarBonusValue(label);
   if (parsedValue === null) {
     return null;
@@ -401,7 +535,7 @@ function resolveStarAlignmentBonus(value: unknown) {
 
   for (const [alias, targetKey] of STAR_ALIGNMENT_ATTR_ALIAS) {
     if (label.includes(alias)) {
-      return { label, targetKey, value: parsedValue };
+      return { label, targetKey, value: parsedValue, strictMatched: false };
     }
   }
 
@@ -421,7 +555,9 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
     }
 
     const notes = equipment.build?.notes ?? {};
-    const starPositionBonus = resolveStarPositionBonus(notes.starPosition);
+    const starPositionBonus = resolveStarPositionBonus(
+      notes.starPositionConfig ?? notes.starPosition
+    );
     if (starPositionBonus) {
       panelStatBonuses[starPositionBonus.targetKey] =
         (panelStatBonuses[starPositionBonus.targetKey] ?? 0) +
@@ -433,7 +569,11 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
       });
     }
 
-    const starAlignmentBonus = resolveStarAlignmentBonus(notes.starAlignment);
+    const starAlignmentBonus = resolveStarAlignmentBonus({
+      value: notes.starAlignment,
+      config: notes.starAlignmentConfig,
+      notes,
+    });
     if (starAlignmentBonus) {
       attributeSourceBonuses[starAlignmentBonus.targetKey] =
         (attributeSourceBonuses[starAlignmentBonus.targetKey] ?? 0) +
@@ -443,7 +583,9 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
         slot: equipment.slot,
         ...starAlignmentBonus,
       });
-      alignedPrimarySlots.add(equipment.slot);
+      if (starAlignmentBonus.strictMatched) {
+        alignedPrimarySlots.add(equipment.slot);
+      }
     }
   }
 
@@ -467,34 +609,98 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
   };
 }
 
+function resolveOrnamentSetBonuses(
+  domain: SimulatorCharacterDomain,
+  ruleSet: DamageRuleSet
+): OrnamentSetBonusResolution {
+  const ornamentSetConfig =
+    ruleSet.equipmentExtensionConfigs.find(
+      (item) => item.configKey === 'ornament_set_rules'
+    )?.value ?? [];
+  const rules = parseOrnamentSetRulesConfig(ornamentSetConfig);
+  const activeSets = buildActiveOrnamentSetSummaries({
+    equipment: domain.equipment.map((equipment) => ({
+      id: equipment.id,
+      slot: equipment.slot,
+      level: equipment.level,
+      setName:
+        typeof equipment.build?.setEffect?.setName === 'string'
+          ? equipment.build.setEffect.setName
+          : undefined,
+    })),
+    rules,
+  });
+
+  const panelStatBonuses: Record<string, number> = {};
+  const attributeSourceBonuses: Record<string, number> = {};
+  const skillDamageAddends: ActiveOrnamentSetRuntimeEffect[] = [];
+
+  for (const activeSet of activeSets) {
+    for (const effect of activeSet.effects) {
+      if (effect.type === 'panel_stat_bonus' && effect.targetKey) {
+        panelStatBonuses[effect.targetKey] =
+          (panelStatBonuses[effect.targetKey] ?? 0) + toFiniteNumber(effect.value);
+        continue;
+      }
+
+      if (effect.type === 'attribute_source_bonus' && effect.targetKey) {
+        attributeSourceBonuses[effect.targetKey] =
+          (attributeSourceBonuses[effect.targetKey] ?? 0) +
+          toFiniteNumber(effect.value);
+        continue;
+      }
+
+      if (effect.type === 'skill_damage_addend') {
+        skillDamageAddends.push(effect);
+      }
+    }
+  }
+
+  return {
+    panelStatBonuses,
+    attributeSourceBonuses,
+    skillDamageAddends,
+    activeSets,
+  };
+}
+
+function resolveRegularSetBonuses(
+  domain: SimulatorCharacterDomain,
+  ruleSet: DamageRuleSet
+) {
+  const regularSetConfig =
+    ruleSet.equipmentExtensionConfigs.find(
+      (item) => item.configKey === 'regular_set_rules'
+    )?.value ?? [];
+  const rules = parseRegularSetRulesConfig(regularSetConfig);
+
+  return resolveRegularSetAttributeBonuses(
+    domain.equipment.map((equipment) => ({
+      slot: equipment.slot,
+      setName:
+        typeof equipment.build?.setEffect?.setName === 'string'
+          ? equipment.build.setEffect.setName
+          : undefined,
+    })),
+    rules
+  );
+}
+
+function buildEquipmentNotesForActivation(
+  equipment: SimulatorCharacterDomain['equipment'][number]
+) {
+  return {
+    ...(equipment.build?.notes ?? {}),
+    holeCount: equipment.build?.holeCount,
+  };
+}
+
 function extractActiveRuneColors(
   equipment: SimulatorCharacterDomain['equipment'][number]
 ) {
-  const notes = equipment.build?.notes ?? {};
-  const runeStoneSets = Array.isArray(notes.runeStoneSets)
-    ? notes.runeStoneSets
-    : [];
-  if (runeStoneSets.length === 0) {
-    return [] as string[];
-  }
-
-  const activeIndex = Math.max(
-    0,
-    Math.floor(toFiniteNumber(notes.activeRuneStoneSet, 0))
-  );
-  const activeSet = Array.isArray(runeStoneSets[activeIndex])
-    ? runeStoneSets[activeIndex]
-    : Array.isArray(runeStoneSets[0])
-      ? runeStoneSets[0]
-      : [];
-
-  return activeSet
-    .filter(
-      (item): item is Record<string, unknown> =>
-        Boolean(item) && typeof item === 'object'
-    )
-    .map((item) => normalizeRuneColor(item.type ?? item.color ?? item.name))
-    .filter((item): item is string => Boolean(item));
+  return extractActiveRuneSetMeta(
+    buildEquipmentNotesForActivation(equipment)
+  ).activeColors;
 }
 
 function getFirstRuneColorBySlot(domain: SimulatorCharacterDomain) {
@@ -516,12 +722,32 @@ function matchesFullRuneSetCondition(
 
   const activeColorBySlot = getFirstRuneColorBySlot(domain);
 
-  return Object.entries(slotColorMap as Record<string, unknown>).every(
+  const slotMatched = Object.entries(slotColorMap as Record<string, unknown>).every(
     ([slot, expectedColor]) => {
       const normalizedExpected = normalizeRuneColor(expectedColor);
       return Boolean(normalizedExpected) && activeColorBySlot[slot] === normalizedExpected;
     }
   );
+
+  if (!slotMatched) {
+    return false;
+  }
+
+  if (condition.requireStarResonance !== true) {
+    return true;
+  }
+
+  return domain.equipment
+    .filter((equipment) => PRIMARY_EQUIPMENT_SLOTS.has(equipment.slot))
+    .every((equipment) =>
+      isStrictStarAlignmentConfigActive({
+        notes: buildEquipmentNotesForActivation(equipment),
+        config:
+          equipment.build?.notes?.starAlignmentConfig as Parameters<
+            typeof isStrictStarAlignmentConfigActive
+          >[0]['config'],
+      })
+    );
 }
 
 function deriveActiveBonusRuleCodes(params: {
@@ -531,7 +757,9 @@ function deriveActiveBonusRuleCodes(params: {
   roleType: string;
   explicitRuleCodes: string[];
 }) {
-  const derivedCodes = new Set(params.explicitRuleCodes);
+  const derivedCodes = [...params.explicitRuleCodes];
+  const matchedRules: DamageSkillBonusRule[] = [];
+  const ignoredRules: IgnoredBonusRule[] = [];
 
   for (const rule of params.ruleSet.skillBonuses) {
     const condition = rule.condition ?? {};
@@ -571,7 +799,7 @@ function deriveActiveBonusRuleCodes(params: {
           .map((value) => value.trim())
       : [];
 
-    const matchedEquipment = params.domain.equipment.some((equipment) => {
+    const matchedEquipmentCount = params.domain.equipment.filter((equipment) => {
       if (positionScope.length > 0 && !positionScope.includes(equipment.slot)) {
         return false;
       }
@@ -587,14 +815,71 @@ function deriveActiveBonusRuleCodes(params: {
       return expectedColors.every(
         (color, index) => activeColors[index] === color
       );
-    });
+    }).length;
 
-    if (matchedEquipment) {
-      derivedCodes.add(rule.ruleCode);
+    if (matchedEquipmentCount > 0) {
+      for (let index = 0; index < matchedEquipmentCount; index += 1) {
+        matchedRules.push(rule);
+      }
     }
   }
 
-  return Array.from(derivedCodes);
+  const groupedRules = new Map<string, DamageSkillBonusRule[]>();
+  for (const rule of matchedRules) {
+    const groupKey = `${rule.bonusGroup || 'default'}::${rule.skillCode || rule.ruleCode}`;
+    const items = groupedRules.get(groupKey) ?? [];
+    items.push(rule);
+    groupedRules.set(groupKey, items);
+  }
+
+  for (const rules of groupedRules.values()) {
+    const globalMaxActive = Math.max(
+      1,
+      ...rules.map((rule) =>
+        Math.max(
+          0,
+          Math.floor(toFiniteNumber(rule.limitPolicy?.globalMaxActive, 1))
+        )
+      )
+    );
+    const sorted = [...rules].sort(
+      (left, right) =>
+        toFiniteNumber(right.bonusValue) - toFiniteNumber(left.bonusValue) ||
+        toFiniteNumber(left.sort) - toFiniteNumber(right.sort)
+    );
+    const selectedRules = sorted.slice(0, globalMaxActive);
+    const droppedRules = sorted.slice(globalMaxActive);
+
+    for (const rule of selectedRules) {
+      derivedCodes.push(rule.ruleCode);
+    }
+
+    if (droppedRules.length > 0) {
+      const droppedByRuleCode = new Map<string, IgnoredBonusRule>();
+      for (const rule of droppedRules) {
+        const current = droppedByRuleCode.get(rule.ruleCode);
+        if (current) {
+          current.ignoredCount += 1;
+          continue;
+        }
+
+        droppedByRuleCode.set(rule.ruleCode, {
+          ruleCode: rule.ruleCode,
+          skillCode: rule.skillCode,
+          skillName: rule.skillName,
+          ignoredCount: 1,
+          reason: 'limit_exceeded',
+        });
+      }
+
+      ignoredRules.push(...droppedByRuleCode.values());
+    }
+  }
+
+  return {
+    derivedCodes,
+    ignoredRules,
+  };
 }
 
 function matchesModifierTrigger(
@@ -739,7 +1024,8 @@ function resolveSkillBonus(
   const matchedRules = ruleSet.skillBonuses.filter(
     (item) =>
       item.skillCode === skillCode &&
-      activeBonusRuleCodes.includes(item.ruleCode)
+      activeBonusRuleCodes.includes(item.ruleCode) &&
+      (item.bonusType === 'skill_level' || !item.bonusType)
   );
 
   if (matchedRules.length === 0) {
@@ -761,6 +1047,72 @@ function resolveSkillBonus(
 
   return {
     bonusLevel,
+    matchedRules,
+  };
+}
+
+function resolvePanelStatBonusesFromSkillBonuses(
+  skillCode: string,
+  ruleSet: DamageRuleSet,
+  activeBonusRuleCodes: string[]
+) {
+  const ruleCodeCounts = new Map<string, number>();
+  for (const ruleCode of activeBonusRuleCodes) {
+    ruleCodeCounts.set(ruleCode, (ruleCodeCounts.get(ruleCode) ?? 0) + 1);
+  }
+
+  const matchedRules: ActivePanelStatBonusRule[] = [];
+  const panelStatBonuses: Record<string, number> = {};
+
+  for (const rule of ruleSet.skillBonuses) {
+    if (rule.bonusType !== 'panel_stat_bonus') {
+      continue;
+    }
+
+    const activeCount = ruleCodeCounts.get(rule.ruleCode) ?? 0;
+    if (activeCount <= 0) {
+      continue;
+    }
+
+    const condition = rule.condition ?? {};
+    if (
+      condition.skillCode !== undefined &&
+      !matchesConditionValue(condition.skillCode, skillCode)
+    ) {
+      continue;
+    }
+
+    const targetKeys = (
+      Array.isArray(condition.targetKeys)
+        ? condition.targetKeys
+        : [condition.targetKey ?? condition.attrType]
+    )
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (targetKeys.length === 0) {
+      continue;
+    }
+
+    const bonusValue = toFiniteNumber(rule.bonusValue);
+    for (const targetKey of targetKeys) {
+      panelStatBonuses[targetKey] =
+        (panelStatBonuses[targetKey] ?? 0) + bonusValue * activeCount;
+    }
+
+    matchedRules.push({
+      ruleCode: rule.ruleCode,
+      skillCode: rule.skillCode,
+      skillName: rule.skillName,
+      bonusValue,
+      activeCount,
+      targetKeys,
+    });
+  }
+
+  return {
+    panelStatBonuses,
     matchedRules,
   };
 }
@@ -788,7 +1140,15 @@ function buildDefaultTargets(
   domain: SimulatorCharacterDomain
 ): DamageEngineTargetInput[] {
   if (request.targets && request.targets.length > 0) {
-    return request.targets;
+    return request.targets.map((target) => ({
+      ...target,
+      magicDefenseResult:
+        request.targetMagicDefenseResult ?? target.magicDefenseResult,
+      defenseState: request.targetDefenseState ?? target.defenseState,
+      specialMagicDamageReductionFactor:
+        request.specialMagicDamageReductionFactor ??
+        target.specialMagicDamageReductionFactor,
+    }));
   }
 
   const fallbackTarget = domain.battleContext;
@@ -807,6 +1167,13 @@ function buildDefaultTargets(
       speed: toFiniteNumber(request.targetSpeed, fallbackTarget?.targetSpeed ?? 0),
       shenmuValue: request.shenmuValue ?? fallbackTarget?.shenmuValue,
       magicResult: request.magicResult ?? fallbackTarget?.magicResult,
+      magicDefenseResult:
+        request.targetMagicDefenseResult ??
+        fallbackTarget?.targetMagicDefenseResult,
+      defenseState: request.targetDefenseState ?? fallbackTarget?.targetDefenseState,
+      specialMagicDamageReductionFactor:
+        request.specialMagicDamageReductionFactor ??
+        fallbackTarget?.specialMagicDamageReductionFactor,
     },
   ];
 }
@@ -851,7 +1218,7 @@ function normalizePercentValue(value: number) {
     return 0;
   }
 
-  return Math.abs(value) > 1 ? value / 100 : value;
+  return Math.abs(value) >= 1 ? value / 100 : value;
 }
 
 function collectEquipmentEffectTexts(
@@ -904,6 +1271,29 @@ function parseSpellDamagePercentFromText(text: string) {
   }
 
   return normalizePercentValue(toFiniteNumber(match[2], 0));
+}
+
+function parseMagicUpperPercentFromText(text: string) {
+  const match = text.match(/魔法(?:值)?上限[^\d]{0,8}([+-]?\d+(?:\.\d+)?)\s*%/i);
+  if (!match) {
+    return null;
+  }
+
+  return normalizePercentValue(toFiniteNumber(match[1], 0));
+}
+
+function parseElementOvercomePercentFromText(text: string) {
+  const match = text.match(
+    /(金|木|水|火|土)属性(?:克制)?效果[^\d]{0,8}([+-]?\d+(?:\.\d+)?)\s*%/i
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    element: match[1],
+    value: normalizePercentValue(toFiniteNumber(match[2], 0)),
+  };
 }
 
 function resolveEquipmentEffectModifiers(domain: SimulatorCharacterDomain) {
@@ -998,6 +1388,30 @@ function resolveEquipmentEffectModifiers(domain: SimulatorCharacterDomain) {
           label: text,
         });
       }
+
+      const magicUpperPercent = parseMagicUpperPercentFromText(text);
+      if (magicUpperPercent !== null) {
+        pushModifier({
+          equipmentId: equipment.id,
+          equipmentName: equipment.name,
+          code: 'magic_upper_percent',
+          source: 'effect_text',
+          value: magicUpperPercent,
+          label: text,
+        });
+      }
+
+      const elementOvercomePercent = parseElementOvercomePercentFromText(text);
+      if (elementOvercomePercent !== null) {
+        pushModifier({
+          equipmentId: equipment.id,
+          equipmentName: equipment.name,
+          code: 'element_overcome_percent',
+          source: elementOvercomePercent.element,
+          value: elementOvercomePercent.value,
+          label: text,
+        });
+      }
     }
   }
 
@@ -1035,6 +1449,8 @@ export function calculateDamageFromRuleSet({
     domain,
   };
   const starBonuses = resolveStarBonuses(domain);
+  const ornamentSetBonuses = resolveOrnamentSetBonuses(domain, ruleSet);
+  const regularSetBonuses = resolveRegularSetBonuses(domain, ruleSet);
   const equipmentEffectModifiers = resolveEquipmentEffectModifiers(domain);
   const spellIgnorePercent = Math.max(
     0,
@@ -1048,6 +1464,15 @@ export function calculateDamageFromRuleSet({
   const spellDamagePercent = equipmentEffectModifiers
     .filter((item) => item.code === 'spell_damage_percent')
     .reduce((sum, item) => sum + item.value, 0);
+  const activeBonusRuleCodes = request.activeBonusRuleCodes ?? [];
+  const derivedBonusRules = deriveActiveBonusRuleCodes({
+    domain,
+    ruleSet,
+    school: resolvedSchool,
+    roleType: domain.roleType,
+    explicitRuleCodes: activeBonusRuleCodes,
+  });
+  const resolvedActiveBonusRuleCodes = derivedBonusRules.derivedCodes;
   const activePanelStatBonusModifiers = findActiveScopedModifiersByDomain({
     ...modifierScope,
     modifierDomain: 'panel_stat_bonus',
@@ -1059,10 +1484,21 @@ export function calculateDamageFromRuleSet({
     totals[statKey] = (totals[statKey] ?? 0) + toFiniteNumber(modifier.value);
     return totals;
   }, {});
+  const activePanelStatSkillBonuses = resolvePanelStatBonusesFromSkillBonuses(
+    skill.skillCode,
+    ruleSet,
+    resolvedActiveBonusRuleCodes
+  );
   const panelStatBonuses = {
     ...starBonuses.panelStatBonuses,
+    ...ornamentSetBonuses.panelStatBonuses,
   };
   for (const [key, value] of Object.entries(rulePanelStatBonuses)) {
+    panelStatBonuses[key] = (panelStatBonuses[key] ?? 0) + value;
+  }
+  for (const [key, value] of Object.entries(
+    activePanelStatSkillBonuses.panelStatBonuses
+  )) {
     panelStatBonuses[key] = (panelStatBonuses[key] ?? 0) + value;
   }
 
@@ -1073,19 +1509,21 @@ export function calculateDamageFromRuleSet({
   for (const [key, value] of Object.entries(starBonuses.attributeSourceBonuses)) {
     ruleInputValues[key] = (ruleInputValues[key] ?? 0) + value;
   }
+  for (const [key, value] of Object.entries(
+    ornamentSetBonuses.attributeSourceBonuses
+  )) {
+    ruleInputValues[key] = (ruleInputValues[key] ?? 0) + value;
+  }
+  for (const [key, value] of Object.entries(
+    regularSetBonuses.attributeSourceBonuses
+  )) {
+    ruleInputValues[key] = (ruleInputValues[key] ?? 0) + value;
+  }
   const derivedStats = computeAttributeConversions(
     ruleInputValues,
     ruleSet.attributeConversions
   );
   const equipmentTotals = domain.equipmentAttributeTotals;
-  const activeBonusRuleCodes = request.activeBonusRuleCodes ?? [];
-  const resolvedActiveBonusRuleCodes = deriveActiveBonusRuleCodes({
-    domain,
-    ruleSet,
-    school: resolvedSchool,
-    roleType: domain.roleType,
-    explicitRuleCodes: activeBonusRuleCodes,
-  });
   const skillBonus = resolveSkillBonus(
     skill.skillCode,
     ruleSet,
@@ -1098,17 +1536,35 @@ export function calculateDamageFromRuleSet({
   const targetCount = clampTargetCount(
     request.targetCount ?? domain.battleContext?.splitTargetCount
   );
+  const splitFactorRule = findScopedModifierByDomain({
+    ...modifierScope,
+    modifierDomain: 'split_factor',
+  });
+  const splitFactorLookupKey =
+    splitFactorRule?.modifierType === 'lookup' &&
+    typeof splitFactorRule.valueLookup[String(targetCount)] === 'number'
+      ? targetCount
+      : targetCount >= 5
+        ? '5+'
+        : targetCount;
   const splitFactor = resolveLookupValue(
-    findScopedModifierByDomain({
-      ...modifierScope,
-      modifierDomain: 'split_factor',
-    }),
-    targetCount >= 5 ? '5+' : targetCount,
+    splitFactorRule,
+    splitFactorLookupKey,
     Math.max(0.5, 1 - targetCount * 0.1)
   );
   const formationFactor = toFiniteNumber(
     request.formationFactor,
-    DEFAULT_SELF_FORMATION_FACTOR
+    resolveFormationBaseDamageFactor(
+      request.selfFormation || domain.battleContext?.selfFormation
+    ) || DEFAULT_SELF_FORMATION_FACTOR
+  );
+  const derivedFormationCounterState = resolveFormationCounterState({
+    selfFormation: request.selfFormation || domain.battleContext?.selfFormation,
+    targetFormation:
+      request.targetFormation || domain.battleContext?.targetFormation,
+  });
+  const formationSpeedFactor = resolveFormationSpeedFactor(
+    request.selfFormation || domain.battleContext?.selfFormation
   );
   const formationCounterFactor = resolveLookupValue(
     findScopedModifierByDomain({
@@ -1117,22 +1573,55 @@ export function calculateDamageFromRuleSet({
     }),
     request.formationCounterState ||
       domain.battleContext?.formationCounterState ||
+      derivedFormationCounterState ||
       DEFAULT_FORMATION_COUNTER_STATE,
     1
   );
-  const elementFactor = resolveLookupValue(
-    findScopedModifierByDomain({
-      ...modifierScope,
-      modifierDomain: 'element_relation',
-    }),
+  const derivedElementRelation = resolveElementRelationFromElements(
+    request.selfElement || domain.battleContext?.selfElement,
+    request.targetElement || domain.battleContext?.targetElement
+  );
+  const resolvedElementRelation =
     request.elementRelation ||
-      domain.battleContext?.elementRelation ||
-      '无克/普通',
+    domain.battleContext?.elementRelation ||
+    derivedElementRelation ||
+    '无克/普通';
+  const resolvedSelfElement = request.selfElement || domain.battleContext?.selfElement;
+  const magicUpperPercent = equipmentEffectModifiers
+    .filter((item) => item.code === 'magic_upper_percent')
+    .reduce((sum, item) => sum + item.value, 0);
+  const elementOvercomePercent =
+    resolvedElementRelation === '克制'
+      ? equipmentEffectModifiers
+          .filter(
+            (item) =>
+              item.code === 'element_overcome_percent' &&
+              (!item.source || item.source === resolvedSelfElement)
+          )
+          .reduce((sum, item) => sum + item.value, 0)
+      : 0;
+  const elementFactor =
+    resolveLookupValue(
+      findScopedModifierByDomain({
+        ...modifierScope,
+        modifierDomain: 'element_relation',
+      }),
+      resolvedElementRelation,
+      1
+    ) + elementOvercomePercent;
+  const transformCardFactor = resolveTransformCardFactor(request, ruleSet);
+  const luohanFactor = clampRatio(request.luohanFactor, 1);
+  const damageVarianceFactor = clampMin(request.damageVarianceFactor, 1, 0);
+  const criticalChance = clampRatio(request.criticalChance, 0);
+  const criticalExpectationMultiplier = clampMin(
+    request.criticalExpectationMultiplier,
+    2,
     1
   );
-  const transformCardFactor = resolveTransformCardFactor(request, ruleSet);
   const attackerMagicCultivation = getCultivationLevel(domain, 'magicAttack');
-  const equipmentMagicResult = toFiniteNumber(equipmentTotals.magicResult);
+  const equipmentMagicResult =
+    toFiniteNumber(equipmentTotals.magicResult) +
+    toFiniteNumber(panelStatBonuses.magicResult);
   const hasPanelMagicDamageOverride =
     typeof request.panelMagicDamageOverride === 'number' &&
     Number.isFinite(request.panelMagicDamageOverride);
@@ -1148,6 +1637,7 @@ export function calculateDamageFromRuleSet({
   const panelMagicDamageBeforePercent =
     ruleDerivedMagicDamage +
     equipmentMagicDamageFlat +
+    toFiniteNumber(panelStatBonuses.spirit) +
     toFiniteNumber(panelStatBonuses.magicDamage);
   const panelMagicDamageAfterPercent =
     panelMagicDamageBeforePercent * (1 + spellDamagePercent);
@@ -1215,52 +1705,66 @@ export function calculateDamageFromRuleSet({
     equipmentTotals,
     'hp',
     profile.hp
-  );
+  ) + toFiniteNumber(panelStatBonuses.hp);
   const resolvedMp = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'mp',
     profile.mp
   );
+  const resolvedMpAfterPercent =
+    (resolvedMp + toFiniteNumber(panelStatBonuses.mp)) * (1 + magicUpperPercent);
   const resolvedMagicDefense = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'magicDefense',
     profile.magicDefense
-  ) + toFiniteNumber(panelStatBonuses.magicDefense);
+  ) +
+    toFiniteNumber(panelStatBonuses.spirit) +
+    toFiniteNumber(panelStatBonuses.magicDefense);
   const resolvedHit = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'hit',
     profile.hit
-  );
+  ) + toFiniteNumber(panelStatBonuses.hit);
   const resolvedDamage = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'damage',
     profile.damage
-  );
+  ) + toFiniteNumber(panelStatBonuses.damage);
   const resolvedDefense = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'defense',
     profile.defense
-  );
-  const resolvedSpeed = resolveRuleDerivedPanelStat(
+  ) + toFiniteNumber(panelStatBonuses.defense);
+  const resolvedSpeedBeforeFormation = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'speed',
     profile.speed
-  );
+  ) + toFiniteNumber(panelStatBonuses.speed);
+  const resolvedSpeed = resolvedSpeedBeforeFormation * formationSpeedFactor;
   const resolvedDodge = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'dodge',
     domain.profile.dodge
-  );
+  ) + toFiniteNumber(panelStatBonuses.dodge);
   const activeSkillDamageAddendModifiers = findActiveScopedModifiersByDomain({
     ...modifierScope,
     modifierDomain: 'skill_damage_addend',
+  });
+  const activeOrnamentSkillDamageAddends =
+    ornamentSetBonuses.skillDamageAddends.filter(
+      (item) => !item.skillCode || item.skillCode === skill.skillCode
+    );
+  const weather = request.weather || domain.battleContext?.weather || '';
+  const weatherFactor = resolveWeatherFactor({
+    school: resolvedSchool,
+    weather,
   });
 
   const targets = buildDefaultTargets(request, domain).map((target, index) => {
@@ -1279,13 +1783,22 @@ export function calculateDamageFromRuleSet({
     const targetMagicDefenseCultivation = toFiniteNumber(
       target.magicDefenseCultivation
     );
+    const targetMagicDefenseResult = toFiniteNumber(target.magicDefenseResult);
     const targetSpeed = toFiniteNumber(target.speed);
+    const targetDefenseState = target.defenseState || '';
+    const targetDefenseFactor = resolveMagicTargetDefenseFactor(
+      targetDefenseState
+    );
+    const specialMagicDamageReductionFactor = clampRatio(
+      target.specialMagicDamageReductionFactor,
+      domain.battleContext?.specialMagicDamageReductionFactor ?? 1
+    );
     const actualTargetMagicDefense = targetMagicDefense * (1 - spellIgnorePercent);
     const cultivationDiff =
       attackerMagicCultivation - targetMagicDefenseCultivation;
     const combinedFormationFactor = formationFactor * formationCounterFactor;
-    const conditionalDamageAddends = activeSkillDamageAddendModifiers.map(
-      (modifier) => {
+    const conditionalDamageAddends = [
+      ...activeSkillDamageAddendModifiers.map((modifier) => {
         const sourceKey = modifier.sourceKey || modifier.modifierKey;
         const sourceValue =
           sourceKey === 'targetSpeed'
@@ -1295,8 +1808,11 @@ export function calculateDamageFromRuleSet({
               : 0;
 
         return {
+          sourceType: 'rule_modifier',
           modifierId: modifier.id,
           modifierKey: modifier.modifierKey,
+          setName: null,
+          tier: null,
           sourceKey,
           sourceValue: roundForBreakdown(sourceValue, 4),
           contribution: roundForBreakdown(
@@ -1307,14 +1823,39 @@ export function calculateDamageFromRuleSet({
             4
           ),
         };
-      }
-    );
+      }),
+      ...activeOrnamentSkillDamageAddends.map((effect) => {
+        const sourceKey = effect.sourceKey || 'fixed';
+        const sourceValue =
+          sourceKey === 'targetSpeed'
+            ? targetSpeed
+            : sourceKey === 'manaCost'
+              ? resolvedSkillManaCost
+              : 0;
+
+        return {
+          sourceType: 'ornament_set',
+          modifierId: null,
+          modifierKey: effect.label || effect.type,
+          setName: effect.setName,
+          tier: effect.tier,
+          sourceKey,
+          sourceValue: roundForBreakdown(sourceValue, 4),
+          contribution: roundForBreakdown(
+            effect.modifierType === 'multiplier'
+              ? sourceValue * toFiniteNumber(effect.value)
+              : toFiniteNumber(effect.value),
+            4
+          ),
+        };
+      }),
+    ];
     const conditionalDamageAddend = conditionalDamageAddends.reduce(
       (sum, item) => sum + item.contribution,
       0
     );
 
-    const rawDamage =
+    const nonResultDamageBeforeMitigation =
       (baseTerm + panelMagicDamage - actualTargetMagicDefense) *
         combinedFormationFactor *
         transformCardFactor *
@@ -1323,11 +1864,25 @@ export function calculateDamageFromRuleSet({
         (1 + cultivationDiff * 0.02) +
       cultivationDiff * 5 +
       shenmuValue +
-      magicResult +
       conditionalDamageAddend;
+    const nonResultDamageBeforeLuohan =
+      nonResultDamageBeforeMitigation *
+      weatherFactor *
+      targetDefenseFactor *
+      specialMagicDamageReductionFactor;
+    const nonResultDamage = nonResultDamageBeforeLuohan * luohanFactor;
+    const rawDamageBeforeVariance = nonResultDamage + magicResult;
+    const rawDamageAfterVariance = rawDamageBeforeVariance * damageVarianceFactor;
+    const rawDamage = rawDamageAfterVariance - targetMagicDefenseResult;
 
     const damage = Math.max(1, Math.round(rawDamage));
     const critDamage = Math.max(1, Math.round(damage * 1.5));
+    const expectedDamage =
+      criticalChance > 0
+        ? Number(
+            (damage * (1 + criticalChance * (criticalExpectationMultiplier - 1))).toFixed(2)
+          )
+        : undefined;
 
     return {
       targetName,
@@ -1335,6 +1890,11 @@ export function calculateDamageFromRuleSet({
       critDamage,
       totalDamage: damage * targetCount,
       totalCritDamage: critDamage * targetCount,
+      expectedDamage,
+      expectedTotalDamage:
+        expectedDamage === undefined
+          ? undefined
+          : Number((expectedDamage * targetCount).toFixed(2)),
       breakdown: {
         ruleVersionId: ruleSet.version.id,
         ruleVersionCode: ruleSet.version.versionCode,
@@ -1357,6 +1917,10 @@ export function calculateDamageFromRuleSet({
           bonusType: item.bonusType,
           bonusValue: item.bonusValue,
         })),
+        ignoredBonusRules: derivedBonusRules.ignoredRules.map((item) => ({
+          ...item,
+          reasonLabel: '超出上限失效',
+        })),
         activeBonusRuleCodes: resolvedActiveBonusRuleCodes,
         finalSkillLevel,
         baseTerm: Number(baseTerm.toFixed(2)),
@@ -1372,23 +1936,51 @@ export function calculateDamageFromRuleSet({
         actualTargetMagicDefense: roundForBreakdown(actualTargetMagicDefense, 4),
         spellIgnorePercent: roundForBreakdown(spellIgnorePercent, 4),
         spellDamagePercent: roundForBreakdown(spellDamagePercent, 4),
+        magicUpperPercent: roundForBreakdown(magicUpperPercent, 4),
+        elementOvercomePercent: roundForBreakdown(elementOvercomePercent, 4),
         targetSpeed,
         targetMagicDefenseCultivation,
         resolvedSkillManaCost,
         cultivationDiff,
         formationFactor,
+        formationSpeedFactor: roundForBreakdown(formationSpeedFactor, 4),
         formationCounterFactor,
         combinedFormationFactor,
         transformCardFactor,
+        luohanFactor,
+        damageVarianceFactor,
         elementFactor,
         splitFactor,
+        weather,
+        weatherFactor,
         shenmuValue,
         magicResult,
+        targetMagicDefenseResult,
+        targetDefenseState,
+        targetDefenseFactor,
+        specialMagicDamageReductionFactor,
+        criticalChance: roundForBreakdown(criticalChance, 4),
+        criticalExpectationMultiplier: roundForBreakdown(
+          criticalExpectationMultiplier,
+          4
+        ),
         conditionalDamageAddend: roundForBreakdown(conditionalDamageAddend, 4),
         conditionalDamageAddends,
+        nonResultDamageBeforeMitigation: roundForBreakdown(
+          nonResultDamageBeforeMitigation,
+          4
+        ),
+        nonResultDamageBeforeLuohan: roundForBreakdown(
+          nonResultDamageBeforeLuohan,
+          4
+        ),
+        nonResultDamage: roundForBreakdown(nonResultDamage, 4),
+        rawDamageBeforeVariance: roundForBreakdown(rawDamageBeforeVariance, 4),
+        rawDamageAfterVariance: roundForBreakdown(rawDamageAfterVariance, 4),
         rawDamage: Number(rawDamage.toFixed(2)),
         finalDamage: damage,
         critDamage,
+        expectedDamage,
         derivedStatsFromRules: {
           hp: Number((derivedStats.totals.hp ?? 0).toFixed(2)),
           mp: Number((derivedStats.totals.mp ?? 0).toFixed(2)),
@@ -1417,7 +2009,7 @@ export function calculateDamageFromRuleSet({
         ),
         ruleResolvedPanelStats: {
           hp: roundForBreakdown(resolvedHp),
-          mp: roundForBreakdown(resolvedMp),
+          mp: roundForBreakdown(resolvedMpAfterPercent),
           spirit: roundForBreakdown(spiritAfterRules, 4),
           hit: roundForBreakdown(resolvedHit),
           damage: roundForBreakdown(resolvedDamage),
@@ -1425,6 +2017,7 @@ export function calculateDamageFromRuleSet({
           defense: roundForBreakdown(resolvedDefense),
           magicDefense: roundForBreakdown(resolvedMagicDefense),
           speed: roundForBreakdown(resolvedSpeed),
+          speedBeforeFormation: roundForBreakdown(resolvedSpeedBeforeFormation),
           dodge: roundForBreakdown(resolvedDodge),
         },
         activePanelStatBonusModifiers: activePanelStatBonusModifiers.map(
@@ -1433,6 +2026,16 @@ export function calculateDamageFromRuleSet({
             modifierKey: modifier.modifierKey,
             targetKey: modifier.targetKey,
             value: modifier.value,
+          })
+        ),
+        activePanelStatBonusRules: activePanelStatSkillBonuses.matchedRules.map(
+          (rule) => ({
+            ruleCode: rule.ruleCode,
+            skillCode: rule.skillCode,
+            skillName: rule.skillName,
+            bonusValue: roundForBreakdown(rule.bonusValue, 4),
+            activeCount: rule.activeCount,
+            targetKeys: rule.targetKeys,
           })
         ),
         starBonuses: {
@@ -1456,6 +2059,52 @@ export function calculateDamageFromRuleSet({
           starAlignmentBonuses: starBonuses.starAlignmentBonuses.map((item) => ({
             ...item,
             value: roundForBreakdown(item.value, 4),
+          })),
+        },
+        ornamentSetBonuses: {
+          panelStatBonuses: Object.fromEntries(
+            Object.entries(ornamentSetBonuses.panelStatBonuses).map(
+              ([key, value]) => [key, roundForBreakdown(value, 4)]
+            )
+          ),
+          attributeSourceBonuses: Object.fromEntries(
+            Object.entries(ornamentSetBonuses.attributeSourceBonuses).map(
+              ([key, value]) => [key, roundForBreakdown(value, 4)]
+            )
+          ),
+          activeSets: ornamentSetBonuses.activeSets.map((item) => ({
+            setName: item.setName,
+            slotCount: item.slotCount,
+            totalLevel: item.totalLevel,
+            tier: item.tier,
+            matchedRule: item.matchedRule,
+            matchedTier: item.matchedTier,
+            slots: item.slots,
+            effects: item.effects.map((effect) => ({
+              type: effect.type,
+              targetKey: effect.targetKey,
+              value: roundForBreakdown(effect.value, 4),
+              skillCode: effect.skillCode,
+              sourceKey: effect.sourceKey,
+              modifierType: effect.modifierType,
+              label: effect.label,
+            })),
+          })),
+        },
+        regularSetBonuses: {
+          attributeSourceBonuses: Object.fromEntries(
+            Object.entries(regularSetBonuses.attributeSourceBonuses).map(
+              ([key, value]) => [key, roundForBreakdown(value, 4)]
+            )
+          ),
+          activeSets: regularSetBonuses.activeSets.map((item) => ({
+            setName: item.setName,
+            count: item.count,
+            tier: item.tier,
+            effects: item.effects.map((effect) => ({
+              targetKey: effect.targetKey,
+              value: roundForBreakdown(effect.value, 4),
+            })),
           })),
         },
         equipmentEffectModifiers: equipmentEffectModifiers.map((modifier) => ({
@@ -1482,7 +2131,7 @@ export function calculateDamageFromRuleSet({
     },
     panelStats: {
       hp: resolvedHp,
-      mp: resolvedMp,
+      mp: resolvedMpAfterPercent,
       hit: resolvedHit,
       damage: resolvedDamage,
       magicDamage: panelMagicDamage,

@@ -7,6 +7,8 @@ import { Check, Edit2, Eye, Save, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
+import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
 import {
   getSimulatorEquipmentFieldLabel,
   SIMULATOR_CHANGE_TRACKED_FIELDS,
@@ -138,6 +140,9 @@ export function PendingEquipmentDetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<Equipment>(item.equipment);
+  const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'jade_attribute_pool',
+  ]);
 
   useEffect(() => {
     setDraft(item.equipment);
@@ -153,6 +158,49 @@ export function PendingEquipmentDetailModal({
         value: draft.stats?.[key] ?? draft.baseStats?.[key] ?? 0,
       })),
     [draft]
+  );
+  const jadeAttributePool = useMemo(
+    () =>
+      draft.type === 'jade'
+        ? resolveJadeAttributePoolForSlot({
+            value: equipmentExtensionConfigs.find(
+              (item) => item.configKey === 'jade_attribute_pool'
+            )?.value,
+            slot: draft.slot,
+          })
+        : null,
+    [draft.slot, draft.type, equipmentExtensionConfigs]
+  );
+  const disallowedJadeStatKeys = useMemo(
+    () =>
+      draft.type === 'jade' &&
+      jadeAttributePool &&
+      jadeAttributePool.allowedStatKeys.length > 0
+        ? Object.keys(draft.stats || {}).filter(
+            (key) =>
+              Boolean(
+                Number(
+                  (draft.stats as Record<string, number | undefined> | undefined)?.[
+                    key
+                  ]
+                )
+              ) && !jadeAttributePool.allowedStatKeys.includes(key)
+          )
+        : [],
+    [draft.stats, draft.type, jadeAttributePool]
+  );
+  const disallowedJadeModifierCodes = useMemo(
+    () =>
+      draft.type === 'jade' &&
+      jadeAttributePool &&
+      jadeAttributePool.allowedModifierCodes.length > 0
+        ? (draft.effectModifiers ?? [])
+            .map((item) => item.code)
+            .filter(
+              (code) => !jadeAttributePool.allowedModifierCodes.includes(code)
+            )
+        : [],
+    [draft.effectModifiers, draft.type, jadeAttributePool]
   );
 
   const reviewWarnings = useMemo(() => {
@@ -183,8 +231,26 @@ export function PendingEquipmentDetailModal({
       warnings.push('售价还没填，后续无法做性价比分析。');
     }
 
+    if (draft.type === 'jade' && jadeAttributePool) {
+      if (disallowedJadeStatKeys.length > 0) {
+        warnings.push(
+          `当前玉魄有 ${disallowedJadeStatKeys.length} 个固定值词条不在槽位属性池内：${disallowedJadeStatKeys
+            .map((key) => getStatName(key))
+            .join(' / ')}。`
+        );
+      }
+
+      if (disallowedJadeModifierCodes.length > 0) {
+        warnings.push(
+          `当前玉魄有 ${disallowedJadeModifierCodes.length} 个百分比词条不在槽位属性池内：${disallowedJadeModifierCodes.join(
+            ' / '
+          )}。`
+        );
+      }
+    }
+
     return [...warnings, ...buildConsistencyWarnings(draft)];
-  }, [draft]);
+  }, [disallowedJadeModifierCodes, disallowedJadeStatKeys, draft, jadeAttributePool]);
 
   const suggestedChecks = useMemo(() => {
     const suggestions: string[] = [];
@@ -212,8 +278,26 @@ export function PendingEquipmentDetailModal({
       suggestions.push('灵饰建议补槽位，常见值是 1-4。');
     }
 
+    if (draft.type === 'jade' && jadeAttributePool) {
+      if (jadeAttributePool.allowedStatKeys.length > 0) {
+        suggestions.push(
+          `当前玉魄槽位推荐固定值词条：${jadeAttributePool.allowedStatKeys
+            .map((key) => getStatName(key))
+            .join(' / ')}`
+        );
+      }
+
+      if (jadeAttributePool.allowedModifierCodes.length > 0) {
+        suggestions.push(
+          `当前玉魄槽位允许百分比词条：${jadeAttributePool.allowedModifierCodes.join(
+            ' / '
+          )}`
+        );
+      }
+    }
+
     return suggestions;
-  }, [draft]);
+  }, [draft, jadeAttributePool]);
 
   const changedFields = useMemo(() => {
     const scalarChanges = SIMULATOR_CHANGE_TRACKED_FIELDS.filter(
@@ -695,6 +779,38 @@ export function PendingEquipmentDetailModal({
                   ))}
                 </ul>
               </div>
+
+              {draft.type === 'jade' && jadeAttributePool && (
+                <div className="rounded-lg border border-cyan-700/30 bg-cyan-950/20 p-4">
+                  <div className="mb-3 text-sm font-bold text-cyan-300">
+                    玉魄属性池
+                  </div>
+                  {jadeAttributePool.label && (
+                    <div className="text-xs text-cyan-100">
+                      {jadeAttributePool.label}
+                    </div>
+                  )}
+                  {jadeAttributePool.description && (
+                    <div className="mt-2 text-xs leading-relaxed text-cyan-100/80">
+                      {jadeAttributePool.description}
+                    </div>
+                  )}
+                  {jadeAttributePool.allowedStatKeys.length > 0 && (
+                    <div className="mt-3 text-xs leading-relaxed text-cyan-100/90">
+                      固定值词条：{jadeAttributePool.allowedStatKeys
+                        .map((key) => getStatName(key))
+                        .join(' / ')}
+                    </div>
+                  )}
+                  {jadeAttributePool.allowedModifierCodes.length > 0 && (
+                    <div className="mt-2 text-xs leading-relaxed text-cyan-100/90">
+                      百分比词条：{jadeAttributePool.allowedModifierCodes.join(
+                        ' / '
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="rounded-lg border border-yellow-800/30 bg-slate-950/40 p-4">
                 <div className="mb-3 text-sm font-bold text-yellow-400">

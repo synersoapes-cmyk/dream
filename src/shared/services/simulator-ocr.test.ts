@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   applySimulatorOcrDictionaryToEquipment,
+  hasRecognizedEquipmentFields,
+  hasRecognizedProfileFields,
   mergeRecognizedProfileWithBundle,
   normalizeRecognizedProfile,
   normalizeRecognizedEquipment,
@@ -112,6 +114,48 @@ test('normalizeRecognizedEquipment clamps jade slot to supported range 1-2', () 
   assert.equal(equipment.slot, 2);
 });
 
+test('normalizeRecognizedEquipment sums parenthesized refine values in stats', () => {
+  const equipment = normalizeRecognizedEquipment({
+    name: '测试衣服',
+    type: 'armor',
+    mainStat: '防御 +180(+12)',
+    stats: {
+      defense: '防御 +180(+12)',
+    },
+  });
+
+  assert.equal(equipment.stats.defense, 192);
+});
+
+test('normalizeRecognizedEquipment upgrades numeric stats from mainStat refine text', () => {
+  const equipment = normalizeRecognizedEquipment({
+    name: '测试衣服',
+    type: 'armor',
+    mainStat: '防御 +180(+12)',
+    stats: {
+      defense: 180,
+    },
+    forgeLevel: 12,
+  });
+
+  assert.equal(equipment.stats.defense, 192);
+});
+
+test('normalizeRecognizedEquipment applies separate refine highlight onto base stat', () => {
+  const equipment = normalizeRecognizedEquipment({
+    name: '测试衣服',
+    type: 'armor',
+    mainStat: '防御 +180',
+    highlights: ['熔炼 +12 防御'],
+    stats: {
+      defense: 180,
+    },
+    forgeLevel: 12,
+  });
+
+  assert.equal(equipment.stats.defense, 192);
+});
+
 test('applySimulatorOcrDictionaryToEquipment normalizes name and set highlights', () => {
   const entries: SimulatorOcrDictionary[] = [
     {
@@ -202,6 +246,21 @@ test('normalizeRecognizedProfile maps chinese aliases and nested payloads', () =
   });
 });
 
+test('recognized game component guards reject empty OCR payloads', () => {
+  assert.equal(hasRecognizedProfileFields(normalizeRecognizedProfile({})), false);
+  assert.equal(hasRecognizedEquipmentFields({}), false);
+  assert.equal(
+    hasRecognizedEquipmentFields({
+      type: '戒指',
+      mainStat: '防御 +28',
+      stats: {
+        defense: '28',
+      },
+    }),
+    true
+  );
+});
+
 test('mergeRecognizedProfileWithBundle preserves current values for missing fields', () => {
   const merged = mergeRecognizedProfileWithBundle(createBundle(), {
     level: 175,
@@ -214,6 +273,7 @@ test('mergeRecognizedProfileWithBundle preserves current values for missing fiel
     faction: '龙宫',
     physique: 40,
     magic: 230,
+    potentialPoints: 0,
     strength: 15,
     endurance: 35,
     agility: 20,

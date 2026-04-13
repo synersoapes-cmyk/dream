@@ -163,3 +163,51 @@ export function buildManualTargetsFromTemplates(
     };
   });
 }
+
+export function mergeDungeonDatabases(
+  primary: Dungeon[],
+  fallback: Dungeon[]
+): Dungeon[] {
+  const merged = new Map<string, Dungeon>();
+
+  for (const dungeon of primary) {
+    merged.set(dungeon.name, {
+      ...dungeon,
+      targets: [...dungeon.targets],
+    });
+  }
+
+  for (const dungeon of fallback) {
+    const existing = merged.get(dungeon.name);
+    if (!existing) {
+      merged.set(dungeon.name, {
+        ...dungeon,
+        targets: [...dungeon.targets],
+      });
+      continue;
+    }
+
+    const seenTargetNames = new Set(
+      existing.targets.map((target) => target.name.trim())
+    );
+    const mergedTargets = [...existing.targets];
+    for (const target of dungeon.targets) {
+      if (!seenTargetNames.has(target.name.trim())) {
+        mergedTargets.push({ ...target });
+      }
+    }
+
+    merged.set(dungeon.name, {
+      ...existing,
+      level: Math.max(existing.level, dungeon.level),
+      difficulty:
+        existing.difficulty === 'nightmare' ? existing.difficulty : dungeon.difficulty,
+      description: existing.description || dungeon.description,
+      targets: mergedTargets,
+    });
+  }
+
+  return Array.from(merged.values()).sort((left, right) =>
+    left.name.localeCompare(right.name, 'zh-CN')
+  );
+}

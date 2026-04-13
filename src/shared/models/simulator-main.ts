@@ -40,6 +40,13 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { createPerfTimer } from '@/shared/lib/perf';
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
+import {
+  resolveBattleContextDerivedFields,
+} from '@/shared/lib/simulator-battle-context';
+import {
+  countEquipmentGemLevelTotal,
+  parseEquipmentGemstones,
+} from '@/shared/lib/simulator-equipment-meta';
 import { getRequiredSimulatorSeedConfig } from '@/shared/models/simulator-template';
 
 import {
@@ -440,6 +447,11 @@ const EQUIPMENT_PLAN_NOTES_KEY = 'equipmentPlan';
 const MANUAL_TARGETS_NOTES_KEY = 'manualTargets';
 const COMBAT_TAB_NOTES_KEY = 'combatTab';
 const SELECTED_DUNGEON_IDS_NOTES_KEY = 'selectedDungeonIds';
+const WEATHER_NOTES_KEY = 'weather';
+const TARGET_DEFENSE_STATE_NOTES_KEY = 'targetDefenseState';
+const TARGET_MAGIC_DEFENSE_RESULT_NOTES_KEY = 'targetMagicDefenseResult';
+const SPECIAL_MAGIC_DAMAGE_REDUCTION_FACTOR_NOTES_KEY =
+  'specialMagicDamageReductionFactor';
 const EQUIPMENT_ROLLBACK_SNAPSHOT_SOURCE = 'equipment_backup';
 async function loadEnabledStarResonanceRules() {
   const rows = await db()
@@ -614,12 +626,39 @@ function sanitizeSelectedDungeonIds(value: unknown) {
   return Array.from(new Set(ids)).slice(0, 5);
 }
 
+function sanitizeBattleWeather(value: unknown) {
+  return typeof value === 'string' ? value.trim().slice(0, 20) : '';
+}
+
+function sanitizeTargetDefenseState(value: unknown) {
+  return typeof value === 'string' ? value.trim().slice(0, 20) : '';
+}
+
+function sanitizeNonNegativeNumber(value: unknown, fallback = 0) {
+  return Math.max(0, toFiniteNumber(value, fallback));
+}
+
+function sanitizeDamageReductionFactor(value: unknown, fallback = 1) {
+  const parsed = toFiniteNumber(value, fallback);
+  if (parsed <= 0) {
+    return 0;
+  }
+  if (parsed >= 1) {
+    return 1;
+  }
+  return parsed;
+}
+
 function buildBattleContextNotesJson(
   currentNotesJson: string | null | undefined,
   patch: {
     manualTargets?: unknown[];
     combatTab?: 'manual' | 'dungeon';
     selectedDungeonIds?: unknown[];
+    weather?: unknown;
+    targetDefenseState?: unknown;
+    targetMagicDefenseResult?: unknown;
+    specialMagicDamageReductionFactor?: unknown;
   }
 ) {
   const notes = parseJsonObject(removeEquipmentPlanFromNotesJson(currentNotesJson));
@@ -642,6 +681,30 @@ function buildBattleContextNotesJson(
     notes[SELECTED_DUNGEON_IDS_NOTES_KEY] = sanitizeSelectedDungeonIds(
       patch.selectedDungeonIds
     );
+  }
+
+  if (patch.weather !== undefined) {
+    notes[WEATHER_NOTES_KEY] = sanitizeBattleWeather(patch.weather);
+  }
+
+  if (patch.targetDefenseState !== undefined) {
+    notes[TARGET_DEFENSE_STATE_NOTES_KEY] = sanitizeTargetDefenseState(
+      patch.targetDefenseState
+    );
+  }
+
+  if (patch.targetMagicDefenseResult !== undefined) {
+    notes[TARGET_MAGIC_DEFENSE_RESULT_NOTES_KEY] = sanitizeNonNegativeNumber(
+      patch.targetMagicDefenseResult
+    );
+  }
+
+  if (patch.specialMagicDamageReductionFactor !== undefined) {
+    notes[SPECIAL_MAGIC_DAMAGE_REDUCTION_FACTOR_NOTES_KEY] =
+      sanitizeDamageReductionFactor(
+        patch.specialMagicDamageReductionFactor,
+        1
+      );
   }
 
   return JSON.stringify(notes);
@@ -1503,7 +1566,7 @@ export async function renameSimulatorCharacter(params: {
 
     const existing = await findActiveCharacterByName(params.userId, normalizedName);
     if (existing && existing.id !== params.characterId) {
-      throw new Error('character name already exists');
+      throw new Error('名称已存在');
     }
 
     const now = new Date();
@@ -1594,7 +1657,7 @@ export async function createSimulatorCharacter(params: {
 
   const existing = await findActiveCharacterByName(params.userId, normalizedName);
   if (existing) {
-    throw new Error('character name already exists');
+    throw new Error('名称已存在');
   }
 
   const seedConfig = await getRequiredSimulatorSeedConfig();
@@ -2028,17 +2091,33 @@ function parseProfileRawBody(value: string | null | undefined) {
   }
 }
 
+function sanitizeMeridianConfig(value: unknown) {
+  const config = isRecord(value) ? value : {};
+
+  return {
+    physique: toFiniteNumber(config.physique, 0),
+    magic: toFiniteNumber(config.magic, 0),
+    strength: toFiniteNumber(config.strength, 0),
+    endurance: toFiniteNumber(config.endurance, 0),
+    agility: toFiniteNumber(config.agility, 0),
+    magicPower: toFiniteNumber(config.magicPower, 0),
+  };
+}
+
 export async function updateSimulatorProfile(
   userId: string,
   payload: {
     level: number;
     faction: string;
+    baseHp?: number;
     physique: number;
     magic: number;
+    potentialPoints: number;
     strength: number;
     endurance: number;
     agility: number;
     magicPower: number;
+    spiritualPower?: number;
     hp: number;
     mp: number;
     damage: number;
@@ -2049,6 +2128,7 @@ export async function updateSimulatorProfile(
     hit: number;
     dodge: number;
     sealHit?: number;
+    meridianConfig?: unknown;
   }
 ) {
   await ensureSimulatorDbReady();
@@ -2084,23 +2164,35 @@ export async function updateSimulatorProfile(
   }, 0);
 
   const currentRawBody = parseProfileRawBody(existingProfile?.rawBodyJson);
-  const nextBaseHp = inferBaseHpSource({
-    panelHp: payload.hp,
-    physique: payload.physique,
-    endurance: payload.endurance,
-    equipmentHp: equipmentHpTotal,
-  });
+  const nextMeridianConfig = sanitizeMeridianConfig(
+    payload.meridianConfig ?? currentRawBody.meridianConfig
+  );
+  const currentBodyStrength =
+    cultivations.find((item) => item.cultivationType === 'bodyStrength')?.level ??
+    0;
+  const nextBaseHp =
+    Number.isFinite(payload.baseHp) && Number(payload.baseHp) > 0
+      ? Number(payload.baseHp)
+      : inferBaseHpSource({
+          panelHp: payload.hp,
+          physique: payload.physique,
+          equipmentHp: equipmentHpTotal,
+          bodyStrength: currentBodyStrength,
+        });
   const nextRawBody = JSON.stringify({
     ...currentRawBody,
     baseHp: nextBaseHp,
     hp: payload.hp,
     magic: payload.magic,
+    potentialPoints: payload.potentialPoints,
     physique: payload.physique,
     strength: payload.strength,
     endurance: payload.endurance,
     agility: payload.agility,
     magicPower: payload.magicPower,
+    spiritualPower: payload.spiritualPower ?? currentRawBody.spiritualPower,
     dodge: payload.dodge,
+    meridianConfig: nextMeridianConfig,
   });
   const nextCharacter: SimulatorCharacter = {
     ...character,
@@ -2115,6 +2207,7 @@ export async function updateSimulatorProfile(
         level: payload.level,
         physique: payload.physique,
         magic: payload.magic,
+        potentialPoints: payload.potentialPoints,
         strength: payload.strength,
         endurance: payload.endurance,
         agility: payload.agility,
@@ -2135,10 +2228,10 @@ export async function updateSimulatorProfile(
         level: payload.level,
         physique: payload.physique,
         magic: payload.magic,
+        potentialPoints: payload.potentialPoints,
         strength: payload.strength,
         endurance: payload.endurance,
         agility: payload.agility,
-        potentialPoints: 0,
         hp: payload.hp,
         mp: payload.mp,
         damage: payload.damage,
@@ -2200,10 +2293,10 @@ export async function updateSimulatorProfile(
         level: payload.level,
         physique: payload.physique,
         magic: payload.magic,
+        potentialPoints: payload.potentialPoints,
         strength: payload.strength,
         endurance: payload.endurance,
         agility: payload.agility,
-        potentialPoints: 0,
         hp: payload.hp,
         mp: payload.mp,
         damage: payload.damage,
@@ -2243,6 +2336,7 @@ export async function updateSimulatorProfile(
 export async function updateSimulatorCultivation(
   userId: string,
   payload: {
+    bodyStrength: number;
     physicalAttack: number;
     physicalDefense: number;
     magicAttack: number;
@@ -2285,6 +2379,7 @@ export async function updateSimulatorCultivation(
     .where(eq(characterCultivation.snapshotId, snapshot.id));
 
   const cultivationRows = [
+    { cultivationType: 'bodyStrength', level: payload.bodyStrength },
     { cultivationType: 'physicalAttack', level: payload.physicalAttack },
     { cultivationType: 'physicalDefense', level: payload.physicalDefense },
     { cultivationType: 'magicAttack', level: payload.magicAttack },
@@ -2355,6 +2450,10 @@ export async function updateSimulatorBattleContext(
     manualTargets?: unknown[];
     combatTab?: 'manual' | 'dungeon';
     selectedDungeonIds?: unknown[];
+    weather?: string;
+    targetDefenseState?: string;
+    targetMagicDefenseResult?: number;
+    specialMagicDamageReductionFactor?: number;
   }
 ) {
   await ensureSimulatorDbReady();
@@ -2392,13 +2491,27 @@ export async function updateSimulatorBattleContext(
       targetTemplateIdOverride: targetTemplateId,
     });
   timer.mark('rules');
+  const derivedBattleContext = resolveBattleContextDerivedFields({
+    selfFormation: payload.selfFormation || existingContext?.selfFormation,
+    targetFormation: payload.targetFormation || existingContext?.targetFormation,
+    selfElement: payload.selfElement || existingContext?.selfElement,
+    targetElement: payload.targetElement || existingContext?.targetElement,
+  });
 
   const nextValue = {
     ruleVersionId: existingContext?.ruleVersionId ?? null,
     selfFormation: payload.selfFormation || '天覆阵',
     selfElement: payload.selfElement || '水',
-    formationCounterState: payload.formationCounterState || '无克/普通',
-    elementRelation: payload.elementRelation || '无克/普通',
+    formationCounterState:
+      payload.formationCounterState ||
+      derivedBattleContext.formationCounterState ||
+      existingContext?.formationCounterState ||
+      '无克/普通',
+    elementRelation:
+      payload.elementRelation ||
+      derivedBattleContext.elementRelation ||
+      existingContext?.elementRelation ||
+      '无克/普通',
     transformCardFactor: payload.transformCardFactor ?? 1,
     splitTargetCount: payload.splitTargetCount ?? 1,
     shenmuValue: payload.shenmuValue ?? 0,
@@ -2421,6 +2534,11 @@ export async function updateSimulatorBattleContext(
       manualTargets: payload.manualTargets,
       combatTab: payload.combatTab,
       selectedDungeonIds: payload.selectedDungeonIds,
+      weather: payload.weather,
+      targetDefenseState: payload.targetDefenseState,
+      targetMagicDefenseResult: payload.targetMagicDefenseResult,
+      specialMagicDamageReductionFactor:
+        payload.specialMagicDamageReductionFactor,
     }),
   };
   const nextBattleContext = await writeSnapshotBattleContext({
@@ -2585,6 +2703,7 @@ export async function updateSimulatorEquipment(
       element?: string;
       durability?: number;
       gemstone?: string;
+      gemstones?: Array<Record<string, unknown>>;
       luckyHoles?: string;
       starPosition?: string;
       starAlignment?: string;
@@ -2860,8 +2979,17 @@ export async function updateSimulatorEquipment(
 
         const nextPrimaryBuild: SimulatorEquipmentBuild = {
           equipmentId,
-          holeCount: 0,
-          gemLevelTotal: 0,
+          holeCount: Math.max(
+            0,
+            Math.floor(Number(item.luckyHoles ?? 0) || 0)
+          ),
+          gemLevelTotal: countEquipmentGemLevelTotal(
+            parseEquipmentGemstones({
+              gemstones: item.gemstones,
+              gemstoneText: item.gemstone,
+              fallbackLevel: item.forgeLevel,
+            })
+          ),
           refineLevel: item.forgeLevel ?? 0,
           ...buildMeta,
         };

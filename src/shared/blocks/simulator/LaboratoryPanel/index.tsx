@@ -10,7 +10,15 @@ import type {
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
+import {
+  applySimulatorCandidateEquipmentToStore,
+  buildSimulatorCandidateEquipmentPayload,
+} from '@/features/simulator/utils/simulatorCandidateEquipment';
+import {
+  getVisibleCompareExperimentSeats,
+  getVisibleExperimentSeats,
+  LABORATORY_MAX_COMPARE_SEATS,
+} from '@/features/simulator/utils/simulatorExperimentSeats';
 import { applySimulatorLabSessionToStore } from '@/features/simulator/utils/simulatorLabSession';
 import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
 import {
@@ -27,6 +35,12 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import { formatDateTimeValue } from '@/shared/lib/date';
+import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
+import {
+  getSkillTargetCountOptions,
+  resolveLaboratorySkillLevels,
+} from '@/shared/lib/simulator-rune-skill';
+import { buildLaboratoryRuneGuardSummary } from '@/shared/lib/simulator-rune-guard';
 import {
   getDefaultSimulatorSecondaryCategory,
   getSimulatorSlotDefinitions,
@@ -37,6 +51,7 @@ import {
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import type { LabValuationSeatResult } from '@/shared/services/lab-valuation';
 
+import { useEquipmentExtensionConfigs } from '../use-equipment-extension-configs';
 import {
   AVAILABLE_GEMSTONES,
   AVAILABLE_RUNE_SETS,
@@ -53,9 +68,9 @@ import {
 } from './LaboratoryDialogs';
 import { LaboratoryEquipmentDetailModal } from './LaboratoryEquipmentDetailModal';
 import { LaboratorySeatCard } from './LaboratorySeatCard';
-import { PendingEquipmentDetailModal } from './PendingEquipmentDetailModal';
 import { LaboratorySlotSelectorModal } from './LaboratorySlotSelectorModal';
 import { LaboratoryTargetSelectorModal } from './LaboratoryTargetSelectorModal';
+import { PendingEquipmentDetailModal } from './PendingEquipmentDetailModal';
 
 type EquipmentRollbackSnapshot = {
   id: string;
@@ -64,6 +79,8 @@ type EquipmentRollbackSnapshot = {
   notes: string;
   createdAt: number | string | null;
 };
+
+const PENDING_EQUIPMENT_WARNING_THRESHOLD = 50;
 
 function isEquipmentRollbackSnapshot(
   value: unknown
@@ -97,7 +114,10 @@ export function LaboratoryPanel() {
     slotType: Equipment['type'];
     slotSlot?: number;
     slotLabel: string;
+    baseEquip?: Equipment;
     currentEquip?: Equipment;
+    inheritGemstones?: boolean;
+    inheritRuneStones?: boolean;
   } | null>(null);
 
   // 新装备库分类状态
@@ -148,15 +168,16 @@ export function LaboratoryPanel() {
   );
   const combatTarget = useGameStore((state) => state.combatTarget);
   const combatStats = useGameStore((state) => state.combatStats);
+  const playerSetup = useGameStore((state) => state.playerSetup);
+  const syncedCloudState = useGameStore((state) => state.syncedCloudState);
   const selectedDungeonIds = useGameStore((state) => state.selectedDungeonIds);
   const updateCombatTarget = useGameStore((state) => state.updateCombatTarget);
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
 
   // 样本席位默认跟随当前状态页正在查看的装备方案，避免两个视图默认落到不同方案。
-  const [selectedSampleSetIndex, setSelectedSampleSetIndex] = useState(
-    activeSetIndex
-  );
+  const [selectedSampleSetIndex, setSelectedSampleSetIndex] =
+    useState(activeSetIndex);
 
   // 战队目标选择器中的技能和秒几选项
   const [selectedSkillName, setSelectedSkillName] = useState<string>('');
@@ -168,6 +189,7 @@ export function LaboratoryPanel() {
     seatId: string;
     seatName: string;
     equipmentSetName: string;
+    guardSummary: ReturnType<typeof buildLaboratoryRuneGuardSummary> | null;
   } | null>(null);
 
   // 初始化技能选择
@@ -185,10 +207,13 @@ export function LaboratoryPanel() {
 
     const loadTemplates = async () => {
       try {
-        const response = await fetch('/api/simulator/target-templates?scene=dungeon', {
-          method: 'GET',
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          '/api/simulator/target-templates?scene=dungeon',
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
         const payload = await response.json();
         if (
           !response.ok ||
@@ -230,14 +255,34 @@ export function LaboratoryPanel() {
   const pendingList = pendingEquipments.filter((e) => e.status === 'pending');
   const libraryList = pendingEquipments.filter((e) => e.status === 'confirmed');
   const libraryEquipments = libraryList.map((item) => item.equipment);
+  const visibleExperimentSeats = useMemo(
+    () => getVisibleExperimentSeats(experimentSeats),
+    [experimentSeats]
+  );
+  const visibleCompareSeats = useMemo(
+    () => getVisibleCompareExperimentSeats(experimentSeats),
+    [experimentSeats]
+  );
 
-  const { baseAttributes, treasure } = useGameStore();
+  const { baseAttributes, cultivation, meridian, treasure } = useGameStore();
   const [labValuationBySeatId, setLabValuationBySeatId] = useState<
     Record<string, LabValuationSeatResult>
   >({});
   const [isLoadingLabValuation, setIsLoadingLabValuation] = useState(false);
   const [labValuationError, setLabValuationError] = useState<string | null>(
     null
+  );
+  const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'regular_set_rules',
+  ]);
+  const regularSetRules = useMemo(
+    () =>
+      parseRegularSetRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'regular_set_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
   );
 
   const formatRollbackTime = (timestamp: number | string | null | undefined) =>
@@ -320,16 +365,21 @@ export function LaboratoryPanel() {
   };
 
   const buildCandidateEquipmentPayload = () =>
-    pendingEquipments.map((item) => ({
-      id: item.id,
-      equipment: item.equipment,
-      imagePreview: item.imagePreview,
-      rawText: item.rawText,
-      targetSetId: item.targetSetId,
-      targetEquipmentId: item.targetEquipmentId,
-      targetRuneStoneSetIndex: item.targetRuneStoneSetIndex,
-      status: item.status,
+    buildSimulatorCandidateEquipmentPayload(
+      useGameStore.getState().pendingEquipments
+    );
+
+  const removeCandidateEquipmentItems = (ids: string[]) => {
+    useGameStore.setState((state) => ({
+      ...state,
+      pendingEquipments: state.pendingEquipments.filter(
+        (item) => !ids.includes(item.id)
+      ),
+      selectedPendingIds: state.selectedPendingIds.filter(
+        (id) => !ids.includes(id)
+      ),
     }));
+  };
 
   const handleLoadCandidateEquipment = async (silent = false) => {
     try {
@@ -418,6 +468,8 @@ export function LaboratoryPanel() {
             name:
               seat.name || (seat.isSample ? '样本席位' : `对比席位${index}`),
             isSample: seat.isSample,
+            inheritGemstones: seat.inheritGemstones,
+            inheritRuneStones: seat.inheritRuneStones,
             equipment: seat.equipment,
           })),
         }),
@@ -443,8 +495,15 @@ export function LaboratoryPanel() {
     }
   };
 
-  const handleApplyToSeat = (seatId: string, equipment: Equipment) => {
-    updateExperimentSeatEquipment(seatId, equipment);
+  const handleApplyToSeat = (
+    seatId: string,
+    equipment: Equipment,
+    options?: {
+      inheritGemstones?: boolean;
+      inheritRuneStones?: boolean;
+    }
+  ) => {
+    updateExperimentSeatEquipment(seatId, equipment, options);
   };
 
   const handleSavePendingItemEdit = async (
@@ -568,8 +627,19 @@ export function LaboratoryPanel() {
     [equipmentSets, selectedSampleSetIndex, currentEquipment]
   );
   const compareSeatCount = useMemo(
-    () => experimentSeats.filter((seat) => !seat.isSample).length,
-    [experimentSeats]
+    () => visibleCompareSeats.length,
+    [visibleCompareSeats]
+  );
+  const laboratorySkills = useMemo(
+    () =>
+      resolveLaboratorySkillLevels(skills, sampleEquipment, {
+        baselineEquipment: syncedCloudState?.equipment ?? [],
+      }),
+    [skills, sampleEquipment, syncedCloudState]
+  );
+  const targetCountOptions = useMemo(
+    () => getSkillTargetCountOptions(laboratorySkills, selectedSkillName),
+    [laboratorySkills, selectedSkillName]
   );
   // 基础样本数据
   const baseSampleStats = useMemo(
@@ -579,10 +649,10 @@ export function LaboratoryPanel() {
 
   const labValuationPayload = useMemo(() => {
     const preferredSkillName =
-      skills?.find((skill) => skill.name === '龙卷雨击')?.name ||
-      skills?.[0]?.name;
+      laboratorySkills?.find((skill) => skill.name === '龙卷雨击')?.name ||
+      laboratorySkills?.[0]?.name;
     const skillName = selectedSkillName || preferredSkillName;
-    if (!skillName || experimentSeats.length === 0) {
+    if (!skillName || visibleExperimentSeats.length === 0) {
       return null;
     }
 
@@ -590,20 +660,32 @@ export function LaboratoryPanel() {
       baseAttributes,
       combatStats,
       treasure,
+      battleContext: {
+        selfFormation: playerSetup.formation,
+        selfElement: playerSetup.element,
+        transformCardFactor:
+          syncedCloudState?.battleContext?.transformCardFactor ?? 1,
+        shenmuValue: syncedCloudState?.battleContext?.shenmuValue ?? 0,
+        magicResult: syncedCloudState?.battleContext?.magicResult ?? 0,
+        targetMagicDefenseCultivation:
+          syncedCloudState?.battleContext?.targetMagicDefenseCultivation ?? 0,
+      },
       skillName,
       targetCount: selectedTargetCount,
       target: {
         name: combatTarget.name,
         magicDefense: combatTarget.magicDefense || 0,
         speed: combatTarget.speed || 0,
+        element: combatTarget.element || '火',
+        formation: combatTarget.formation || '普通阵',
       },
-      seats: experimentSeats.slice(0, 2).map((seat) => {
+      seats: visibleExperimentSeats.map((seat) => {
         const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
         const { totalPrice } = calculateEquipmentTotalStats(seatEquip);
 
         return {
           seatId: seat.id,
-          seatName: getSeatDisplayName(seat, experimentSeats),
+          seatName: getSeatDisplayName(seat, visibleExperimentSeats),
           isSample: seat.isSample,
           totalPrice,
           equipment: seatEquip,
@@ -614,13 +696,24 @@ export function LaboratoryPanel() {
     baseAttributes,
     combatStats,
     treasure,
+    playerSetup,
+    syncedCloudState,
     selectedSkillName,
-    skills,
+    laboratorySkills,
     selectedTargetCount,
     combatTarget,
-    experimentSeats,
+    visibleExperimentSeats,
     sampleEquipment,
   ]);
+
+  useEffect(() => {
+    const maxTargetCount =
+      targetCountOptions[targetCountOptions.length - 1] ?? 1;
+
+    setSelectedTargetCount((current) =>
+      current > maxTargetCount ? maxTargetCount : current
+    );
+  }, [targetCountOptions]);
 
   useEffect(() => {
     if (!labValuationPayload) {
@@ -685,6 +778,7 @@ export function LaboratoryPanel() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingWarningCountRef = useRef<number | null>(null);
 
   const processFile = async (file: File) => {
     const validation = validateImageFile(file);
@@ -809,6 +903,22 @@ export function LaboratoryPanel() {
       setSecondaryCategory(getDefaultSimulatorSecondaryCategory('equipment'));
     }
   }, [libTab]);
+
+  useEffect(() => {
+    const previousCount = pendingWarningCountRef.current;
+
+    if (
+      previousCount !== null &&
+      previousCount < PENDING_EQUIPMENT_WARNING_THRESHOLD &&
+      pendingList.length >= PENDING_EQUIPMENT_WARNING_THRESHOLD
+    ) {
+      toast.error('待确认装备已达到 50 件', {
+        description: '请先确认入库或删除一部分，再继续上传。',
+      });
+    }
+
+    pendingWarningCountRef.current = pendingList.length;
+  }, [pendingList.length]);
 
   // 切换一级分类时，自动选中第一个二级分类
   useEffect(() => {
@@ -939,7 +1049,7 @@ export function LaboratoryPanel() {
               className={`flex-1 rounded-md py-1.5 text-xs transition-colors ${libTab === 'library' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
               onClick={() => setLibTab('library')}
             >
-              新品装备库 ({libraryEquipments.length})
+              新品装备库 ({libraryList.length})
             </button>
           </div>
         </div>
@@ -948,6 +1058,11 @@ export function LaboratoryPanel() {
           {libTab === 'pending' ? (
             <div className="relative flex h-full flex-col">
               <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto pr-2 pb-[72px]">
+                {pendingList.length >= PENDING_EQUIPMENT_WARNING_THRESHOLD && (
+                  <div className="rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+                    待确认装备已堆积到 {pendingList.length} 件，请先确认入库或删除一部分，再继续上传。
+                  </div>
+                )}
                 {pendingList.map((item) => (
                   <div
                     key={item.id}
@@ -1108,9 +1223,9 @@ export function LaboratoryPanel() {
                   >
                     {cat.name} (
                     {
-                      libraryEquipments.filter((equipment) =>
+                      libraryList.filter((item) =>
                         getSimulatorSlotDefinitions(cat.key).some((slot) =>
-                          matchesSimulatorSlotDefinition(slot, equipment)
+                          matchesSimulatorSlotDefinition(slot, item.equipment)
                         )
                       ).length
                     }
@@ -1126,8 +1241,8 @@ export function LaboratoryPanel() {
                     getSimulatorSlotDefinitions(primaryCategory);
 
                   return secondaryCategories.map((cat) => {
-                    const count = libraryEquipments.filter((eq) =>
-                      matchesSimulatorSlotDefinition(cat, eq)
+                    const count = libraryList.filter((item) =>
+                      matchesSimulatorSlotDefinition(cat, item.equipment)
                     ).length;
 
                     return (
@@ -1197,13 +1312,18 @@ export function LaboratoryPanel() {
 
                     if (!currentSecondary) return null;
 
-                    const filtered = libraryEquipments.filter((eq) =>
-                      matchesSimulatorSlotDefinition(currentSecondary, eq)
+                    const filtered = libraryList.filter((item) =>
+                      matchesSimulatorSlotDefinition(
+                        currentSecondary,
+                        item.equipment
+                      )
                     );
 
                     return filtered.map((item) => {
+                      const equipment = item.equipment;
                       const totalPrice =
-                        (item.price || 0) + (item.crossServerFee || 0);
+                        (equipment.price || 0) +
+                        (equipment.crossServerFee || 0);
                       const isSelected = selectedItemIds.includes(item.id);
 
                       return (
@@ -1218,8 +1338,8 @@ export function LaboratoryPanel() {
                                   : [...prev, item.id]
                               );
                             } else {
-                              // 正常模式：显��详情
-                              setSelectedLibEquip(item);
+                              // 正常模式：显示详情
+                              setSelectedLibEquip(equipment);
                               setSelectedPendingItem(null);
                             }
                           }}
@@ -1272,10 +1392,10 @@ export function LaboratoryPanel() {
                             <div className="h-14 w-14 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                               <img
                                 src={
-                                  item.imageUrl ||
-                                  getEquipmentDefaultImage(item.type)
+                                  equipment.imageUrl ||
+                                  getEquipmentDefaultImage(equipment.type)
                                 }
-                                alt={item.name}
+                                alt={equipment.name}
                                 className="h-full w-full object-cover"
                               />
                             </div>
@@ -1284,25 +1404,28 @@ export function LaboratoryPanel() {
                           <div
                             className={`truncate text-sm font-bold text-yellow-100 ${isSelectionMode ? 'pl-7' : ''} pr-16`}
                           >
-                            {item.name}
+                            {equipment.name}
                           </div>
                           <div
                             className={`mt-1 truncate text-xs text-slate-300 ${isSelectionMode ? 'pl-7' : ''}`}
                           >
-                            {item.mainStat.split('\n')[0]}
+                            {equipment.mainStat.split('\n')[0]}
                           </div>
-                          {item.extraStat && (
+                          {equipment.extraStat && (
                             <div
                               className={`truncate text-xs text-red-400 ${isSelectionMode ? 'pl-7' : ''}`}
                             >
-                              {item.extraStat.split('\n')[0]}
+                              {equipment.extraStat.split('\n')[0]}
                             </div>
                           )}
-                          {item.highlights && item.highlights.length > 0 && (
+                          {equipment.highlights &&
+                            equipment.highlights.length > 0 && (
                             <div
                               className={`mt-auto flex flex-wrap gap-1 ${isSelectionMode ? 'pl-7' : ''}`}
                             >
-                              {item.highlights.slice(0, 2).map((hl, idx) => (
+                              {equipment.highlights
+                                .slice(0, 2)
+                                .map((hl, idx) => (
                                 <span
                                   key={idx}
                                   className="rounded border border-red-500/50 px-1 text-[10px] text-red-400"
@@ -1337,7 +1460,8 @@ export function LaboratoryPanel() {
                 {combatTarget.dungeonName
                   ? `${combatTarget.dungeonName} - `
                   : ''}
-                {combatTarget.name || '手动目标'}
+                {combatTarget.name || '手动目标'} · 正式支持{' '}
+                {LABORATORY_MAX_COMPARE_SEATS} 个对比席位
               </p>
             </div>
             <button
@@ -1350,7 +1474,7 @@ export function LaboratoryPanel() {
                 ? `${combatTarget.dungeonName} - ${combatTarget.name}`
                 : combatTarget.name || '选择目标'}
             </button>
-            {compareSeatCount === 0 && (
+            {compareSeatCount < LABORATORY_MAX_COMPARE_SEATS && (
               <button
                 onClick={() => addExperimentSeat()}
                 className="flex items-center gap-1 rounded-lg border border-yellow-600/40 bg-yellow-600/20 px-3 py-1.5 text-sm font-medium text-yellow-100 transition-colors hover:bg-yellow-600/30"
@@ -1368,11 +1492,11 @@ export function LaboratoryPanel() {
         )}
 
         <div className="flex flex-1 gap-4 overflow-hidden p-4">
-          {experimentSeats.slice(0, 2).map((seat) => (
+          {visibleExperimentSeats.map((seat) => (
             <LaboratorySeatCard
               key={seat.id}
               seat={seat}
-              experimentSeats={experimentSeats}
+              experimentSeats={visibleExperimentSeats}
               sampleEquipment={sampleEquipment}
               equipmentSets={equipmentSets}
               selectedSampleSetIndex={selectedSampleSetIndex}
@@ -1383,8 +1507,15 @@ export function LaboratoryPanel() {
                   `装备组合 ${selectedSampleSetIndex + 1}`;
                 setConfirmOverwriteDialog({
                   seatId: targetSeat.id,
-                  seatName: getSeatDisplayName(targetSeat, experimentSeats),
+                  seatName: getSeatDisplayName(
+                    targetSeat,
+                    visibleExperimentSeats
+                  ),
                   equipmentSetName,
+                  guardSummary: buildLaboratoryRuneGuardSummary(
+                    sampleEquipment,
+                    targetSeat.equipment
+                  ),
                 });
               }}
               onSelectSlot={setSelectedSlot}
@@ -1393,29 +1524,35 @@ export function LaboratoryPanel() {
                 setSelectedPendingItem(null);
               }}
               baseAttributes={baseAttributes}
+              bodyStrength={cultivation.bodyStrength || 0}
+              meridian={meridian}
               treasure={treasure}
               baseSampleStats={baseSampleStats}
               seatLabValuation={labValuationBySeatId[seat.id]}
               labValuationError={labValuationError}
               isLoadingLabValuation={isLoadingLabValuation}
+              regularSetRules={regularSetRules}
             />
           ))}
 
           <LaboratoryComparisonTable
-            experimentSeats={experimentSeats}
+            experimentSeats={visibleExperimentSeats}
             sampleEquipment={sampleEquipment}
             baseAttributes={baseAttributes}
+            bodyStrength={cultivation.bodyStrength || 0}
+            meridian={meridian}
             treasure={treasure}
             labValuationBySeatId={labValuationBySeatId}
             labValuationError={labValuationError}
             isLoadingLabValuation={isLoadingLabValuation}
+            regularSetRules={regularSetRules}
           />
         </div>
 
         {selectedLibEquip && (
           <LaboratoryEquipmentDetailModal
             equipment={selectedLibEquip}
-            experimentSeats={experimentSeats}
+            experimentSeats={visibleExperimentSeats}
             formatPrice={formatPrice}
             onClose={() => setSelectedLibEquip(null)}
             onReplaceCurrent={handleReplaceCurrent}
@@ -1455,9 +1592,10 @@ export function LaboratoryPanel() {
           <LaboratoryTargetSelectorModal
             combatTarget={combatTarget}
             manualTargets={manualTargets}
-            skills={skills}
+            skills={laboratorySkills}
             selectedSkillName={selectedSkillName}
             selectedTargetCount={selectedTargetCount}
+            targetCountOptions={targetCountOptions}
             targetDungeons={targetDungeons}
             onClose={() => setShowTargetSelector(false)}
             onSelectedSkillNameChange={setSelectedSkillName}
@@ -1473,7 +1611,7 @@ export function LaboratoryPanel() {
             formatPrice={formatPrice}
             onClose={() => setSelectedSlot(null)}
             onClearEquipment={removeExperimentSeatEquipment}
-            onSelectEquipment={updateExperimentSeatEquipment}
+            onSelectEquipment={handleApplyToSeat}
           />
         )}
       </div>
@@ -1483,7 +1621,7 @@ export function LaboratoryPanel() {
         selectedCount={selectedItemIds.length}
         onClose={() => setShowDeleteConfirm(false)}
         onConfirm={() => {
-          selectedItemIds.forEach((id) => removePendingEquipment(id));
+          removeCandidateEquipmentItems(selectedItemIds);
           void handleSaveCandidateEquipment(true);
           toast.success(`已删除 ${selectedItemIds.length} 件装备`);
           setSelectedItemIds([]);
@@ -1495,6 +1633,7 @@ export function LaboratoryPanel() {
       {confirmOverwriteDialog && (
         <LaboratoryOverwriteConfirmDialog
           equipmentSetName={confirmOverwriteDialog.equipmentSetName}
+          guardSummary={confirmOverwriteDialog.guardSummary}
           onClose={() => setConfirmOverwriteDialog(null)}
           onConfirm={handleConfirmOverwrite}
         />

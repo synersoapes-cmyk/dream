@@ -10,6 +10,8 @@ import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentIm
 import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
+import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
+import { analyzeRuneComboConflict } from '@/shared/lib/simulator-rune-combo';
 import {
   applySimulatorRuneSetSelection,
   createEmptyRuneStone,
@@ -18,14 +20,19 @@ import {
   getSimulatorRuneSetOptions,
   isSimulatorPrimaryEquipment,
 } from '@/shared/lib/simulator-rune-editor';
+import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
 import {
+  formatSimulatorEquipmentStatValue,
   getSimulatorEquipmentFieldLabel as getFieldLabel,
+  getSimulatorEquipmentInitialValueEntries,
   SIMULATOR_EDITABLE_STAT_KEYS,
   SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
 } from '@/shared/lib/simulator-equipment-editor';
 import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
+import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
 
 const AVAILABLE_RUNES = [
   { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
@@ -143,17 +150,62 @@ export function EquipmentDetailModal({
   const activeRuneSet =
     simulatedLibEquip.runeStoneSets?.[activeRuneSetIndex] ?? [];
   const runeSetOptions = getSimulatorRuneSetOptions(simulatedLibEquip);
+  const runeComboConflict = useMemo(
+    () =>
+      isPrimaryEquipment ? analyzeRuneComboConflict(simulatedLibEquip) : null,
+    [isPrimaryEquipment, simulatedLibEquip]
+  );
   const isAccessory = isAccessoryEquipment(simulatedLibEquip.type);
   const accessoryType = getAccessoryType(simulatedLibEquip.type);
+  const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'jade_attribute_pool',
+  ]);
+  const jadeAttributePool = useMemo(
+    () =>
+      simulatedLibEquip.type === 'jade'
+        ? resolveJadeAttributePoolForSlot({
+            value: equipmentExtensionConfigs.find(
+              (item) => item.configKey === 'jade_attribute_pool'
+            )?.value,
+            slot: simulatedLibEquip.slot,
+          })
+        : null,
+    [equipmentExtensionConfigs, simulatedLibEquip.slot, simulatedLibEquip.type]
+  );
   const accessoryStatKeys = useMemo(
     () =>
       accessoryType
-        ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[accessoryType].filter(
-            (key): key is EditableStatKey =>
-            (SIMULATOR_EDITABLE_STAT_KEYS as readonly string[]).includes(key)
+        ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[accessoryType]
+            .filter(
+              (key): key is EditableStatKey =>
+                (SIMULATOR_EDITABLE_STAT_KEYS as readonly string[]).includes(key)
+            )
+            .filter((key) =>
+              accessoryType === 'jade' &&
+              jadeAttributePool &&
+              jadeAttributePool.allowedStatKeys.length > 0
+                ? jadeAttributePool.allowedStatKeys.includes(key)
+                : true
+            )
+        : [],
+    [accessoryType, jadeAttributePool]
+  );
+  const initialValueEntries = useMemo(
+    () => getSimulatorEquipmentInitialValueEntries(simulatedLibEquip),
+    [simulatedLibEquip]
+  );
+  const hiddenJadeStatEntries = useMemo(
+    () =>
+      simulatedLibEquip.type === 'jade' &&
+      jadeAttributePool &&
+      jadeAttributePool.allowedStatKeys.length > 0
+        ? Object.entries(simulatedLibEquip.stats ?? {}).filter(
+            ([key, value]) =>
+              Number.isFinite(Number(value)) &&
+              !jadeAttributePool.allowedStatKeys.includes(key)
           )
         : [],
-    [accessoryType]
+    [jadeAttributePool, simulatedLibEquip.stats, simulatedLibEquip.type]
   );
 
   useEffect(() => {
@@ -308,6 +360,28 @@ export function EquipmentDetailModal({
               <div className="mb-2 text-sm text-yellow-100">
                 {simulatedLibEquip.mainStat}
               </div>
+
+              {initialValueEntries.length > 0 && (
+                <div className="mb-2 rounded-lg border border-yellow-800/30 bg-slate-950/40 p-3">
+                  <div className="mb-2 text-xs font-bold text-yellow-400">
+                    初值
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {initialValueEntries.map((entry) => (
+                      <div
+                        key={entry.key}
+                        className="rounded border border-slate-700/70 bg-slate-900/70 px-2 py-1 text-xs"
+                      >
+                        <span className="text-slate-400">{entry.label}</span>
+                        <span className="ml-1 font-medium text-yellow-100">
+                          {entry.value > 0 ? '+' : ''}
+                          {formatSimulatorEquipmentStatValue(entry.value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {simulatedLibEquip.durability && (
                 <div className="text-sm text-slate-300">
@@ -494,11 +568,72 @@ export function EquipmentDetailModal({
                     </label>
                   ))}
                 </div>
+
+                {simulatedLibEquip.type === 'jade' && jadeAttributePool && (
+                  <div className="rounded-lg border border-cyan-700/40 bg-cyan-950/10 px-3 py-3 text-sm text-cyan-200">
+                    <div className="font-medium">
+                      当前玉魄属性池
+                      {jadeAttributePool.label ? `：${jadeAttributePool.label}` : ''}
+                    </div>
+                    {jadeAttributePool.description && (
+                      <div className="mt-1 text-xs text-cyan-300/80">
+                        {jadeAttributePool.description}
+                      </div>
+                    )}
+                    {jadeAttributePool.allowedStatKeys.length > 0 && (
+                      <div className="mt-2 text-xs text-cyan-100/90">
+                        固定值词条：{jadeAttributePool.allowedStatKeys
+                          .map((key) => getSimulatorStatLabel(key))
+                          .join(' / ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {hiddenJadeStatEntries.length > 0 && (
+                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-3 text-sm text-amber-200">
+                    当前已有 {hiddenJadeStatEntries.length} 个固定值词条不在当前槽位的属性池内：
+                    {' '}
+                    {hiddenJadeStatEntries
+                      .map(
+                        ([key, value]) =>
+                          `${getSimulatorStatLabel(key)} +${value}`
+                      )
+                      .join(' / ')}
+                  </div>
+                )}
+
+                {simulatedLibEquip.type === 'jade' && (
+                  <AccessoryEffectModifierEditor
+                    equipment={simulatedLibEquip}
+                    onChange={setSimulatedLibEquip}
+                    allowedCodes={jadeAttributePool?.allowedModifierCodes}
+                    poolDescription={
+                      jadeAttributePool?.allowedModifierCodes.length
+                        ? `当前槽位允许的百分比词条：${jadeAttributePool.allowedModifierCodes.join(
+                            ' / '
+                          )}`
+                        : jadeAttributePool?.description
+                    }
+                  />
+                )}
               </div>
             )}
 
             {isPrimaryEquipment && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
+                {runeComboConflict && (
+                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-3 text-sm text-amber-200">
+                    {runeComboConflict.message}
+                  </div>
+                )}
+
+                <GemstoneEditor
+                  equipment={simulatedLibEquip}
+                  onChange={setSimulatedLibEquip}
+                  title="宝石编辑"
+                />
+
                 {/* 开运孔数 - 可点击修改 */}
                 <div className="relative">
                   <div

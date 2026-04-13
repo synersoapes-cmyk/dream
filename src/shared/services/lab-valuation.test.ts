@@ -12,160 +12,23 @@ const attributeConversionSeeds: Array<{
   valueType: string;
   sort: number;
 }> = [
-  {
-    sourceAttr: 'baseHp',
-    targetAttr: 'hp',
-    coefficient: 5,
-    valueType: 'linear',
-    sort: 10,
-  },
-  {
-    sourceAttr: 'physique',
-    targetAttr: 'hp',
-    coefficient: 12,
-    valueType: 'linear',
-    sort: 20,
-  },
-  {
-    sourceAttr: 'endurance',
-    targetAttr: 'hp',
-    coefficient: 4,
-    valueType: 'linear',
-    sort: 30,
-  },
-  {
-    sourceAttr: 'magic',
-    targetAttr: 'mp',
-    coefficient: 1.6,
-    valueType: 'linear',
-    sort: 40,
-  },
-  {
-    sourceAttr: 'spirit',
-    targetAttr: 'mp',
-    coefficient: 0.25,
-    valueType: 'linear',
-    sort: 50,
-  },
-  {
-    sourceAttr: 'magic',
-    targetAttr: 'magicDamage',
-    coefficient: 5,
-    valueType: 'linear',
-    sort: 60,
-  },
-  {
-    sourceAttr: 'spirit',
-    targetAttr: 'magicDamage',
-    coefficient: 1.2,
-    valueType: 'linear',
-    sort: 70,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'magicDamage',
-    coefficient: 3,
-    valueType: 'linear',
-    sort: 80,
-  },
-  {
-    sourceAttr: 'spirit',
-    targetAttr: 'magicDefense',
-    coefficient: 0.6,
-    valueType: 'linear',
-    sort: 90,
-  },
-  {
-    sourceAttr: 'endurance',
-    targetAttr: 'magicDefense',
-    coefficient: 2,
-    valueType: 'linear',
-    sort: 100,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'magicDefense',
-    coefficient: 2.6,
-    valueType: 'linear',
-    sort: 110,
-  },
-  {
-    sourceAttr: 'agility',
-    targetAttr: 'speed',
-    coefficient: 4,
-    valueType: 'linear',
-    sort: 120,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'speed',
-    coefficient: 2,
-    valueType: 'linear',
-    sort: 130,
-  },
-  {
-    sourceAttr: 'strength',
-    targetAttr: 'hit',
-    coefficient: 2,
-    valueType: 'linear',
-    sort: 140,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'hit',
-    coefficient: 6,
-    valueType: 'linear',
-    sort: 150,
-  },
-  {
-    sourceAttr: 'strength',
-    targetAttr: 'damage',
-    coefficient: 8,
-    valueType: 'linear',
-    sort: 160,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'damage',
-    coefficient: 6,
-    valueType: 'linear',
-    sort: 170,
-  },
-  {
-    sourceAttr: 'endurance',
-    targetAttr: 'defense',
-    coefficient: 4,
-    valueType: 'linear',
-    sort: 180,
-  },
-  {
-    sourceAttr: 'physique',
-    targetAttr: 'defense',
-    coefficient: 2,
-    valueType: 'linear',
-    sort: 190,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'defense',
-    coefficient: 3,
-    valueType: 'linear',
-    sort: 200,
-  },
-  {
-    sourceAttr: 'agility',
-    targetAttr: 'dodge',
-    coefficient: 2,
-    valueType: 'linear',
-    sort: 210,
-  },
-  {
-    sourceAttr: 'level',
-    targetAttr: 'dodge',
-    coefficient: 0.8,
-    valueType: 'floor_linear',
-    sort: 220,
-  },
+  { sourceAttr: 'baseHp', targetAttr: 'hp', coefficient: 5, valueType: 'linear', sort: 10 },
+  { sourceAttr: 'physique', targetAttr: 'hp', coefficient: 4.5, valueType: 'linear', sort: 20 },
+  { sourceAttr: 'physique', targetAttr: 'spirit', coefficient: 0.3, valueType: 'linear', sort: 30 },
+  { sourceAttr: 'physique', targetAttr: 'speed', coefficient: 0.1, valueType: 'linear', sort: 35 },
+  { sourceAttr: 'magic', targetAttr: 'mp', coefficient: 3.5, valueType: 'linear', sort: 40 },
+  { sourceAttr: 'magic', targetAttr: 'spirit', coefficient: 0.7, valueType: 'linear', sort: 50 },
+  { sourceAttr: 'spirit', targetAttr: 'magicDamage', coefficient: 1, valueType: 'linear', sort: 60 },
+  { sourceAttr: 'spirit', targetAttr: 'magicDefense', coefficient: 1, valueType: 'linear', sort: 70 },
+  { sourceAttr: 'strength', targetAttr: 'damage', coefficient: 0.56, valueType: 'linear', sort: 80 },
+  { sourceAttr: 'strength', targetAttr: 'hit', coefficient: 1.7, valueType: 'linear', sort: 90 },
+  { sourceAttr: 'strength', targetAttr: 'spirit', coefficient: 0.4, valueType: 'linear', sort: 100 },
+  { sourceAttr: 'strength', targetAttr: 'speed', coefficient: 0.1, valueType: 'linear', sort: 110 },
+  { sourceAttr: 'endurance', targetAttr: 'defense', coefficient: 1.6, valueType: 'linear', sort: 120 },
+  { sourceAttr: 'endurance', targetAttr: 'spirit', coefficient: 0.2, valueType: 'linear', sort: 130 },
+  { sourceAttr: 'endurance', targetAttr: 'speed', coefficient: 0.1, valueType: 'linear', sort: 140 },
+  { sourceAttr: 'agility', targetAttr: 'speed', coefficient: 0.7, valueType: 'linear', sort: 150 },
+  { sourceAttr: 'agility', targetAttr: 'dodge', coefficient: 1, valueType: 'linear', sort: 160 },
 ];
 
 function createBundle(): SimulatorCharacterBundle {
@@ -438,6 +301,7 @@ function createRuleSet(): DamageRuleSet {
       },
     ],
     skillBonuses: [],
+    equipmentExtensionConfigs: [],
   };
 }
 
@@ -526,15 +390,23 @@ test('calculateLabValuationFromRuleSet uses service-side damage results for seat
   });
 
   assert.equal(result.sampleSeatId, 'sample');
-  assert.equal(result.seats[0]?.panelStats.magicDamage, 2429);
-  assert.equal(result.seats[1]?.panelStats.magicDamage, 2459);
+  assert.equal(result.seats[0]?.panelStats.magicDamage, 1003);
+  assert.equal(result.seats[1]?.panelStats.magicDamage, 1033);
   assert.ok(
     (result.seats[1]?.totalDamage ?? 0) > (result.seats[0]?.totalDamage ?? 0)
   );
   assert.equal(result.seats[1]?.comparison.priceDiff, 200);
   assert.ok((result.seats[1]?.comparison.damageDiff ?? 0) > 0);
+  assert.ok((result.seats[1]?.comparison.damageGainPercent ?? 0) > 0);
   assert.ok((result.seats[1]?.comparison.costPerDamage ?? 0) > 0);
   assert.match(result.seats[1]?.comparison.costLabel ?? '', /^¥ /);
+  assert.equal(result.seats[1]?.comparison.magicDamageDiff, 30);
+  assert.ok((result.seats[1]?.comparison.costPerMagicDamage ?? 0) > 0);
+  assert.equal(
+    result.seats[1]?.comparison.magicDamageCostLabel,
+    '¥ 6.7 / 点法伤'
+  );
+  assert.equal(result.seats[1]?.comparison.marginalWarning, null);
 });
 
 test('calculateLabValuationFromRuleSet supports dragon_teng service-side valuation', () => {
@@ -796,4 +668,202 @@ test('calculateLabValuationFromRuleSet applies jade spell damage percent in seat
     (result.seats[1]?.totalDamage ?? 0) > (result.seats[0]?.totalDamage ?? 0)
   );
   assert.ok((result.seats[1]?.comparison.damageDiff ?? 0) > 0);
+});
+
+test('calculateLabValuationFromRuleSet fallback total price includes cross-server fee', () => {
+  const result = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+      },
+      skillName: '龙卷雨击',
+      targetCount: 1,
+      seats: [
+        {
+          seatId: 'sample',
+          seatName: '样本席位',
+          isSample: true,
+          equipment: [
+            {
+              id: 'eq_sample',
+              name: '样本武器',
+              type: 'weapon',
+              price: 1000,
+              crossServerFee: 300,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+          ],
+        },
+        {
+          seatId: 'compare',
+          seatName: '对比席位1',
+          equipment: [
+            {
+              id: 'eq_compare',
+              name: '对比武器',
+              type: 'weapon',
+              price: 1200,
+              crossServerFee: 500,
+              stats: {
+                magicDamage: 220,
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.seats[0]?.totalPrice, 1300);
+  assert.equal(result.seats[1]?.totalPrice, 1700);
+  assert.equal(result.seats[1]?.comparison.priceDiff, 400);
+});
+
+test('calculateLabValuationFromRuleSet inherits battle context formation and element inputs', () => {
+  const sampleSeat = {
+    seatId: 'sample',
+    seatName: '样本席位',
+    isSample: true,
+    totalPrice: 1000,
+    equipment: [
+      {
+        id: 'eq_sample',
+        name: '样本武器',
+        type: 'weapon',
+        price: 1000,
+        stats: {
+          magicDamage: 220,
+        },
+      },
+    ],
+  };
+
+  const baselineResult = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      battleContext: {
+        selfFormation: '天覆阵',
+        selfElement: '水',
+        transformCardFactor: 1,
+        shenmuValue: 18,
+        magicResult: 42,
+        targetMagicDefenseCultivation: 12,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+        element: '火',
+        formation: '普通阵',
+      },
+      skillName: '龙卷雨击',
+      targetCount: 1,
+      seats: [sampleSeat],
+    },
+  });
+
+  const derivedContextResult = calculateLabValuationFromRuleSet({
+    bundle: createBundle(),
+    ruleSet: createRuleSet(),
+    request: {
+      baseAttributes: {
+        level: 109,
+        hp: 716,
+        magic: 230,
+        physique: 40,
+        magicPower: 610,
+        strength: 15,
+        endurance: 35,
+        agility: 20,
+        faction: '龙宫',
+      },
+      combatStats: {
+        hp: 4200,
+        magic: 2100,
+        hit: 980,
+        damage: 900,
+        magicDamage: 1800,
+        defense: 1100,
+        magicDefense: 1350,
+        speed: 520,
+        dodge: 205,
+      },
+      battleContext: {
+        selfFormation: '风扬阵',
+        selfElement: '火',
+        transformCardFactor: 1,
+        shenmuValue: 18,
+        magicResult: 42,
+        targetMagicDefenseCultivation: 12,
+      },
+      target: {
+        name: '默认目标',
+        magicDefense: 1250,
+        magicDefenseCultivation: 12,
+        element: '水',
+        formation: '天覆阵',
+      },
+      skillName: '龙卷雨击',
+      targetCount: 1,
+      seats: [sampleSeat],
+    },
+  });
+
+  assert.ok(
+    (baselineResult.seats[0]?.totalDamage ?? 0) >
+      (derivedContextResult.seats[0]?.totalDamage ?? 0)
+  );
+  assert.equal(baselineResult.seats[0]?.totalDamage, 353);
+  assert.equal(derivedContextResult.seats[0]?.totalDamage, 311);
 });

@@ -249,6 +249,43 @@ export async function initD1ContextForDev() {
   }
 }
 
+export async function ensureLocalDevD1Table(
+  tableName: string,
+  createStatements: string[]
+) {
+  if (!shouldUseWranglerProxyForDev()) {
+    return;
+  }
+
+  await initD1BindingFromWranglerForDev();
+
+  if (!resolvedD1Binding) {
+    return;
+  }
+
+  const existing = await resolvedD1Binding
+    .prepare(
+      "select name from sqlite_master where type = 'table' and name = ? limit 1"
+    )
+    .bind(tableName)
+    .first();
+
+  if (existing?.name === tableName) {
+    return;
+  }
+
+  for (const statement of createStatements) {
+    const prepared = resolvedD1Binding.prepare(statement);
+    if (typeof prepared?.run === 'function') {
+      await prepared.run();
+      continue;
+    }
+
+    await resolvedD1Binding.exec(statement);
+  }
+  d1DbInstance = null;
+}
+
 export function getD1Db() {
   if (shouldCacheD1Instance() && d1DbInstance) return d1DbInstance;
 

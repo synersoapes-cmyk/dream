@@ -1,6 +1,11 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
-import type { SimulatorOcrEquipmentType } from '@/shared/lib/simulator-equipment';
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+
+import {
+  isSimulatorOcrEquipmentType,
+  type SimulatorOcrEquipmentType,
+} from '@/shared/lib/simulator-equipment';
 
 export const SIMULATOR_EDITABLE_STAT_KEYS = [
   'hp',
@@ -17,6 +22,17 @@ export const SIMULATOR_EDITABLE_STAT_KEYS = [
   'strength',
   'endurance',
   'agility',
+  'sealHit',
+  'sealResistLevel',
+  'fixedDamage',
+  'magicCritLevel',
+  'magicResult',
+  'pierceLevel',
+  'elementalMastery',
+  'block',
+  'antiCritLevel',
+  'elementalResistance',
+  'spiritualPower',
 ] as const;
 
 export const SIMULATOR_EQUIPMENT_TYPE_OPTIONS: Array<{
@@ -43,8 +59,32 @@ export const SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS: Record<
   armor: ['defense', 'hp', 'physique', 'endurance'],
   belt: ['hp', 'defense', 'speed'],
   shoes: ['speed', 'defense', 'agility'],
-  trinket: ['damage', 'magicDamage', 'speed', 'defense', 'magicDefense'],
-  jade: ['damage', 'magicDamage', 'hp', 'defense', 'magicDefense', 'speed'],
+  trinket: [
+    'damage',
+    'defense',
+    'magicDamage',
+    'magicDefense',
+    'fixedDamage',
+    'speed',
+    'magicCritLevel',
+    'magicResult',
+    'sealHit',
+    'pierceLevel',
+    'hp',
+    'block',
+    'sealResistLevel',
+    'antiCritLevel',
+  ],
+  jade: [
+    'magicDamage',
+    'magicCritLevel',
+    'magicResult',
+    'magic',
+    'speed',
+    'fixedDamage',
+    'pierceLevel',
+    'elementalMastery',
+  ],
 };
 
 export const SIMULATOR_EQUIPMENT_FIELD_LABELS = {
@@ -86,4 +126,55 @@ export function getSimulatorEquipmentFieldLabel(key: string) {
       key as keyof typeof SIMULATOR_EQUIPMENT_FIELD_LABELS
     ] ?? key
   );
+}
+
+export function formatSimulatorEquipmentStatValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+export function getSimulatorEquipmentInitialValueEntries(equipment: Equipment) {
+  const seen = new Set<string>();
+  const hintKeys = isSimulatorOcrEquipmentType(equipment.type)
+    ? SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS[equipment.type]
+    : [];
+  const baseEntries = Object.entries(equipment.baseStats ?? {}).filter(
+    ([, value]) => typeof value === 'number' && Number.isFinite(value) && value !== 0
+  );
+  const orderedKeys = [
+    ...hintKeys,
+    ...baseEntries
+      .map(([key]) => key)
+      .filter((key) => !hintKeys.includes(key))
+      .sort((left, right) =>
+        getSimulatorStatLabel(left).localeCompare(getSimulatorStatLabel(right), 'zh-CN')
+      ),
+  ];
+
+  return orderedKeys
+    .filter((key) => {
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .map((key) => {
+      const value = equipment.baseStats?.[key];
+      return typeof value === 'number' && Number.isFinite(value) && value !== 0
+        ? {
+            key,
+            label: getSimulatorStatLabel(key),
+            value,
+          }
+        : null;
+    })
+    .filter(
+      (
+        entry
+      ): entry is {
+        key: string;
+        label: string;
+        value: number;
+      } => Boolean(entry)
+    );
 }

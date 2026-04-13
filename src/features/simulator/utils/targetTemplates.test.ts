@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
   buildDungeonDatabaseFromTemplates,
   buildManualTargetsFromTemplates,
+  mergeDungeonDatabases,
 } from '@/features/simulator/utils/targetTemplates';
+import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 
 test('buildDungeonDatabaseFromTemplates filters out manual templates', () => {
   const dungeons = buildDungeonDatabaseFromTemplates([
@@ -129,4 +131,34 @@ test('buildManualTargetsFromTemplates hydrates manual stats from payload', () =>
   assert.equal(manualTargets[0]?.defense, 1888);
   assert.equal(manualTargets[0]?.magicDefense, 1666);
   assert.equal(manualTargets[0]?.elementalResistance, 177);
+});
+
+test('mergeDungeonDatabases appends missing builtin dungeons such as 通天河', () => {
+  const merged = mergeDungeonDatabases(
+    buildDungeonDatabaseFromTemplates([
+      {
+        id: 'dungeon_target_1',
+        sceneType: 'dungeon',
+        name: '乌鸡树怪',
+        dungeonName: '乌鸡国',
+        targetType: 'mob',
+        level: 109,
+        hp: 50000,
+        defense: 1300,
+        magicDefense: 1200,
+        magicDefenseCultivation: 10,
+        speed: 600,
+        element: '火',
+        formation: '地载阵',
+        notes: '',
+        payload: {},
+      },
+    ]),
+    DUNGEON_DATABASE
+  );
+
+  assert.ok(merged.some((dungeon) => dungeon.name === '通天河'));
+  const tongtianhe = merged.find((dungeon) => dungeon.name === '通天河');
+  assert.ok(tongtianhe);
+  assert.equal(tongtianhe?.targets.some((target) => target.name === '灵感大王'), true);
 });

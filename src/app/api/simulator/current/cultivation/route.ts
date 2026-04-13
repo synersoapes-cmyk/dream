@@ -16,6 +16,7 @@ export async function PATCH(req: Request) {
 
     const body = await req.json();
     const bundle = await updateSimulatorCultivation(user.id, {
+      bodyStrength: toNumber(body?.bodyStrength),
       physicalAttack: toNumber(body?.physicalAttack),
       physicalDefense: toNumber(body?.physicalDefense),
       magicAttack: toNumber(body?.magicAttack),

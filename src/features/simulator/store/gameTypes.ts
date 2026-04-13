@@ -1,4 +1,5 @@
 import type { SimulatorEquipmentType } from '@/shared/lib/simulator-equipment';
+import type { RegularSetRuntimeRule } from '@/shared/lib/simulator-regular-set';
 import type {
   SimulatorElement,
   SimulatorSchool,
@@ -6,18 +7,36 @@ import type {
 
 export type Faction = SimulatorSchool;
 export type EquipmentType = SimulatorEquipmentType;
-export type CharacterStatMap = Partial<CombatStats & BaseAttributes>;
+export type CharacterStatMap = Partial<CombatStats & BaseAttributes> &
+  Record<string, number | undefined>;
 
 export interface BaseAttributes {
   level: number;
   hp: number;
   magic: number;
+  potentialPoints: number;
   physique: number;
   magicPower: number;
   strength: number;
   endurance: number;
   agility: number;
   faction: Faction;
+}
+
+export type PotentialAllocationTarget =
+  | 'physique'
+  | 'magic'
+  | 'strength'
+  | 'endurance'
+  | 'agility';
+
+export interface MeridianConfig {
+  physique: number;
+  magic: number;
+  strength: number;
+  endurance: number;
+  agility: number;
+  magicPower: number;
 }
 
 export interface CombatStats {
@@ -55,6 +74,8 @@ export interface RuneStone {
     | 'white'
     | 'orange'
     | string;
+  color?: string;
+  element?: string;
   level?: number;
   quality?: string;
   description?: string;
@@ -62,8 +83,24 @@ export interface RuneStone {
   stats: CharacterStatMap;
 }
 
+export interface EquipmentGemstone {
+  id: string;
+  name: string;
+  imageUrl?: string;
+  type: string;
+  element?: string;
+  level?: number;
+  quantity?: number;
+  stats?: CharacterStatMap;
+}
+
 export interface EquipmentEffectModifier {
-  code: 'spell_ignore_percent' | 'spell_damage_percent' | (string & {});
+  code:
+    | 'spell_ignore_percent'
+    | 'spell_damage_percent'
+    | 'magic_upper_percent'
+    | 'element_overcome_percent'
+    | (string & {});
   value: number;
   label?: string;
   source?: string;
@@ -114,6 +151,7 @@ export interface Equipment {
   durability?: number;
   forgeLevel?: number;
   gemstone?: string;
+  gemstones?: EquipmentGemstone[];
   luckyHoles?: string;
   starPosition?: string;
   starPositionConfig?: StarPositionConfig;
@@ -142,6 +180,9 @@ export interface EquipmentSet {
 export interface Skill {
   name: string;
   level: number;
+  baseLevel: number;
+  extraLevel: number;
+  finalLevel: number;
   type: 'physical' | 'magic' | 'heal' | 'seal' | 'buff';
   targets: number;
   baseDamage?: number;
@@ -150,6 +191,7 @@ export interface Skill {
 }
 
 export interface Cultivation {
+  bodyStrength: number;
   physicalAttack: number;
   physicalDefense: number;
   magicAttack: number;
@@ -165,6 +207,7 @@ export interface HistorySnapshotState {
   combatStats: CombatStats;
   equipment: Equipment[];
   cultivation: Cultivation;
+  meridian: MeridianConfig;
   combatTarget: CombatTarget;
 }
 
@@ -262,6 +305,7 @@ export interface PlayerSetup {
   equipment: Equipment[];
   skills: Skill[];
   cultivation: Cultivation;
+  meridian: MeridianConfig;
   element: SimulatorElement;
   formation: string;
 }
@@ -283,7 +327,7 @@ export interface Treasure {
   type: '法宝';
   level: number;
   tier: 1 | 2 | 3 | 4;
-  stats: Partial<CombatStats>;
+  stats: CharacterStatMap;
   description: string;
   isActive: boolean;
 }
@@ -292,6 +336,8 @@ export interface ExperimentSeat {
   id: string;
   name: string;
   isSample: boolean;
+  inheritGemstones?: boolean;
+  inheritRuneStones?: boolean;
   equipment: Equipment[];
 }
 
@@ -323,10 +369,27 @@ export interface SyncedCloudState {
   activeSetIndex: number;
   skills: Skill[];
   cultivation: Cultivation;
+  meridian: MeridianConfig;
   treasure: Treasure | null;
   combatTarget: CombatTarget;
   formation: string;
   playerSetup: PlayerSetup;
+  battleContext: {
+    selfFormation: string;
+    selfElement: SimulatorElement;
+    formationCounterState: string;
+    elementRelation: string;
+    weather: string;
+    transformCardFactor: number;
+    splitTargetCount: number;
+    shenmuValue: number;
+    magicResult: number;
+    targetMagicDefenseResult: number;
+    targetMagicDefenseCultivation: number;
+    targetDefenseState: string;
+    specialMagicDamageReductionFactor: number;
+    targetFormation: string;
+  };
 }
 
 export interface GameState {
@@ -338,6 +401,7 @@ export interface GameState {
   activeSetIndex: number;
   skills: Skill[];
   cultivation: Cultivation;
+  meridian: MeridianConfig;
   treasure: Treasure | null;
   combatTarget: CombatTarget;
   manualTargets: EnemyTarget[];
@@ -353,11 +417,13 @@ export interface GameState {
   updateManualTarget: (id: string, updates: Partial<EnemyTarget>) => void;
   selectSkill: (skill: Skill | null) => void;
   syncedCloudState: SyncedCloudState | null;
+  activeRegularSetRules: RegularSetRuntimeRule[];
   autoRecalculateDerivedStats: boolean;
   setAutoRecalculateDerivedStats: (
     enabled: boolean,
     options?: { restoreCloudState?: boolean }
   ) => void;
+  setActiveRegularSetRules: (rules: RegularSetRuntimeRule[]) => void;
   previewMode: boolean;
   previewEquipment: {
     current: Equipment | null;
@@ -403,7 +469,14 @@ export interface GameState {
   experimentSeats: ExperimentSeat[];
   addExperimentSeat: () => void;
   removeExperimentSeat: (id: string) => void;
-  updateExperimentSeatEquipment: (seatId: string, equipment: Equipment) => void;
+  updateExperimentSeatEquipment: (
+    seatId: string,
+    equipment: Equipment,
+    options?: {
+      inheritGemstones?: boolean;
+      inheritRuneStones?: boolean;
+    }
+  ) => void;
   removeExperimentSeatEquipment: (
     seatId: string,
     type: string,
@@ -427,6 +500,11 @@ export interface GameState {
   setCharacter: (updates: Partial<BaseAttributes>) => void;
   setFormation: (formation: string) => void;
   updateBaseAttribute: (key: keyof BaseAttributes, value: number) => void;
+  allocatePotentialPoints: (
+    key: PotentialAllocationTarget,
+    amount: number
+  ) => void;
   updateCombatStat: (key: keyof CombatStats, value: number) => void;
   updateCultivation: (key: keyof Cultivation, value: number) => void;
+  updateMeridian: (key: keyof MeridianConfig, value: number) => void;
 }

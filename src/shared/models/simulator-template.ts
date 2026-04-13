@@ -147,6 +147,7 @@ export const DEFAULT_SIMULATOR_SKILLS: SimulatorSeedSkill[] = [
 ];
 
 export const DEFAULT_SIMULATOR_CULTIVATIONS: SimulatorSeedCultivation[] = [
+  { cultivationType: 'bodyStrength', level: 0 },
   { cultivationType: 'physicalAttack', level: 0 },
   { cultivationType: 'physicalDefense', level: 15 },
   { cultivationType: 'magicAttack', level: 20 },

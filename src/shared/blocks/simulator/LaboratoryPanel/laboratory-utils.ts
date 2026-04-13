@@ -5,11 +5,17 @@ import type {
 } from '@/features/simulator/store/gameTypes';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
+import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
 import {
   getSimulatorSlotDefinitions,
   getSimulatorSlotLabel,
   SIMULATOR_CATEGORY_CONFIG,
 } from '@/shared/lib/simulator-slot-config';
+
+export type LaboratoryInheritanceOptions = {
+  inheritGemstones?: boolean;
+  inheritRuneStones?: boolean;
+};
 
 function toDisplayText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
@@ -79,6 +85,12 @@ const cloneRuneStoneSets = (equipment: Equipment): Equipment['runeStoneSets'] =>
     }))
   );
 
+const cloneGemstones = (equipment: Equipment): Equipment['gemstones'] =>
+  equipment.gemstones?.map((gemstone) => ({
+    ...gemstone,
+    stats: gemstone.stats ? { ...gemstone.stats } : undefined,
+  }));
+
 export const AVAILABLE_RUNES = [
   { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
   { id: '1-2', name: '红符石(精)', type: 'red', stats: { damage: 2 } },
@@ -133,6 +145,10 @@ export const AVAILABLE_GEMSTONES = [
   '光芒石',
   '翡翠石',
   '神秘石',
+  '红宝石',
+  '黄宝石',
+  '蓝宝石',
+  '绿宝石',
 ] as const;
 
 export const LABORATORY_CATEGORIES = SIMULATOR_CATEGORY_CONFIG.map(
@@ -200,6 +216,7 @@ export function cloneEquipmentForEditor(equipment: Equipment): Equipment {
       : undefined,
     baseStats: { ...equipment.baseStats },
     stats: { ...equipment.stats },
+    gemstones: cloneGemstones(equipment),
     runeStoneSets: cloneRuneStoneSets(equipment),
     runeStoneSetsNames: equipment.runeStoneSetsNames
       ? [...equipment.runeStoneSetsNames]
@@ -207,18 +224,75 @@ export function cloneEquipmentForEditor(equipment: Equipment): Equipment {
   };
 }
 
+export function mergeEquipmentWithInheritance(
+  baseEquipment: Equipment | undefined,
+  nextEquipment: Equipment,
+  options: LaboratoryInheritanceOptions
+): Equipment {
+  const merged = cloneEquipmentForEditor(nextEquipment);
+
+  if (!baseEquipment) {
+    return merged;
+  }
+
+  if (options.inheritGemstones) {
+    merged.gemstones = cloneGemstones(baseEquipment);
+    merged.gemstone = baseEquipment.gemstone;
+    merged.forgeLevel = baseEquipment.forgeLevel;
+  }
+
+  if (options.inheritRuneStones) {
+    merged.runeStoneSets = cloneRuneStoneSets(baseEquipment);
+    merged.runeStoneSetsNames = baseEquipment.runeStoneSetsNames
+      ? [...baseEquipment.runeStoneSetsNames]
+      : undefined;
+    merged.activeRuneStoneSet = baseEquipment.activeRuneStoneSet;
+    merged.runeSetEffect = baseEquipment.runeSetEffect;
+    merged.luckyHoles = baseEquipment.luckyHoles;
+  }
+
+  return merged;
+}
+
+export function describeSeatInheritance(options: LaboratoryInheritanceOptions) {
+  const inheritGemstones = options.inheritGemstones !== false;
+  const inheritRuneStones = options.inheritRuneStones !== false;
+
+  if (inheritGemstones && inheritRuneStones) {
+    return ['继承旧宝石', '继承旧符石'];
+  }
+
+  if (inheritGemstones) {
+    return ['继承旧宝石', '不继承旧符石'];
+  }
+
+  if (inheritRuneStones) {
+    return ['不继承旧宝石', '继承旧符石'];
+  }
+
+  return ['不继承旧打造'];
+}
+
 export function calculateEquipmentTotalStats(equipments: Equipment[]) {
   const totals: Record<string, number> = {};
   let totalPrice = 0;
 
   equipments.forEach((eq) => {
-    if (eq.price) totalPrice += eq.price;
+    totalPrice += (eq.price || 0) + (eq.crossServerFee || 0);
 
     Object.entries(eq.stats || {}).forEach(([key, val]) => {
       if (typeof val === 'number') {
         totals[key] = (totals[key] || 0) + val;
       }
     });
+
+    Object.entries(sumEquipmentGemstoneStats(eq.gemstones)).forEach(
+      ([key, val]) => {
+        if (typeof val === 'number') {
+          totals[key] = (totals[key] || 0) + val;
+        }
+      }
+    );
 
     if (eq.runeStoneSets && eq.activeRuneStoneSet !== undefined) {
       const activeSet = eq.runeStoneSets[eq.activeRuneStoneSet];

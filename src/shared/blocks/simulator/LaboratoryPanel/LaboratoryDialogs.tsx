@@ -1,7 +1,9 @@
 'use client';
 
 import { AnimatePresence, motion } from 'motion/react';
-import { Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Trash2, Upload } from 'lucide-react';
+
+import type { LaboratoryRuneGuardSummary } from '@/shared/lib/simulator-rune-guard';
 
 type BulkDeleteDialogProps = {
   open: boolean;
@@ -64,15 +66,24 @@ export function LaboratoryBulkDeleteDialog({
 
 type OverwriteDialogProps = {
   equipmentSetName: string;
+  guardSummary?: LaboratoryRuneGuardSummary | null;
   onClose: () => void;
   onConfirm: () => void;
 };
 
 export function LaboratoryOverwriteConfirmDialog({
   equipmentSetName,
+  guardSummary,
   onClose,
   onConfirm,
 }: OverwriteDialogProps) {
+  const hasGuardWarnings = Boolean(
+    guardSummary &&
+      (guardSummary.warnings.length > 0 ||
+        guardSummary.conflicts.length > 0 ||
+        guardSummary.skillChanges.length > 0)
+  );
+
   return (
     <AnimatePresence>
       <motion.div
@@ -92,11 +103,15 @@ export function LaboratoryOverwriteConfirmDialog({
         >
           <div className="mb-4 flex items-start gap-3">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-yellow-600/20">
-              <Upload className="h-5 w-5 text-yellow-400" />
+              {hasGuardWarnings ? (
+                <AlertTriangle className="h-5 w-5 text-yellow-400" />
+              ) : (
+                <Upload className="h-5 w-5 text-yellow-400" />
+              )}
             </div>
             <div className="flex-1">
               <h3 className="mb-1 text-lg font-bold text-yellow-100">
-                确认覆盖当前装备
+                {hasGuardWarnings ? '应用前请确认符石风险' : '确认覆盖当前装备'}
               </h3>
               <p className="text-sm leading-relaxed text-slate-300">
                 确认将{' '}
@@ -110,6 +125,52 @@ export function LaboratoryOverwriteConfirmDialog({
               </p>
             </div>
           </div>
+          {hasGuardWarnings && (
+            <div className="space-y-3 rounded-xl border border-yellow-700/40 bg-yellow-950/10 p-4">
+              {guardSummary?.skillChanges && guardSummary.skillChanges.length > 0 && (
+                <div>
+                  <div className="mb-1 text-sm font-semibold text-yellow-300">
+                    符石技能变化
+                  </div>
+                  <div className="space-y-1 text-xs text-slate-300">
+                    {guardSummary.skillChanges.map((item) => (
+                      <div key={item.comboName}>
+                        {item.comboName}
+                        {item.deltaBonusValue > 0 ? ' +' : ' '}
+                        {item.deltaBonusValue}，应用后生效等级 {item.nextBonusValue}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {guardSummary?.warnings && guardSummary.warnings.length > 0 && (
+                <div>
+                  <div className="mb-1 text-sm font-semibold text-red-300">
+                    跌落预警
+                  </div>
+                  <div className="space-y-1 text-xs text-red-200">
+                    {guardSummary.warnings.map((warning) => (
+                      <div key={warning}>{warning}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {guardSummary?.conflicts && guardSummary.conflicts.length > 0 && (
+                <div>
+                  <div className="mb-1 text-sm font-semibold text-amber-300">
+                    组合冲突提示
+                  </div>
+                  <div className="space-y-1 text-xs text-amber-200">
+                    {guardSummary.conflicts.map((conflict) => (
+                      <div key={conflict.equipmentId}>
+                        {conflict.slotLabel} · {conflict.equipmentName}：{conflict.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-6 flex gap-3">
             <button
               onClick={onClose}
@@ -121,7 +182,7 @@ export function LaboratoryOverwriteConfirmDialog({
               onClick={onConfirm}
               className="flex-1 rounded-lg border border-yellow-500 bg-yellow-600 px-4 py-2.5 font-medium text-slate-900 transition-colors hover:bg-yellow-500"
             >
-              确认覆盖
+              {hasGuardWarnings ? '仍然应用' : '确认覆盖'}
             </button>
           </div>
         </motion.div>

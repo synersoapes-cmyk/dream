@@ -1,22 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   Equipment,
   ExperimentSeat,
   RuneStone,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
+import { getVisibleCompareExperimentSeats } from '@/features/simulator/utils/simulatorExperimentSeats';
 import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
+import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
+import { analyzeRuneComboConflict } from '@/shared/lib/simulator-rune-combo';
+import {
+  formatSimulatorEquipmentStatValue,
+  getSimulatorEquipmentInitialValueEntries,
+} from '@/shared/lib/simulator-equipment-editor';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import { isSimulatorPrimaryEquipment } from '@/shared/lib/simulator-rune-editor';
+import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
 import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
+import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
+import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
 
 import {
-  AVAILABLE_GEMSTONES,
   AVAILABLE_RUNE_SETS,
   AVAILABLE_RUNES,
   cloneEquipmentForEditor,
@@ -49,8 +58,7 @@ export function LaboratoryEquipmentDetailModal({
       | 'starPosition'
       | 'starAlignment'
       | 'luckyHoles'
-      | 'runeSet'
-      | 'gemstone';
+      | 'runeSet';
     index?: number;
   } | null>(null);
   const [referenceElement, setReferenceElement] = useState<HTMLElement | null>(
@@ -65,6 +73,21 @@ export function LaboratoryEquipmentDetailModal({
     isSimulatorPrimaryEquipment(draftEquipment.type)
       ? draftEquipment.type
       : undefined
+  );
+  const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'jade_attribute_pool',
+  ]);
+  const jadeAttributePool = useMemo(
+    () =>
+      draftEquipment.type === 'jade'
+        ? resolveJadeAttributePoolForSlot({
+            value: equipmentExtensionConfigs.find(
+              (item) => item.configKey === 'jade_attribute_pool'
+            )?.value,
+            slot: draftEquipment.slot,
+          })
+        : null,
+    [draftEquipment.slot, draftEquipment.type, equipmentExtensionConfigs]
   );
   const { styles, attributes } = usePopper(referenceElement, popperElement, {
     placement: 'bottom-start',
@@ -85,6 +108,22 @@ export function LaboratoryEquipmentDetailModal({
     setDraftEquipment(cloneEquipmentForEditor(equipment));
     setRunePopover(null);
   }, [equipment]);
+
+  const visibleCompareSeats = useMemo(
+    () => getVisibleCompareExperimentSeats(experimentSeats),
+    [experimentSeats]
+  );
+  const initialValueEntries = useMemo(
+    () => getSimulatorEquipmentInitialValueEntries(draftEquipment),
+    [draftEquipment]
+  );
+  const runeComboConflict = useMemo(
+    () =>
+      isSimulatorPrimaryEquipment(draftEquipment.type)
+        ? analyzeRuneComboConflict(draftEquipment)
+        : null,
+    [draftEquipment]
+  );
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-slate-950/95 p-5">
@@ -195,6 +234,28 @@ export function LaboratoryEquipmentDetailModal({
               {draftEquipment.mainStat}
             </div>
 
+            {initialValueEntries.length > 0 && (
+              <div className="mb-2 rounded-lg border border-yellow-800/30 bg-slate-950/40 p-3">
+                <div className="mb-2 text-xs font-bold text-yellow-400">
+                  初值
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {initialValueEntries.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className="rounded border border-slate-700/70 bg-slate-900/70 px-2 py-1 text-xs"
+                    >
+                      <span className="text-slate-400">{entry.label}</span>
+                      <span className="ml-1 font-medium text-yellow-100">
+                        {entry.value > 0 ? '+' : ''}
+                        {formatSimulatorEquipmentStatValue(entry.value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {draftEquipment.durability && (
               <div className="text-sm text-slate-300">
                 耐久度 {draftEquipment.durability}
@@ -213,20 +274,9 @@ export function LaboratoryEquipmentDetailModal({
                     {draftEquipment.forgeLevel}
                   </div>
                   {draftEquipment.type !== 'jade' && (
-                    <div className="relative mt-1 text-sm text-slate-300">
+                    <div className="mt-1 text-sm text-slate-300">
                       <span className="text-slate-300">镶嵌宝石 </span>
-                      <span
-                        ref={
-                          runePopover?.type === 'gemstone'
-                            ? setReferenceElement
-                            : null
-                        }
-                        className="-mx-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-0.5 text-red-400 transition-colors hover:bg-slate-800/80"
-                        onClick={() => setRunePopover({ type: 'gemstone' })}
-                      >
-                        {draftEquipment.gemstone}
-                        <Edit2 className="h-3 w-3 text-red-400/60" />
-                      </span>
+                      <span className="text-red-400">{draftEquipment.gemstone}</span>
                     </div>
                   )}
                 </>
@@ -238,40 +288,15 @@ export function LaboratoryEquipmentDetailModal({
               </div>
             )}
 
-            {runePopover?.type === 'gemstone' && (
-              <div
-                ref={setPopperElement}
-                style={{ ...styles.popper, zIndex: 9999 }}
-                {...attributes.popper}
-                className="w-40 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-              >
-                <div className="custom-scrollbar max-h-64 overflow-y-auto p-1">
-                  <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                    选择宝石
-                  </div>
-                  {AVAILABLE_GEMSTONES.map((gemstone) => (
-                    <div
-                      key={gemstone}
-                      className="cursor-pointer rounded px-3 py-2 text-sm text-red-400 transition-colors hover:bg-slate-700"
-                      onClick={() => {
-                        setDraftEquipment({ ...draftEquipment, gemstone });
-                        setRunePopover(null);
-                      }}
-                    >
-                      {gemstone}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {runePopover?.type === 'gemstone' && (
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setRunePopover(null)}
-              />
-            )}
           </div>
+
+          {draftEquipment.type !== 'trinket' && draftEquipment.type !== 'jade' && (
+            <GemstoneEditor
+              equipment={draftEquipment}
+              onChange={setDraftEquipment}
+              title="宝石编辑"
+            />
+          )}
 
           {draftEquipment.type === 'trinket' &&
             draftEquipment.specialEffect && (
@@ -282,11 +307,32 @@ export function LaboratoryEquipmentDetailModal({
               </div>
             )}
 
+          {draftEquipment.type === 'jade' && (
+            <AccessoryEffectModifierEditor
+              equipment={draftEquipment}
+              onChange={setDraftEquipment}
+              allowedCodes={jadeAttributePool?.allowedModifierCodes}
+              poolDescription={
+                jadeAttributePool?.allowedModifierCodes.length
+                  ? `当前槽位允许的百分比词条：${jadeAttributePool.allowedModifierCodes.join(
+                      ' / '
+                    )}`
+                  : jadeAttributePool?.description
+              }
+            />
+          )}
+
           {draftEquipment.type !== 'trinket' &&
             draftEquipment.type !== 'jade' &&
             draftEquipment.runeStoneSets &&
             draftEquipment.runeStoneSets.length > 0 && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
+                {runeComboConflict && (
+                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-3 text-sm text-amber-200">
+                    {runeComboConflict.message}
+                  </div>
+                )}
+
                 <div className="relative">
                   <div
                     ref={
@@ -646,9 +692,7 @@ export function LaboratoryEquipmentDetailModal({
             </span>
           </button>
 
-          {experimentSeats
-            .filter((seat) => !seat.isSample)
-            .map((seat) => (
+          {visibleCompareSeats.map((seat) => (
               <button
                 key={seat.id}
                 onClick={async () => {
@@ -658,7 +702,7 @@ export function LaboratoryEquipmentDetailModal({
                 className="flex w-[calc(100%/6)] min-w-[140px] flex-shrink-0 flex-col items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center transition-colors hover:bg-slate-800/80"
               >
                 <span className="text-sm text-slate-200">
-                  挂载到【{getSeatDisplayName(seat, experimentSeats)}】
+                  挂载到【{getSeatDisplayName(seat, visibleCompareSeats)}】
                 </span>
               </button>
             ))}

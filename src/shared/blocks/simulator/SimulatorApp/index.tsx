@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LogIn, MessageSquare, UserPlus, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTheme } from 'next-themes';
+import { toast } from 'sonner';
 
 import { useSession } from '@/core/auth/client';
 import { Link, usePathname } from '@/core/i18n/navigation';
@@ -22,6 +24,7 @@ import {
   setSelectedSimulatorCharacterId,
 } from '@/features/simulator/utils/characterSelection';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
+import { isNavigatorOffline } from '@/shared/lib/simulator-network';
 
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
 const DEV_BOOTSTRAP_TIMEOUT_MS = 30_000;
@@ -46,6 +49,7 @@ export default function SimulatorApp() {
   const callbackUrl = useMemo(() => pathname || '/', [pathname]);
   const { setIsShowSignModal } = useAppContext();
   const { data: session, isPending: isSessionPending } = useSession();
+  const { resolvedTheme } = useTheme();
   const setAutoRecalculateDerivedStats = useGameStore(
     (state) => state.setAutoRecalculateDerivedStats
   );
@@ -57,6 +61,7 @@ export default function SimulatorApp() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapNotice, setBootstrapNotice] = useState<string | null>(null);
+  const isLightTheme = resolvedTheme === 'light';
 
   const authViewState: AuthViewState = isSessionPending
     ? 'checking-session'
@@ -212,15 +217,57 @@ export default function SimulatorApp() {
       return;
     }
 
-    setAutoRecalculateDerivedStats(mainTab === 'lab', {
+    setAutoRecalculateDerivedStats(true, {
       restoreCloudState: mainTab === 'status',
     });
   }, [authViewState, mainTab, setAutoRecalculateDerivedStats]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleOffline = () => {
+      toast.error('请检查网络', {
+        description: '当前网络不可用，云端同步会在网络恢复后继续。',
+      });
+    };
+
+    const handleOnline = () => {
+      toast.success('网络已恢复', {
+        description: '现在可以继续同步角色、装备和战斗参数。',
+      });
+    };
+
+    if (isNavigatorOffline()) {
+      handleOffline();
+    }
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
   if (authViewState === 'checking-session' || authViewState === 'bootstrapping') {
     return (
-      <div className="dark flex h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-        <div className="rounded-2xl border border-yellow-800/50 bg-slate-950/70 px-6 py-4 text-yellow-100 shadow-2xl">
+      <div
+        className={`flex h-screen items-center justify-center ${
+          isLightTheme
+            ? 'bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100'
+            : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+        }`}
+      >
+        <div
+          className={`rounded-2xl border px-6 py-4 shadow-2xl ${
+            isLightTheme
+              ? 'border-amber-300 bg-white/90 text-amber-950'
+              : 'border-yellow-800/50 bg-slate-950/70 text-yellow-100'
+          }`}
+        >
           {authViewState === 'checking-session'
             ? '正在确认登录状态...'
             : '正在加载云端角色数据...'}
@@ -231,8 +278,20 @@ export default function SimulatorApp() {
 
   if (authViewState === 'signed-out') {
     return (
-      <div className="dark flex h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
-        <div className="w-full max-w-2xl rounded-3xl border border-yellow-700/40 bg-slate-950/85 p-8 shadow-2xl shadow-black/30">
+      <div
+        className={`flex h-screen items-center justify-center p-6 ${
+          isLightTheme
+            ? 'bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100'
+            : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+        }`}
+      >
+        <div
+          className={`w-full max-w-2xl rounded-3xl border p-8 shadow-2xl ${
+            isLightTheme
+              ? 'border-amber-300 bg-white/92 shadow-amber-950/10'
+              : 'border-yellow-700/40 bg-slate-950/85 shadow-black/30'
+          }`}
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-500 to-amber-700 text-lg font-bold text-slate-950">
               梦
@@ -314,8 +373,20 @@ export default function SimulatorApp() {
 
   if (authViewState === 'error') {
     return (
-      <div className="dark flex h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
-        <div className="max-w-xl rounded-2xl border border-red-700/50 bg-slate-950/80 px-6 py-5 text-center shadow-2xl">
+      <div
+        className={`flex h-screen items-center justify-center p-6 ${
+          isLightTheme
+            ? 'bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100'
+            : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+        }`}
+      >
+        <div
+          className={`max-w-xl rounded-2xl border px-6 py-5 text-center shadow-2xl ${
+            isLightTheme
+              ? 'border-red-300 bg-white/92'
+              : 'border-red-700/50 bg-slate-950/80'
+          }`}
+        >
           <h2 className="text-lg font-bold text-red-300">未能加载云端角色数据</h2>
           <p className="mt-2 text-sm text-slate-300">{bootstrapError}</p>
           <p className="mt-3 text-xs text-slate-500">
@@ -328,7 +399,13 @@ export default function SimulatorApp() {
   }
 
   return (
-    <div className="dark flex h-screen flex-col overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div
+      className={`flex h-screen flex-col overflow-hidden ${
+        isLightTheme
+          ? 'bg-gradient-to-br from-amber-50 via-stone-100 to-amber-100'
+          : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
+      }`}
+    >
       <div className="h-1 flex-shrink-0 bg-gradient-to-r from-transparent via-yellow-500/80 to-transparent" />
 
       <div className="flex items-center justify-between border-b border-yellow-800/30 bg-slate-950/40 px-6 py-4">
@@ -348,12 +425,12 @@ export default function SimulatorApp() {
           <div className="mx-2 h-6 w-px bg-yellow-800/40" />
           <AccountSwitcher />
 
-          <div className="ml-4 flex rounded-xl border-2 border-purple-700/50 bg-slate-900/60 p-1.5 shadow-lg shadow-purple-900/30">
+          <div className="ml-4 flex rounded-xl border-2 border-yellow-700/35 bg-slate-900/60 p-1.5 shadow-lg shadow-black/20">
             <button
               className={`rounded-lg px-8 py-2.5 text-sm font-bold transition-all duration-200 ${
                 mainTab === 'status'
-                  ? 'scale-105 bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-900/50'
-                  : 'text-purple-300/70 hover:bg-purple-950/30 hover:text-purple-200'
+                  ? 'scale-105 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-950/30'
+                  : 'text-yellow-100/72 hover:bg-yellow-950/20 hover:text-yellow-100'
               }`}
               onClick={() => setMainTab('status')}
             >
@@ -362,8 +439,8 @@ export default function SimulatorApp() {
             <button
               className={`rounded-lg px-8 py-2.5 text-sm font-bold transition-all duration-200 ${
                 mainTab === 'lab'
-                  ? 'scale-105 bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-900/50'
-                  : 'text-purple-300/70 hover:bg-purple-950/30 hover:text-purple-200'
+                  ? 'scale-105 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-950/30'
+                  : 'text-yellow-100/72 hover:bg-yellow-950/20 hover:text-yellow-100'
               }`}
               onClick={() => setMainTab('lab')}
             >
@@ -462,11 +539,17 @@ export default function SimulatorApp() {
         position="top-right"
         toastOptions={{
           style: {
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            border: '2px solid rgba(202, 138, 4, 0.5)',
+            background: isLightTheme
+              ? 'linear-gradient(135deg, rgba(255,251,235,0.98) 0%, rgba(255,255,255,0.98) 100%)'
+              : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            border: isLightTheme
+              ? '2px solid rgba(217, 119, 6, 0.35)'
+              : '2px solid rgba(202, 138, 4, 0.5)',
             borderRadius: '12px',
-            color: '#fef3c7',
-            boxShadow: '0 10px 40px rgba(202, 138, 4, 0.2)',
+            color: isLightTheme ? '#78350f' : '#fef3c7',
+            boxShadow: isLightTheme
+              ? '0 10px 40px rgba(120, 53, 15, 0.12)'
+              : '0 10px 40px rgba(202, 138, 4, 0.2)',
             fontWeight: '500',
           },
           className: 'toast-custom',

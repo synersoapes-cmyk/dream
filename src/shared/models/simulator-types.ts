@@ -21,6 +21,7 @@ import {
   ornamentItem,
   ornamentSubAttr,
   ruleAttribute,
+  simulatorAdvisorAudit,
   characterStarResonance,
   snapshotBattleContext,
   snapshotEquipmentSlot,
@@ -150,6 +151,8 @@ export type SimulatorLabSeatPayload = {
   id: string;
   name: string;
   isSample: boolean;
+  inheritGemstones?: boolean;
+  inheritRuneStones?: boolean;
   sort?: number;
   equipment: Array<Record<string, unknown>>;
 };
@@ -214,6 +217,46 @@ export type AdminSimulatorOcrDictionaryItem = {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
+};
+
+export type AdminSimulatorOcrMetrics = {
+  totals: {
+    totalJobs: number;
+    successJobs: number;
+    failedJobs: number;
+    pendingJobs: number;
+    reviewingJobs: number;
+    successRate: number;
+  };
+  sceneBreakdown: Array<{
+    sceneType: string;
+    total: number;
+    success: number;
+    failed: number;
+    successRate: number;
+  }>;
+  failureReasons: Array<{
+    reason: string;
+    count: number;
+  }>;
+  missingFields: Array<{
+    field: string;
+    count: number;
+  }>;
+  draftReviewBreakdown: Array<{
+    status: string;
+    count: number;
+  }>;
+  candidateSyncBreakdown: Array<{
+    status: string;
+    count: number;
+  }>;
+  recentDailyTrend: Array<{
+    date: string;
+    total: number;
+    success: number;
+    failed: number;
+  }>;
 };
 
 export type AdminSimulatorInventoryEntryItem = {
@@ -297,6 +340,27 @@ export type AdminSimulatorStarResonanceRuleItem = {
   sort: number;
   enabled: boolean;
   notes: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type SimulatorAdvisorAudit = typeof simulatorAdvisorAudit.$inferSelect;
+
+export type AdminSimulatorAdvisorAuditItem = {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  characterId: string | null;
+  characterName: string | null;
+  status: string;
+  provider: string;
+  model: string;
+  question: string;
+  answer: string;
+  errorMessage: string;
+  contextSummary: Record<string, unknown>;
+  history: Array<{ role: string; content: string }>;
   createdAt: number;
   updatedAt: number;
 };

@@ -58,6 +58,19 @@ export async function PATCH(req: Request) {
       selectedDungeonIds: Array.isArray(body?.selectedDungeonIds)
         ? body.selectedDungeonIds
         : undefined,
+      weather: typeof body?.weather === 'string' ? body.weather : undefined,
+      targetDefenseState:
+        typeof body?.targetDefenseState === 'string'
+          ? body.targetDefenseState
+          : undefined,
+      targetMagicDefenseResult:
+        body?.targetMagicDefenseResult === undefined
+          ? undefined
+          : toNumber(body.targetMagicDefenseResult, 0),
+      specialMagicDamageReductionFactor:
+        body?.specialMagicDamageReductionFactor === undefined
+          ? undefined
+          : toNumber(body.specialMagicDamageReductionFactor, 1),
     });
 
     if (!bundle) {

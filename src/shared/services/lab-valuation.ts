@@ -1,4 +1,14 @@
 import type { DamageRuleSet } from '@/shared/models/damage-rules';
+import {
+  normalizeEquipmentRuneStoneSetNames,
+  normalizeEquipmentRuneStoneSets,
+  parseEquipmentGemstones,
+  summarizeEquipmentGemstones,
+} from '@/shared/lib/simulator-equipment-meta';
+import {
+  buildLaboratoryMagicDamageCostLabel,
+  buildLaboratoryMarginalWarning,
+} from '@/shared/lib/laboratory-outcome-summary';
 import type {
   SimulatorCharacterBundle,
   SimulatorEquipment,
@@ -48,11 +58,21 @@ export type LabValuationRequest = {
     isActive?: boolean;
     stats?: Record<string, unknown>;
   } | null;
+  battleContext?: {
+    selfFormation?: string;
+    selfElement?: string;
+    transformCardFactor?: number;
+    shenmuValue?: number;
+    magicResult?: number;
+    targetMagicDefenseCultivation?: number;
+  } | null;
   target: {
     name?: string;
     magicDefense: number;
     magicDefenseCultivation?: number;
     speed?: number;
+    element?: string;
+    formation?: string;
   };
   skillCode?: string;
   skillName?: string;
@@ -74,9 +94,14 @@ export type LabValuationSeatResult = {
   panelStats: ReturnType<typeof calculateDamageFromRuleSet>['panelStats'];
   comparison: {
     damageDiff: number;
+    damageGainPercent: number | null;
     priceDiff: number;
     costPerDamage: number | null;
     costLabel: string;
+    magicDamageDiff: number;
+    costPerMagicDamage: number | null;
+    magicDamageCostLabel: string;
+    marginalWarning: string | null;
   };
 };
 
@@ -192,15 +217,21 @@ function buildLabEquipmentNotesMeta(equipment: Record<string, unknown>) {
   const meta: Record<string, unknown> = {};
   const crossServerFee = toOptionalNumber(equipment.crossServerFee);
   const activeRuneStoneSet = toOptionalNumber(equipment.activeRuneStoneSet);
-  const runeStoneSetsNames = toOptionalStringArray(
+  const runeStoneSetsNames = normalizeEquipmentRuneStoneSetNames(
     equipment.runeStoneSetsNames
   );
+  const runeStoneSets = normalizeEquipmentRuneStoneSets(equipment.runeStoneSets);
+  const gemstones = parseEquipmentGemstones({
+    gemstones: equipment.gemstones,
+    gemstoneText: equipment.gemstone,
+    fallbackLevel: equipment.forgeLevel,
+  });
 
   if (crossServerFee !== undefined) {
     meta.crossServerFee = crossServerFee;
   }
-  if (Array.isArray(equipment.runeStoneSets)) {
-    meta.runeStoneSets = equipment.runeStoneSets;
+  if (runeStoneSets) {
+    meta.runeStoneSets = JSON.parse(JSON.stringify(runeStoneSets));
   }
   if (runeStoneSetsNames) {
     meta.runeStoneSetsNames = runeStoneSetsNames;
@@ -210,6 +241,9 @@ function buildLabEquipmentNotesMeta(equipment: Record<string, unknown>) {
   }
   if (Array.isArray(equipment.effectModifiers)) {
     meta.effectModifiers = JSON.parse(JSON.stringify(equipment.effectModifiers));
+  }
+  if (gemstones.length > 0) {
+    meta.gemstones = JSON.parse(JSON.stringify(gemstones));
   }
 
   for (const key of [
@@ -224,13 +258,17 @@ function buildLabEquipmentNotesMeta(equipment: Record<string, unknown>) {
     'positionRequirement',
     'manufacturer',
     'imageUrl',
-    'gemstone',
     'quality',
   ] as const) {
     const value = toOptionalString(equipment[key]);
     if (value) {
       meta[key] = value;
     }
+  }
+  const gemstoneSummary =
+    toOptionalString(equipment.gemstone) ?? summarizeEquipmentGemstones(gemstones);
+  if (gemstoneSummary) {
+    meta.gemstone = gemstoneSummary;
   }
 
   const durability = toOptionalNumber(equipment.durability);
@@ -457,11 +495,21 @@ export function calculateLabValuationFromRuleSet(params: {
         ruleVersionId: request.ruleVersionId,
         ruleVersionCode: request.ruleVersionCode,
         targetCount: request.targetCount,
+        selfFormation: request.battleContext?.selfFormation,
+        targetFormation: request.target.formation,
+        selfElement: request.battleContext?.selfElement,
+        targetElement: request.target.element,
+        transformCardFactor: request.battleContext?.transformCardFactor,
+        shenmuValue: request.battleContext?.shenmuValue,
+        magicResult: request.battleContext?.magicResult,
         targets: [
           {
             name: request.target.name,
             magicDefense: request.target.magicDefense,
-            magicDefenseCultivation: request.target.magicDefenseCultivation,
+            magicDefenseCultivation:
+              request.target.magicDefenseCultivation ??
+              request.battleContext?.targetMagicDefenseCultivation,
+            speed: request.target.speed,
           },
         ],
       },
@@ -479,7 +527,8 @@ export function calculateLabValuationFromRuleSet(params: {
       totalPrice:
         seat.totalPrice ??
         seat.equipment.reduce(
-          (sum, item) => sum + toFiniteNumber(item.price),
+          (sum, item) =>
+            sum + toFiniteNumber(item.price) + toFiniteNumber(item.crossServerFee),
           0
         ),
       singleTargetDamage: target.damage,
@@ -505,6 +554,12 @@ export function calculateLabValuationFromRuleSet(params: {
     sampleSeatId: sampleSeat.seatId,
     seats: seatResults.map((seat) => {
       const damageDiff = seat.totalDamage - sampleSeat.totalDamage;
+      const magicDamageDiff =
+        seat.panelStats.magicDamage - sampleSeat.panelStats.magicDamage;
+      const damageGainPercent =
+        sampleSeat.totalDamage > 0
+          ? (damageDiff / sampleSeat.totalDamage) * 100
+          : null;
       const priceDiff = seat.totalPrice - sampleSeat.totalPrice;
 
       return {
@@ -519,9 +574,21 @@ export function calculateLabValuationFromRuleSet(params: {
         panelStats: seat.panelStats,
         comparison: {
           damageDiff,
+          damageGainPercent,
           priceDiff,
           costPerDamage: damageDiff > 0 ? priceDiff / damageDiff : null,
           costLabel: buildCostLabel(damageDiff, priceDiff),
+          magicDamageDiff,
+          costPerMagicDamage:
+            magicDamageDiff > 0 ? priceDiff / magicDamageDiff : null,
+          magicDamageCostLabel: buildLaboratoryMagicDamageCostLabel({
+            diffPrice: priceDiff,
+            magicDamageDiff,
+          }),
+          marginalWarning: buildLaboratoryMarginalWarning({
+            diffPrice: priceDiff,
+            magicDamageDiff,
+          }),
         },
       };
     }),

@@ -15,12 +15,19 @@ import type {
   EquipmentSet,
   Faction,
   GameState,
+  MeridianConfig,
   Skill,
   SyncedCloudState,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
+import {
+  normalizeEquipmentRuneStoneSetNames,
+  normalizeEquipmentRuneStoneSets,
+  parseEquipmentGemstones,
+  summarizeEquipmentGemstones,
+} from '@/shared/lib/simulator-equipment-meta';
 import {
   extractSimulatorEquipmentSlotNumber,
   normalizeSimulatorEquipmentType,
@@ -32,6 +39,12 @@ const FALLBACK_FACTION: Faction = '龙宫';
 type NumericStatKey = Exclude<keyof (CombatStats & BaseAttributes), 'faction'>;
 
 const cultivationTypeMap: Record<string, keyof Cultivation> = {
+  bodyStrength: 'bodyStrength',
+  body_strength: 'bodyStrength',
+  fitness: 'bodyStrength',
+  qiangshen: 'bodyStrength',
+  强身: 'bodyStrength',
+  强身术: 'bodyStrength',
   physicalAttack: 'physicalAttack',
   physical_attack: 'physicalAttack',
   attack: 'physicalAttack',
@@ -238,6 +251,22 @@ function toEffectModifiers(
   return items.length > 0 ? items : undefined;
 }
 
+function mapMeridian(bundle: SimulatorCharacterBundle): MeridianConfig {
+  const rawBody = parseJsonRecord(bundle.profile?.rawBodyJson);
+  const meridianConfig = isRecord(rawBody.meridianConfig)
+    ? rawBody.meridianConfig
+    : {};
+
+  return {
+    physique: toNumber(meridianConfig.physique),
+    magic: toNumber(meridianConfig.magic),
+    strength: toNumber(meridianConfig.strength),
+    endurance: toNumber(meridianConfig.endurance),
+    agility: toNumber(meridianConfig.agility),
+    magicPower: toNumber(meridianConfig.magicPower),
+  };
+}
+
 function toStarPositionConfig(value: unknown): Equipment['starPositionConfig'] {
   if (!isRecord(value)) {
     return undefined;
@@ -331,34 +360,7 @@ function toStatRecord(value: unknown): CharacterStatMap {
 }
 
 function toRuneStoneSets(value: unknown): Equipment['runeStoneSets'] {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const sets = value
-    .filter(Array.isArray)
-    .map((set, setIndex) =>
-      set.filter(isRecord).map((runeStone, runeIndex) => ({
-        id:
-          typeof runeStone.id === 'string' && runeStone.id.trim().length > 0
-            ? runeStone.id
-            : `persisted_rune_${setIndex}_${runeIndex}`,
-        name: typeof runeStone.name === 'string' ? runeStone.name : undefined,
-        type: typeof runeStone.type === 'string' ? runeStone.type : 'red',
-        level: toOptionalNumber(runeStone.level),
-        quality:
-          typeof runeStone.quality === 'string' ? runeStone.quality : undefined,
-        description:
-          typeof runeStone.description === 'string'
-            ? runeStone.description
-            : undefined,
-        price: toOptionalNumber(runeStone.price),
-        stats: toStatRecord(runeStone.stats),
-      }))
-    )
-    .filter((set) => set.length > 0);
-
-  return sets.length > 0 ? sets : undefined;
+  return normalizeEquipmentRuneStoneSets(value);
 }
 
 function buildAttrMap(
@@ -429,11 +431,12 @@ function mapBaseAttributes(bundle: SimulatorCharacterBundle): BaseAttributes {
       inferBaseHpSource({
         panelHp: bundle.profile?.hp ?? toNumber(rawBody.hp),
         physique: bundle.profile?.physique ?? toNumber(rawBody.physique),
-        endurance: bundle.profile?.endurance ?? toNumber(rawBody.endurance),
         equipmentHp,
       })
     ),
     magic: bundle.profile?.magic ?? toNumber(rawBody.magic),
+    potentialPoints:
+      bundle.profile?.potentialPoints ?? toNumber(rawBody.potentialPoints),
     physique: bundle.profile?.physique ?? toNumber(rawBody.physique),
     magicPower: toNumber(rawBody.magicPower ?? rawBody.spiritualPower),
     strength: bundle.profile?.strength ?? toNumber(rawBody.strength),
@@ -457,7 +460,9 @@ function mapCombatStats(bundle: SimulatorCharacterBundle): CombatStats {
     speed: Math.round(bundle.profile?.speed ?? 0),
     dodge: Math.round(toNumber(rawBody.dodge)),
     sealHit: Math.round(bundle.profile?.sealHit ?? 0),
-    spiritualPower: Math.round(toNumber(rawBody.spiritualPower)),
+    spiritualPower: Math.round(
+      toNumber(rawBody.spiritualPower ?? rawBody.magicPower)
+    ),
     magicCritLevel: Math.round(toNumber(rawBody.magicCritLevel)),
     fixedDamage: Math.round(toNumber(rawBody.fixedDamage)),
     pierceLevel: Math.round(toNumber(rawBody.pierceLevel)),
@@ -493,6 +498,7 @@ function mapCombatTarget(
 
 function mapCultivation(bundle: SimulatorCharacterBundle): Cultivation {
   const cultivation: Cultivation = {
+    bodyStrength: 0,
     physicalAttack: 0,
     physicalDefense: 0,
     magicAttack: 0,
@@ -517,6 +523,9 @@ function mapSkills(bundle: SimulatorCharacterBundle): Skill[] {
   return bundle.skills.map((skill) => ({
     name: skill.skillName,
     level: skill.finalLevel || skill.baseLevel || 0,
+    baseLevel: skill.baseLevel || 0,
+    extraLevel: skill.extraLevel || 0,
+    finalLevel: skill.finalLevel || skill.baseLevel || 0,
     type: toSkillType(skill.skillName),
     targets: toSkillTargets(skill.skillName),
   }));
@@ -570,7 +579,9 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       forgeLevel: item.build?.refineLevel ?? 0,
       crossServerFee: toOptionalNumber(notesMeta.crossServerFee),
       runeStoneSets: toRuneStoneSets(notesMeta.runeStoneSets),
-      runeStoneSetsNames: toStringArray(notesMeta.runeStoneSetsNames),
+      runeStoneSetsNames: normalizeEquipmentRuneStoneSetNames(
+        notesMeta.runeStoneSetsNames
+      ),
       activeRuneStoneSet: toOptionalNumber(notesMeta.activeRuneStoneSet),
       runeSetEffect:
         typeof notesMeta.runeSetEffect === 'string'
@@ -595,7 +606,19 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
         typeof notesMeta.element === 'string' ? notesMeta.element : undefined,
       durability: toOptionalNumber(notesMeta.durability),
       gemstone:
-        typeof notesMeta.gemstone === 'string' ? notesMeta.gemstone : undefined,
+        typeof notesMeta.gemstone === 'string'
+          ? notesMeta.gemstone
+          : summarizeEquipmentGemstones(
+              parseEquipmentGemstones({
+                gemstones: notesMeta.gemstones,
+                fallbackLevel: item.build?.gemLevelTotal,
+              })
+            ),
+      gemstones: parseEquipmentGemstones({
+        gemstones: notesMeta.gemstones,
+        gemstoneText: notesMeta.gemstone,
+        fallbackLevel: item.build?.gemLevelTotal,
+      }),
       luckyHoles:
         typeof notesMeta.luckyHoles === 'string'
           ? notesMeta.luckyHoles
@@ -685,7 +708,9 @@ function toPersistedEquipment(
         ? value.imageUrl
         : getEquipmentDefaultImage(type),
     runeStoneSets: toRuneStoneSets(value.runeStoneSets),
-    runeStoneSetsNames: toStringArray(value.runeStoneSetsNames),
+    runeStoneSetsNames: normalizeEquipmentRuneStoneSetNames(
+      value.runeStoneSetsNames
+    ),
     activeRuneStoneSet: toOptionalNumber(value.activeRuneStoneSet),
     runeSetEffect:
       typeof value.runeSetEffect === 'string' ? value.runeSetEffect : undefined,
@@ -700,7 +725,20 @@ function toPersistedEquipment(
     element: typeof value.element === 'string' ? value.element : undefined,
     durability: toOptionalNumber(value.durability),
     forgeLevel: toOptionalNumber(value.forgeLevel),
-    gemstone: typeof value.gemstone === 'string' ? value.gemstone : undefined,
+    gemstone:
+      typeof value.gemstone === 'string'
+        ? value.gemstone
+        : summarizeEquipmentGemstones(
+            parseEquipmentGemstones({
+              gemstones: value.gemstones,
+              fallbackLevel: value.forgeLevel,
+            })
+          ),
+    gemstones: parseEquipmentGemstones({
+      gemstones: value.gemstones,
+      gemstoneText: value.gemstone,
+      fallbackLevel: value.forgeLevel,
+    }),
     luckyHoles:
       typeof value.luckyHoles === 'string' ? value.luckyHoles : undefined,
     starPosition:
@@ -802,6 +840,22 @@ type ApplySimulatorBundleOptions = {
   preserveWorkbenchState?: boolean;
 };
 
+export function buildSimulatorBundleStorePreview(
+  bundle: SimulatorCharacterBundle
+): {
+  baseAttributes: BaseAttributes;
+  combatStats: CombatStats;
+  currentCharacter: CurrentCharacter;
+} {
+  const baseAttributes = mapBaseAttributes(bundle);
+
+  return {
+    baseAttributes,
+    combatStats: mapCombatStats(bundle),
+    currentCharacter: buildCurrentCharacter(bundle, baseAttributes),
+  };
+}
+
 function buildCurrentCharacter(
   bundle: SimulatorCharacterBundle,
   baseAttributes: BaseAttributes
@@ -823,11 +877,14 @@ function buildSyncedCloudState(params: {
   activeSetIndex: number;
   skills: Skill[];
   cultivation: Cultivation;
+  meridian: MeridianConfig;
   combatTarget: GameState['combatTarget'];
   selfFormation: string;
   selfElement: GameState['playerSetup']['element'];
+  battleContext: SimulatorCharacterBundle['battleContext'] | null;
 }): SyncedCloudState {
   const currentPlayerSetup = useGameStore.getState().playerSetup;
+  const battleNotes = parseJsonRecord(params.battleContext?.notesJson);
 
   return {
     currentCharacter: params.currentCharacter,
@@ -838,6 +895,7 @@ function buildSyncedCloudState(params: {
     activeSetIndex: params.activeSetIndex,
     skills: params.skills,
     cultivation: params.cultivation,
+    meridian: params.meridian,
     treasure: null,
     combatTarget: params.combatTarget,
     formation: params.selfFormation,
@@ -849,8 +907,40 @@ function buildSyncedCloudState(params: {
       equipment: params.equipment,
       skills: params.skills,
       cultivation: params.cultivation,
+      meridian: params.meridian,
       element: params.selfElement,
       formation: params.selfFormation,
+    },
+    battleContext: {
+      selfFormation: params.battleContext?.selfFormation || params.selfFormation,
+      selfElement:
+        (params.battleContext?.selfElement || params.selfElement) as SyncedCloudState['battleContext']['selfElement'],
+      formationCounterState:
+        params.battleContext?.formationCounterState || '无克/普通',
+      elementRelation: params.battleContext?.elementRelation || '无克/普通',
+      weather:
+        typeof battleNotes.weather === 'string' ? battleNotes.weather : '',
+      transformCardFactor: toNumber(params.battleContext?.transformCardFactor, 1),
+      splitTargetCount: toNumber(params.battleContext?.splitTargetCount, 1),
+      shenmuValue: toNumber(params.battleContext?.shenmuValue, 0),
+      magicResult: toNumber(params.battleContext?.magicResult, 0),
+      targetMagicDefenseResult: toNumber(
+        battleNotes.targetMagicDefenseResult,
+        0
+      ),
+      targetMagicDefenseCultivation: toNumber(
+        params.battleContext?.targetMagicDefenseCultivation,
+        0
+      ),
+      targetDefenseState:
+        typeof battleNotes.targetDefenseState === 'string'
+          ? battleNotes.targetDefenseState
+          : '',
+      specialMagicDamageReductionFactor: toNumber(
+        battleNotes.specialMagicDamageReductionFactor,
+        1
+      ),
+      targetFormation: params.battleContext?.targetFormation || '普通阵',
     },
   };
 }
@@ -859,8 +949,8 @@ export function applySimulatorBundleToStore(
   bundle: SimulatorCharacterBundle,
   options: ApplySimulatorBundleOptions = {}
 ) {
-  const baseAttributes = mapBaseAttributes(bundle);
-  const combatStats = mapCombatStats(bundle);
+  const { baseAttributes, combatStats, currentCharacter } =
+    buildSimulatorBundleStorePreview(bundle);
   const equipment = mapEquipments(bundle);
   const persistedPlan = parsePersistedEquipmentPlan(
     bundle.equipmentPlan,
@@ -871,6 +961,7 @@ export function applySimulatorBundleToStore(
   const activeSetIndex = persistedPlan?.activeSetIndex ?? 0;
   const skills = mapSkills(bundle);
   const cultivation = mapCultivation(bundle);
+  const meridian = mapMeridian(bundle);
   const combatTarget = mapCombatTarget(bundle);
   const selfFormation = bundle.battleContext?.selfFormation || '天覆阵';
   const selfElement = (bundle.battleContext?.selfElement || '水') as any;
@@ -883,7 +974,6 @@ export function applySimulatorBundleToStore(
   const persistedSelectedDungeonIds = toPersistedSelectedDungeonIds(
     battleNotes.selectedDungeonIds
   );
-  const currentCharacter = buildCurrentCharacter(bundle, baseAttributes);
   const syncedCloudState = buildSyncedCloudState({
     currentCharacter,
     baseAttributes,
@@ -893,9 +983,11 @@ export function applySimulatorBundleToStore(
     activeSetIndex,
     skills,
     cultivation,
+    meridian,
     combatTarget,
     selfFormation,
     selfElement,
+    battleContext: bundle.battleContext,
   });
 
   useGameStore.setState((state: GameState) => ({

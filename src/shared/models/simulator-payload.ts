@@ -1,3 +1,10 @@
+import {
+  normalizeEquipmentRuneStoneSetNames,
+  normalizeEquipmentRuneStoneSets,
+  parseEquipmentGemstones,
+  summarizeEquipmentGemstones,
+} from '@/shared/lib/simulator-equipment-meta';
+
 type EquipmentSlotLike = {
   type: string;
   slot?: number;
@@ -14,6 +21,8 @@ export type NormalizedLabSeatPayload = {
   id: string;
   name: string;
   isSample: boolean;
+  inheritGemstones: boolean;
+  inheritRuneStones: boolean;
   equipment: Array<Record<string, unknown>>;
 };
 
@@ -136,16 +145,24 @@ export function buildEquipmentSetEffectMeta(item: EquipmentMetadataLike) {
 export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
   const meta: Record<string, unknown> = {};
   const crossServerFee = toOptionalEquipmentNumber(item.crossServerFee);
-  const runeStoneSetsNames = toOptionalEquipmentStringArray(
+  const runeStoneSetsNames = normalizeEquipmentRuneStoneSetNames(
     item.runeStoneSetsNames
   );
   const activeRuneStoneSet = toOptionalEquipmentNumber(item.activeRuneStoneSet);
+  const runeStoneSets = normalizeEquipmentRuneStoneSets(item.runeStoneSets);
+  const gemstones = parseEquipmentGemstones({
+    gemstones: item.gemstones,
+    gemstoneText: item.gemstone,
+    fallbackLevel: item.forgeLevel,
+  });
+  const gemstoneSummary =
+    toOptionalEquipmentString(item.gemstone) ?? summarizeEquipmentGemstones(gemstones);
 
   if (crossServerFee !== undefined) {
     meta.crossServerFee = crossServerFee;
   }
-  if (Array.isArray(item.runeStoneSets)) {
-    meta.runeStoneSets = cloneEquipmentJsonValue(item.runeStoneSets);
+  if (runeStoneSets) {
+    meta.runeStoneSets = cloneEquipmentJsonValue(runeStoneSets);
   }
   if (runeStoneSetsNames) {
     meta.runeStoneSetsNames = runeStoneSetsNames;
@@ -155,6 +172,9 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
   }
   if (Array.isArray(item.effectModifiers)) {
     meta.effectModifiers = cloneEquipmentJsonValue(item.effectModifiers);
+  }
+  if (gemstones.length > 0) {
+    meta.gemstones = cloneEquipmentJsonValue(gemstones);
   }
   if (
     item.starPositionConfig &&
@@ -183,13 +203,15 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
     'positionRequirement',
     'manufacturer',
     'imageUrl',
-    'gemstone',
     'quality',
   ] as const) {
     const value = toOptionalEquipmentString(item[key]);
     if (value) {
       meta[key] = value;
     }
+  }
+  if (gemstoneSummary) {
+    meta.gemstone = gemstoneSummary;
   }
 
   const durability = toOptionalEquipmentNumber(item.durability);
@@ -205,6 +227,8 @@ export function normalizeLabSeatPayload(
     id?: string;
     name?: string;
     isSample?: boolean;
+    inheritGemstones?: boolean;
+    inheritRuneStones?: boolean;
     equipment?: Array<Record<string, unknown>>;
   }>
 ): NormalizedLabSeatPayload[] {
@@ -235,6 +259,12 @@ export function normalizeLabSeatPayload(
             : buildLabSeatDefaultName(seatId, compareSeats.length))
       ),
       isSample,
+      inheritGemstones: isSample
+        ? false
+        : seat?.inheritGemstones !== false,
+      inheritRuneStones: isSample
+        ? false
+        : seat?.inheritRuneStones !== false,
       equipment: equipment as Array<Record<string, unknown>>,
     };
 
@@ -250,6 +280,8 @@ export function normalizeLabSeatPayload(
       id: 'sample',
       name: '样本席位',
       isSample: true,
+      inheritGemstones: false,
+      inheritRuneStones: false,
       equipment: [],
     },
     ...compareSeats.slice(0, 5),

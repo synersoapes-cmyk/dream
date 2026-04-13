@@ -2,12 +2,19 @@ import type {
   Equipment,
   RuneStone,
 } from '@/features/simulator/store/gameTypes';
+import { normalizeEquipmentRuneStoneSetNames, normalizeEquipmentRuneStoneSets } from '@/shared/lib/simulator-equipment-meta';
 
 import { SIMULATOR_PRIMARY_EQUIPMENT_TYPES } from '@/shared/lib/simulator-equipment';
 
 const DEFAULT_RUNE_SET_OPTIONS = [
+  '九龙诀',
+  '呼风唤雨',
+  '破浪诀',
+  '逆鳞',
+  '龙腾',
   '招云',
   '腾蛟',
+  '百步穿杨',
   '心印',
   '仙骨',
   '全能',
@@ -132,24 +139,32 @@ export function ensureSimulatorEquipmentRuneEditingState(equipment: Equipment) {
 
   const next: Equipment = {
     ...equipment,
-    runeStoneSets: cloneRuneStoneSets(equipment.runeStoneSets) ?? [],
-    runeStoneSetsNames: equipment.runeStoneSetsNames
-      ? [...equipment.runeStoneSetsNames]
-      : [],
+    runeStoneSets:
+      normalizeEquipmentRuneStoneSets(cloneRuneStoneSets(equipment.runeStoneSets)) ?? [],
+    runeStoneSetsNames:
+      normalizeEquipmentRuneStoneSetNames(equipment.runeStoneSetsNames) ?? [],
   };
 
   const activeIndex = getSimulatorActiveRuneSetIndex(next);
 
   while ((next.runeStoneSets?.length ?? 0) <= activeIndex) {
+    if ((next.runeStoneSets?.length ?? 0) >= 2) {
+      break;
+    }
     next.runeStoneSets?.push([]);
   }
   while ((next.runeStoneSetsNames?.length ?? 0) <= activeIndex) {
+    if ((next.runeStoneSetsNames?.length ?? 0) >= 2) {
+      break;
+    }
     next.runeStoneSetsNames?.push('未配置');
   }
 
   if (!next.runeStoneSets || next.runeStoneSets.length === 0) {
     next.runeStoneSets = [[createEmptyRuneStone(0)]];
   }
+  next.runeStoneSets = next.runeStoneSets.slice(0, 2).map((set) => set.slice(0, 5));
+  next.runeStoneSetsNames = (next.runeStoneSetsNames ?? []).slice(0, 2);
 
   if (!next.runeStoneSets[activeIndex] || next.runeStoneSets[activeIndex].length === 0) {
     next.runeStoneSets[activeIndex] = [createEmptyRuneStone(0)];

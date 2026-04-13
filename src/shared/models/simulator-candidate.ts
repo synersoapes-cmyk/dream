@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, like, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, or } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import {
@@ -17,7 +17,6 @@ import {
   ensureSimulatorDbReady,
   findActiveCharacter,
   findCandidateEquipmentRows,
-  insertValuesInChunks,
   mapCandidateStatusToDraftReviewStatus,
   parseJsonObject,
   withTransientD1Retry,
@@ -266,10 +265,6 @@ export async function updateSimulatorCandidateEquipment(
       existingRows.map((row: SimulatorCandidateEquipment) => [row.id, row])
     );
 
-    await db()
-      .delete(candidateEquipment)
-      .where(eq(candidateEquipment.characterId, character.id));
-
     const persistedItems: Array<typeof candidateEquipment.$inferInsert> =
       payload.items.map((item, index) => {
         const id = item.id || getUuid();
@@ -300,8 +295,44 @@ export async function updateSimulatorCandidateEquipment(
         };
       });
 
-    if (persistedItems.length > 0) {
-      await insertValuesInChunks(db(), candidateEquipment, persistedItems);
+    for (const item of persistedItems) {
+      await db()
+        .insert(candidateEquipment)
+        .values(item)
+        .onConflictDoUpdate({
+          target: candidateEquipment.id,
+          set: {
+            characterId: item.characterId,
+            status: item.status,
+            source: item.source,
+            equipmentJson: item.equipmentJson,
+            imageKey: item.imageKey,
+            rawText: item.rawText,
+            targetSetId: item.targetSetId,
+            targetEquipmentId: item.targetEquipmentId,
+            targetRuneStoneSetIndex: item.targetRuneStoneSetIndex,
+            ocrJobId: item.ocrJobId,
+            ocrDraftItemId: item.ocrDraftItemId,
+            sort: item.sort,
+          },
+        });
+    }
+
+    const nextIdSet = new Set<string>(persistedItems.map((item) => item.id));
+    const removedIds = existingRows
+      .map((row: SimulatorCandidateEquipment) => row.id)
+      .filter((id: string) => !nextIdSet.has(id));
+
+    for (let index = 0; index < removedIds.length; index += 50) {
+      const chunk = removedIds.slice(index, index + 50);
+      await db()
+        .delete(candidateEquipment)
+        .where(
+          and(
+            eq(candidateEquipment.characterId, character.id),
+            inArray(candidateEquipment.id, chunk)
+          )
+        );
     }
 
     await syncInventoryEntriesForCharacter(

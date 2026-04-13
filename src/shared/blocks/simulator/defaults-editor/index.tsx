@@ -151,6 +151,7 @@ const EQUIPMENT_SLOT_OPTIONS: string[] = [
 const ATTR_GROUP_OPTIONS: string[] = ['base', 'extra'];
 
 const CULTIVATION_TYPE_OPTIONS: string[] = [
+  'bodyStrength',
   'physicalAttack',
   'physicalDefense',
   'magicAttack',

@@ -14,6 +14,7 @@ type Props = {
   skills: Skill[];
   selectedSkillName: string;
   selectedTargetCount: number;
+  targetCountOptions: number[];
   targetDungeons: Dungeon[];
   onClose: () => void;
   onSelectedSkillNameChange: (value: string) => void;
@@ -27,6 +28,7 @@ export function LaboratoryTargetSelectorModal({
   skills,
   selectedSkillName,
   selectedTargetCount,
+  targetCountOptions,
   targetDungeons,
   onClose,
   onSelectedSkillNameChange,
@@ -60,7 +62,8 @@ export function LaboratoryTargetSelectorModal({
             >
               {skills.map((skill) => (
                 <option key={skill.name} value={skill.name}>
-                  {skill.name} (Lv.{skill.level})
+                  {skill.name} (Lv.{skill.baseLevel}
+                  {skill.extraLevel > 0 ? `+${skill.extraLevel}` : ''})
                 </option>
               ))}
             </select>
@@ -69,7 +72,7 @@ export function LaboratoryTargetSelectorModal({
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-yellow-600">秒几</label>
             <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map((num) => (
+              {targetCountOptions.map((num) => (
                 <button
                   key={num}
                   onClick={() => onSelectedTargetCountChange(num)}
@@ -82,6 +85,9 @@ export function LaboratoryTargetSelectorModal({
                   {num}
                 </button>
               ))}
+            </div>
+            <div className="text-[11px] text-yellow-200/70">
+              当前可选上限：秒{targetCountOptions[targetCountOptions.length - 1] ?? 1}
             </div>
           </div>
         </div>

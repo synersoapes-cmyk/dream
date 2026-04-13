@@ -1,6 +1,22 @@
-import type { PendingEquipment } from '@/features/simulator/store/gameTypes';
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import type { PendingEquipment } from '@/features/simulator/store/gameTypes';
+
 import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
+
+export function buildSimulatorCandidateEquipmentPayload(
+  items: PendingEquipment[]
+) {
+  return items.map((item) => ({
+    id: item.id,
+    equipment: item.equipment,
+    imagePreview: item.imagePreview,
+    rawText: item.rawText,
+    targetSetId: item.targetSetId,
+    targetEquipmentId: item.targetEquipmentId,
+    targetRuneStoneSetIndex: item.targetRuneStoneSetIndex,
+    status: item.status,
+  }));
+}
 
 export function applySimulatorCandidateEquipmentToStore(
   items: SimulatorCandidateEquipmentItem[]

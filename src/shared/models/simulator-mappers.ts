@@ -50,6 +50,10 @@ export async function buildSimulatorLabSessionBundle(
         parsed.seatName || (seatId === 'sample' ? '样本席位' : seatId)
       ),
       isSample: Boolean(parsed.isSample) || seatId === 'sample',
+      inheritGemstones:
+        seatId === 'sample' ? false : row.inheritGemstones !== false,
+      inheritRuneStones:
+        seatId === 'sample' ? false : row.inheritRuneStones !== false,
       equipment: [],
     };
 
@@ -61,6 +65,16 @@ export async function buildSimulatorLabSessionBundle(
     } else {
       current.name = String(parsed.seatName || current.name);
       current.isSample = Boolean(parsed.isSample) || seatId === 'sample';
+      current.inheritGemstones = current.isSample
+        ? false
+        : Boolean(
+            parsed.inheritGemstones ?? row.inheritGemstones ?? true
+          );
+      current.inheritRuneStones = current.isSample
+        ? false
+        : Boolean(
+            parsed.inheritRuneStones ?? row.inheritRuneStones ?? true
+          );
     }
 
     seatMap.set(seatId, current);

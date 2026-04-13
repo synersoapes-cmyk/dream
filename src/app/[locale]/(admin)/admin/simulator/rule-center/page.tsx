@@ -6,6 +6,7 @@ import {
   getDamageRuleVersionDetail,
   listDamageRuleVersions,
 } from '@/shared/models/damage-rules';
+import { listAdminSimulatorStarResonanceRules } from '@/shared/models/simulator-admin';
 
 import {
   getSimulatorAdminCrumbs,
@@ -30,6 +31,9 @@ export default async function SimulatorRuleCenterAdminPage({
   const initialRuleDetail = activeVersion
     ? await getDamageRuleVersionDetail({ versionId: activeVersion.id })
     : null;
+  const starResonanceRuleCount = (
+    await listAdminSimulatorStarResonanceRules({ limit: 1000 })
+  ).length;
 
   return (
     <>
@@ -44,6 +48,7 @@ export default async function SimulatorRuleCenterAdminPage({
           canEdit={Boolean(writableUser)}
           initialVersions={ruleVersions}
           initialDetail={initialRuleDetail}
+          starResonanceRuleCount={starResonanceRuleCount}
         />
       </Main>
     </>

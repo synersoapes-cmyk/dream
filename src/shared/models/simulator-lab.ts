@@ -338,6 +338,8 @@ export async function updateSimulatorLabSession(
       id?: string;
       name?: string;
       isSample?: boolean;
+      inheritGemstones?: boolean;
+      inheritRuneStones?: boolean;
       equipment?: Array<Record<string, unknown>>;
     }>;
   }
@@ -414,10 +416,12 @@ export async function updateSimulatorLabSession(
           seatId: seat.id,
           seatName: seat.name,
           isSample: seat.isSample,
+          inheritGemstones: seat.inheritGemstones,
+          inheritRuneStones: seat.inheritRuneStones,
         }),
         source: 'meta',
-        inheritGemstones: false,
-        inheritRuneStones: false,
+        inheritGemstones: seat.inheritGemstones,
+        inheritRuneStones: seat.inheritRuneStones,
         sort: seatIndex * 100,
       };
 
@@ -440,11 +444,13 @@ export async function updateSimulatorLabSession(
           seatId: seat.id,
           seatName: seat.name,
           isSample: seat.isSample,
+          inheritGemstones: seat.inheritGemstones,
+          inheritRuneStones: seat.inheritRuneStones,
           equipment,
         }),
         source: 'manual',
-        inheritGemstones: false,
-        inheritRuneStones: false,
+        inheritGemstones: seat.inheritGemstones,
+        inheritRuneStones: seat.inheritRuneStones,
         sort: seatIndex * 100 + equipmentIndex + 1,
       }));
 

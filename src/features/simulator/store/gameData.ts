@@ -54,4 +54,17 @@ export const DUNGEON_DATABASE: Dungeon[] = [
       { name: '万年熊王', level: 120, hp: 200000, defense: 3500, magicDefense: 3500, isBoss: true, id: 'd4_4' },
     ],
   },
+  {
+    id: 'd5',
+    name: '通天河',
+    level: 130,
+    difficulty: 'nightmare',
+    description: '高等级副本样例，BOSS 法防更高，适合验证环境补正与特殊目标减伤。',
+    targets: [
+      { name: '巡河夜叉', level: 130, hp: 95000, defense: 2400, magicDefense: 2600, id: 'd5_1' },
+      { name: '河伯亲卫', level: 132, hp: 110000, defense: 2600, magicDefense: 2800, id: 'd5_2' },
+      { name: '翻浪蛟卫', level: 134, hp: 135000, defense: 2900, magicDefense: 3100, id: 'd5_3' },
+      { name: '灵感大王', level: 138, hp: 260000, defense: 3400, magicDefense: 3600, isBoss: true, id: 'd5_4' },
+    ],
+  },
 ];

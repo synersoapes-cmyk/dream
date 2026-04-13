@@ -1,4 +1,17 @@
-import type { BaseAttributes, CombatStats, Equipment, Treasure } from './gameTypes';
+import type {
+  BaseAttributes,
+  CombatStats,
+  Equipment,
+  MeridianConfig,
+  Treasure,
+} from './gameTypes';
+import { resolveFormationSpeedFactor } from '@/shared/lib/simulator-battle-context';
+import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
+import {
+  resolveRegularSetAttributeBonuses,
+  type RegularSetRuntimeRule,
+} from '@/shared/lib/simulator-regular-set';
+import { resolveJiulongPanelSpiritDelta } from '@/shared/lib/simulator-rune-skill';
 
 const COMBAT_STAT_KEYS: Array<keyof CombatStats> = [
   'hp',
@@ -12,85 +25,180 @@ const COMBAT_STAT_KEYS: Array<keyof CombatStats> = [
   'dodge',
 ];
 
-const sumEquipmentStats = (equipment: Equipment[]) => {
+const normalizePercentValue = (value: number) =>
+  Math.abs(value) >= 1 ? value / 100 : value;
+
+const sumEquipmentEffectModifierPercent = (
+  equipment: Equipment[],
+  code: string
+) =>
+  equipment.reduce((sum, item) => {
+    const matched = (item.effectModifiers ?? [])
+      .filter((modifier) => modifier.code === code)
+      .reduce(
+        (modifierSum, modifier) =>
+          modifierSum + normalizePercentValue(Number(modifier.value ?? 0)),
+        0
+      );
+
+    return sum + matched;
+  }, 0);
+
+const sumSingleEquipmentStats = (item: Equipment) => {
   const totals: Record<string, number> = {};
 
-  for (const item of equipment) {
-    const activeRuneSet =
-      item.runeStoneSets && item.runeStoneSets.length > 0
-        ? item.runeStoneSets[item.activeRuneStoneSet ?? 0] ?? item.runeStoneSets[0]
-        : [];
+  const activeRuneSet =
+    item.runeStoneSets && item.runeStoneSets.length > 0
+      ? item.runeStoneSets[item.activeRuneStoneSet ?? 0] ?? item.runeStoneSets[0]
+      : [];
 
-    for (const [key, value] of Object.entries(item.stats ?? {})) {
+  for (const [key, value] of Object.entries(item.stats ?? {})) {
+    totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
+  }
+
+  for (const [key, value] of Object.entries(
+    sumEquipmentGemstoneStats(item.gemstones)
+  )) {
+    totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
+  }
+
+  for (const runeStone of activeRuneSet ?? []) {
+    for (const [key, value] of Object.entries(runeStone.stats ?? {})) {
       totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
-    }
-
-    for (const runeStone of activeRuneSet ?? []) {
-      for (const [key, value] of Object.entries(runeStone.stats ?? {})) {
-        totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
-      }
     }
   }
 
   return totals;
 };
 
+const sumEquipmentStats = (equipment: Equipment[]) => {
+  const totals: Record<string, number> = {};
+
+  for (const item of equipment) {
+    for (const [key, value] of Object.entries(sumSingleEquipmentStats(item))) {
+      totals[key] = (totals[key] ?? 0) + Number(value ?? 0);
+    }
+  }
+
+  return totals;
+};
+
+const sumWeaponDamageMagicDamageBonus = (equipment: Equipment[]) =>
+  equipment.reduce((sum, item) => {
+    if (item.type !== 'weapon') {
+      return sum;
+    }
+
+    const itemTotals = sumSingleEquipmentStats(item);
+    return sum + Number(itemTotals.damage ?? 0) / 4;
+  }, 0);
+
 export const computeDerivedStats = (
   baseAttributes: BaseAttributes,
   equipment: Equipment[],
   treasure: Treasure | null,
+  options?: {
+    bodyStrength?: number;
+    formation?: string;
+    meridian?: MeridianConfig;
+    regularSetRules?: RegularSetRuntimeRule[];
+    runeSkillBaselineEquipment?: Equipment[];
+  },
 ): CombatStats & Record<string, number> => {
+  const meridian = options?.meridian;
+  const regularSetBonuses = resolveRegularSetAttributeBonuses(
+    equipment.map((item) => ({
+      slot: item.type,
+      setName: item.setName,
+    })),
+    options?.regularSetRules
+  );
+  const effectiveBaseAttributes: BaseAttributes = {
+    ...baseAttributes,
+    physique: baseAttributes.physique + Number(meridian?.physique ?? 0),
+    magic:
+      baseAttributes.magic +
+      Number(meridian?.magic ?? 0) +
+      Number(regularSetBonuses.attributeSourceBonuses.magic ?? 0),
+    magicPower: baseAttributes.magicPower + Number(meridian?.magicPower ?? 0),
+    strength: baseAttributes.strength + Number(meridian?.strength ?? 0),
+    endurance: baseAttributes.endurance + Number(meridian?.endurance ?? 0),
+    agility: baseAttributes.agility + Number(meridian?.agility ?? 0),
+  };
   const equipmentTotals = sumEquipmentStats(equipment);
   const treasureTotals = treasure?.isActive ? treasure.stats ?? {} : {};
+  const formationSpeedFactor = resolveFormationSpeedFactor(options?.formation);
+  const bodyStrengthFactor =
+    1 + normalizePercentValue(options?.bodyStrength ?? 0);
+  const magicUpperPercent = sumEquipmentEffectModifierPercent(
+    equipment,
+    'magic_upper_percent'
+  );
+  const weaponDamageMagicDamageBonus =
+    sumWeaponDamageMagicDamageBonus(equipment);
+  const jiulongPanelSpiritDelta = resolveJiulongPanelSpiritDelta(
+    equipment,
+    options?.runeSkillBaselineEquipment ?? []
+  );
+  const baseHp =
+    baseAttributes.hp * 5 + effectiveBaseAttributes.physique * 4.5;
+  const derivedSpirit =
+    effectiveBaseAttributes.magicPower +
+    effectiveBaseAttributes.physique * 0.3 +
+    effectiveBaseAttributes.magic * 0.7 +
+    effectiveBaseAttributes.strength * 0.4 +
+    effectiveBaseAttributes.endurance * 0.2 +
+    (equipmentTotals.magicPower ?? 0) +
+    (equipmentTotals.spirit ?? 0) +
+    Number(treasureTotals.magicPower ?? 0) +
+    Number(treasureTotals.spirit ?? 0) +
+    jiulongPanelSpiritDelta;
 
   const result: CombatStats & Record<string, number> = {
     hp:
-      baseAttributes.hp * 5 +
-      baseAttributes.physique * 12 +
-      baseAttributes.endurance * 4 +
+      baseHp * bodyStrengthFactor +
       (equipmentTotals.hp ?? 0) +
       (treasureTotals.hp ?? 0),
     magic:
-      baseAttributes.magic * 1.6 +
-      baseAttributes.magicPower * 0.25 +
-      (equipmentTotals.magic ?? 0) +
-      (treasureTotals.magic ?? 0),
+      (effectiveBaseAttributes.magic * 3.5 +
+        (equipmentTotals.magic ?? 0) +
+        (treasureTotals.magic ?? 0)) *
+      (1 + magicUpperPercent),
     hit:
-      baseAttributes.strength * 2 +
-      baseAttributes.level * 6 +
+      effectiveBaseAttributes.strength * 1.7 +
+      effectiveBaseAttributes.level * 6 +
       (equipmentTotals.hit ?? 0) +
       (treasureTotals.hit ?? 0),
     damage:
-      baseAttributes.strength * 8 +
-      baseAttributes.level * 6 +
+      effectiveBaseAttributes.strength * 0.56 +
+      effectiveBaseAttributes.level * 6 +
       (equipmentTotals.damage ?? 0) +
       (treasureTotals.damage ?? 0),
     magicDamage:
-      baseAttributes.magic * 5 +
-      baseAttributes.magicPower * 1.2 +
-      baseAttributes.level * 3 +
+      derivedSpirit +
+      effectiveBaseAttributes.level * 3 +
+      weaponDamageMagicDamageBonus +
       (equipmentTotals.magicDamage ?? 0) +
       (treasureTotals.magicDamage ?? 0),
     defense:
-      baseAttributes.endurance * 4 +
-      baseAttributes.physique * 2 +
-      baseAttributes.level * 3 +
+      effectiveBaseAttributes.endurance * 1.6 +
+      effectiveBaseAttributes.level * 3 +
       (equipmentTotals.defense ?? 0) +
       (treasureTotals.defense ?? 0),
     magicDefense:
-      baseAttributes.magicPower * 0.6 +
-      baseAttributes.endurance * 2 +
-      baseAttributes.level * 2.6 +
+      derivedSpirit +
       (equipmentTotals.magicDefense ?? 0) +
       (treasureTotals.magicDefense ?? 0),
     speed:
-      baseAttributes.agility * 4 +
-      baseAttributes.level * 2 +
-      (equipmentTotals.speed ?? 0) +
-      (treasureTotals.speed ?? 0),
+      (effectiveBaseAttributes.physique * 0.1 +
+        effectiveBaseAttributes.strength * 0.1 +
+        effectiveBaseAttributes.endurance * 0.1 +
+        effectiveBaseAttributes.agility * 0.7 +
+        (equipmentTotals.speed ?? 0) +
+        (treasureTotals.speed ?? 0)) *
+      formationSpeedFactor,
     dodge:
-      baseAttributes.agility * 2 +
-      Math.floor(baseAttributes.level * 0.8) +
+      effectiveBaseAttributes.agility +
       (equipmentTotals.dodge ?? 0) +
       (treasureTotals.dodge ?? 0),
   };
@@ -106,8 +214,8 @@ export const computeDerivedStats = (
       result[key] = (result[key] ?? 0) + Number(value ?? 0);
     }
   }
-
-  result.magicPower = baseAttributes.magicPower + (equipmentTotals.magicPower ?? 0);
+  result.magicPower = derivedSpirit;
+  result.spiritualPower = derivedSpirit;
 
   return result;
 };

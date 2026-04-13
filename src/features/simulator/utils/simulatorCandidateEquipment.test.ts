@@ -1,8 +1,11 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-
+import test from 'node:test';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
+import {
+  applySimulatorCandidateEquipmentToStore,
+  buildSimulatorCandidateEquipmentPayload,
+} from '@/features/simulator/utils/simulatorCandidateEquipment';
+
 import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
 
 function createItems(): SimulatorCandidateEquipmentItem[] {
@@ -44,4 +47,16 @@ test('applySimulatorCandidateEquipmentToStore hydrates pending and confirmed equ
   assert.equal(state.pendingEquipments[0]?.status, 'pending');
   assert.equal(state.pendingEquipments[1]?.status, 'confirmed');
   assert.equal(state.pendingEquipments[1]?.equipment.name, '已确认铠甲');
+});
+
+test('buildSimulatorCandidateEquipmentPayload reads latest confirmed status from store', () => {
+  applySimulatorCandidateEquipmentToStore(createItems());
+  useGameStore.getState().confirmPendingEquipment('pending_1');
+
+  const payload = buildSimulatorCandidateEquipmentPayload(
+    useGameStore.getState().pendingEquipments
+  );
+  const confirmedItem = payload.find((item) => item.id === 'pending_1');
+
+  assert.equal(confirmedItem?.status, 'confirmed');
 });

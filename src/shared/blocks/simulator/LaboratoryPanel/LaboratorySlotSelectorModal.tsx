@@ -1,16 +1,22 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { X, Trash2 } from 'lucide-react';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+
+import { mergeEquipmentWithInheritance } from './laboratory-utils';
 
 type LaboratorySelectedSlot = {
   seatId: string;
   slotType: Equipment['type'];
   slotSlot?: number;
   slotLabel: string;
+  baseEquip?: Equipment;
   currentEquip?: Equipment;
+  inheritGemstones?: boolean;
+  inheritRuneStones?: boolean;
 };
 
 type Props = {
@@ -23,7 +29,14 @@ type Props = {
     type: Equipment['type'],
     slot?: number
   ) => void;
-  onSelectEquipment: (seatId: string, equipment: Equipment) => void;
+  onSelectEquipment: (
+    seatId: string,
+    equipment: Equipment,
+    options?: {
+      inheritGemstones?: boolean;
+      inheritRuneStones?: boolean;
+    }
+  ) => void;
 };
 
 export function LaboratorySlotSelectorModal({
@@ -34,6 +47,24 @@ export function LaboratorySlotSelectorModal({
   onClearEquipment,
   onSelectEquipment,
 }: Props) {
+  const [inheritGemstones, setInheritGemstones] = useState(
+    selectedSlot.inheritGemstones !== false
+  );
+  const [inheritRuneStones, setInheritRuneStones] = useState(
+    selectedSlot.inheritRuneStones !== false
+  );
+
+  useEffect(() => {
+    setInheritGemstones(selectedSlot.inheritGemstones !== false);
+    setInheritRuneStones(selectedSlot.inheritRuneStones !== false);
+  }, [
+    selectedSlot.inheritGemstones,
+    selectedSlot.inheritRuneStones,
+    selectedSlot.seatId,
+    selectedSlot.slotSlot,
+    selectedSlot.slotType,
+  ]);
+
   const availableEquipments = libraryEquipments.filter((equipment) => {
     if (equipment.type !== selectedSlot.slotType) return false;
     if (
@@ -44,6 +75,14 @@ export function LaboratorySlotSelectorModal({
     }
     return true;
   });
+
+  const hasOverride = Boolean(selectedSlot.currentEquip);
+  const canRestoreCurrent =
+    Boolean(selectedSlot.baseEquip) &&
+    hasOverride &&
+    (selectedSlot.currentEquip?.id !== selectedSlot.baseEquip?.id ||
+      selectedSlot.inheritGemstones === false ||
+      selectedSlot.inheritRuneStones === false);
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/95 p-5">
@@ -60,7 +99,66 @@ export function LaboratorySlotSelectorModal({
       </div>
 
       <div className="custom-scrollbar mb-4 flex-1 overflow-y-auto">
-        {selectedSlot.currentEquip && (
+        <div className="mb-4 rounded-lg border border-slate-800/80 bg-slate-900/70 p-3">
+          <div className="mb-2 text-xs font-bold text-yellow-200">
+            局部换装策略
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded border border-slate-700/70 bg-slate-950/50 px-3 py-2 text-xs text-slate-200">
+              <input
+                type="checkbox"
+                checked={inheritGemstones}
+                onChange={(event) => setInheritGemstones(event.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-yellow-500"
+              />
+              <span>继承旧宝石</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 rounded border border-slate-700/70 bg-slate-950/50 px-3 py-2 text-xs text-slate-200">
+              <input
+                type="checkbox"
+                checked={inheritRuneStones}
+                onChange={(event) =>
+                  setInheritRuneStones(event.target.checked)
+                }
+                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-yellow-500"
+              />
+              <span>继承旧符石</span>
+            </label>
+          </div>
+          <div className="mt-2 text-[11px] leading-5 text-slate-400">
+            继承来源为样本席位该栏位的当前装备，用于模拟只换底子、不重打一套打造。
+          </div>
+        </div>
+
+        {canRestoreCurrent && (
+          <div
+            onClick={() => {
+              if (selectedSlot.baseEquip) {
+                onSelectEquipment(selectedSlot.seatId, selectedSlot.baseEquip, {
+                  inheritGemstones,
+                  inheritRuneStones,
+                });
+              } else {
+                onClearEquipment(
+                  selectedSlot.seatId,
+                  selectedSlot.slotType,
+                  selectedSlot.slotSlot
+                );
+              }
+              onClose();
+            }}
+            className="mb-2 cursor-pointer rounded-lg border border-red-600/40 bg-red-900/20 p-3 transition-all hover:border-red-600/60 hover:bg-red-900/30"
+          >
+            <div className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-400" />
+              <span className="text-sm font-medium text-red-400">
+                删除装备（恢复到当前装备）
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!selectedSlot.baseEquip && hasOverride && (
           <div
             onClick={() => {
               onClearEquipment(
@@ -87,14 +185,31 @@ export function LaboratorySlotSelectorModal({
               const totalPrice =
                 (equipment.price || 0) + (equipment.crossServerFee || 0);
               const isCurrentlyEquipped =
-                selectedSlot.currentEquip?.id === equipment.id;
+                selectedSlot.currentEquip?.id === equipment.id &&
+                inheritGemstones === (selectedSlot.inheritGemstones !== false) &&
+                inheritRuneStones ===
+                  (selectedSlot.inheritRuneStones !== false);
 
               return (
                 <div
                   key={equipment.id}
                   onClick={() => {
                     if (!isCurrentlyEquipped) {
-                      onSelectEquipment(selectedSlot.seatId, equipment);
+                      onSelectEquipment(
+                        selectedSlot.seatId,
+                        mergeEquipmentWithInheritance(
+                          selectedSlot.baseEquip,
+                          equipment,
+                          {
+                            inheritGemstones,
+                            inheritRuneStones,
+                          }
+                        ),
+                        {
+                          inheritGemstones,
+                          inheritRuneStones,
+                        }
+                      );
                     }
                     onClose();
                   }}

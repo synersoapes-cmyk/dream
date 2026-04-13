@@ -3,18 +3,27 @@ function toFiniteNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizePercentValue(value: number) {
+  return Math.abs(value) >= 1 ? value / 100 : value;
+}
+
 export function inferBaseHpSource(params: {
   panelHp: unknown;
   physique: unknown;
-  endurance: unknown;
   equipmentHp?: unknown;
+  bodyStrength?: unknown;
 }) {
   const panelHp = toFiniteNumber(params.panelHp);
   const physique = toFiniteNumber(params.physique);
-  const endurance = toFiniteNumber(params.endurance);
   const equipmentHp = toFiniteNumber(params.equipmentHp);
+  const bodyStrengthFactor =
+    1 + normalizePercentValue(toFiniteNumber(params.bodyStrength));
+  const normalizedBodyStrengthFactor =
+    bodyStrengthFactor > 0 ? bodyStrengthFactor : 1;
 
-  const inferred = (panelHp - physique * 12 - endurance * 4 - equipmentHp) / 5;
+  const basePanelHp =
+    (panelHp - equipmentHp) / normalizedBodyStrengthFactor - physique * 4.5;
+  const inferred = basePanelHp / 5;
 
   if (!Number.isFinite(inferred) || inferred <= 0) {
     return 0;

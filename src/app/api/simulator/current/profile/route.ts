@@ -16,6 +16,22 @@ function toOptionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function toMeridianConfig(value: unknown) {
+  const config =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    physique: toNumber(config.physique),
+    magic: toNumber(config.magic),
+    strength: toNumber(config.strength),
+    endurance: toNumber(config.endurance),
+    agility: toNumber(config.agility),
+    magicPower: toNumber(config.magicPower),
+  };
+}
+
 export async function PATCH(req: Request) {
   try {
     const user = await getUserInfo();
@@ -27,12 +43,15 @@ export async function PATCH(req: Request) {
     const bundle = await updateSimulatorProfile(user.id, {
       level: toNumber(body?.level),
       faction: String(body?.faction || ''),
+      baseHp: toOptionalNumber(body?.baseHp),
       physique: toNumber(body?.physique),
       magic: toNumber(body?.magic),
+      potentialPoints: toNumber(body?.potentialPoints),
       strength: toNumber(body?.strength),
       endurance: toNumber(body?.endurance),
       agility: toNumber(body?.agility),
       magicPower: toNumber(body?.magicPower),
+      spiritualPower: toOptionalNumber(body?.spiritualPower),
       hp: toNumber(body?.hp),
       mp: toNumber(body?.mp),
       damage: toNumber(body?.damage),
@@ -43,6 +62,7 @@ export async function PATCH(req: Request) {
       hit: toNumber(body?.hit),
       dodge: toNumber(body?.dodge),
       sealHit: toOptionalNumber(body?.sealHit),
+      meridianConfig: toMeridianConfig(body?.meridianConfig),
     });
 
     if (!bundle) {

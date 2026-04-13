@@ -169,7 +169,31 @@ test('updateSimulatorEquipment can save the same structured equipment plan twice
     ],
     runeStoneSetsNames: ['未配置'],
     activeRuneStoneSet: 0,
-    luckyHoles: '1',
+    luckyHoles: '2',
+    gemstones: [
+      {
+        id: 'gem_1',
+        name: '舍利子',
+        type: 'spirit',
+        element: '土',
+        level: 7,
+        quantity: 1,
+        stats: {
+          spirit: 6,
+        },
+      },
+      {
+        id: 'gem_2',
+        name: '舍利子',
+        type: 'spirit',
+        element: '土',
+        level: 7,
+        quantity: 1,
+        stats: {
+          spirit: 6,
+        },
+      },
+    ],
     starAlignment: '法术防御 +2',
     starAlignmentConfig: {
       id: 'seed_star_resonance_armor_hufeng',
@@ -203,8 +227,14 @@ test('updateSimulatorEquipment can save the same structured equipment plan twice
   assert.equal(second.equipments.length, 1);
   assert.equal(first.equipmentPlan?.equipmentSets.length, 1);
   assert.equal(second.equipmentPlan?.equipmentSets.length, 1);
+  assert.equal(second.equipments[0]?.build?.holeCount, 2);
+  assert.equal(second.equipments[0]?.build?.gemLevelTotal, 14);
   assert.equal(
     second.equipments[0]?.build?.notesJson.includes('starAlignmentConfig'),
+    true
+  );
+  assert.equal(
+    second.equipments[0]?.build?.notesJson.includes('\"gemstones\"'),
     true
   );
 });
@@ -295,10 +325,12 @@ test('updateSimulatorEquipment assigns unique persisted plan ids for different u
     .where(eq(equipmentPlan.name, '当前方案'));
 
   const firstPlan = persistedPlans.find(
-    (plan) => plan.characterId === `itest_character_${firstSuffix}`
+    (plan: (typeof persistedPlans)[number]) =>
+      plan.characterId === `itest_character_${firstSuffix}`
   );
   const secondPlan = persistedPlans.find(
-    (plan) => plan.characterId === `itest_character_${secondSuffix}`
+    (plan: (typeof persistedPlans)[number]) =>
+      plan.characterId === `itest_character_${secondSuffix}`
   );
 
   assert.ok(firstPlan);

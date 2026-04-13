@@ -33,6 +33,12 @@ const EQUIPMENT_EXTENSION_CONFIG_SPECS = [
     defaultValue: [] as JsonValue,
   },
   {
+    key: 'regular_set_rules',
+    label: '常规套装档位规则',
+    description: '维护动物套/变身套等常规套装的件数阈值、档位和每档效果。',
+    defaultValue: [] as JsonValue,
+  },
+  {
     key: 'jade_attribute_pool',
     label: '玉魄属性池',
     description: '维护各部位可出现的玉魄属性池和上下限。',
@@ -99,6 +105,7 @@ export type DamageRuleSet = {
   skillFormulas: DamageSkillFormulaRule[];
   modifiers: DamageModifierRule[];
   skillBonuses: DamageSkillBonusRule[];
+  equipmentExtensionConfigs: DamageRuleEquipmentExtensionConfig[];
 };
 
 export type DamageRuleVersionListItem = DamageRuleVersion & {
@@ -424,6 +431,7 @@ export async function getDamageRuleSet(params?: {
         condition: parseJsonObject(row.conditionJson, {}),
         limitPolicy: parseJsonObject(row.limitPolicyJson, {}),
       })),
+      equipmentExtensionConfigs: buildEquipmentExtensionConfigs(modifierRows),
     };
   });
 }
@@ -749,6 +757,10 @@ export async function updateDamageRuleVersionEditableSections(params: {
   const version = await getDamageRuleVersion({ versionId: params.versionId });
   if (!version) {
     throw new Error('damage rule version not found');
+  }
+
+  if (version.status !== 'draft' || version.isActive) {
+    throw new Error('only draft damage rule versions can be edited');
   }
 
   const now = new Date();

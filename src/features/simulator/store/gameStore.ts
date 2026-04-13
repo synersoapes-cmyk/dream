@@ -10,6 +10,7 @@ import {
 } from './equipmentSetState';
 import {
   createDefaultPhysicalCultivation,
+  createDefaultMeridianConfig,
   createDefaultPhysicalSkills,
   createDefaultPhysicalTreasure,
 } from './gameDefaults';
@@ -67,6 +68,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
   activeSetIndex: 0,
   skills: createDefaultPhysicalSkills(),
   cultivation: createDefaultPhysicalCultivation(),
+  meridian: createDefaultMeridianConfig(),
   treasure: createDefaultPhysicalTreasure(),
 
   // Combat state
@@ -79,6 +81,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
     equipment: initialEquipment,
     skills: [], // 会在初始化后更新
     cultivation: {
+      bodyStrength: 0,
       physicalAttack: 20,
       physicalDefense: 20,
       magicAttack: 25,
@@ -88,6 +91,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       petMagicAttack: 20,
       petMagicDefense: 20,
     },
+    meridian: createDefaultMeridianConfig(),
     element: '水',
     formation: '天覆阵',
   },
@@ -96,14 +100,16 @@ export const useGameStore = create<GameState>()((set, get) => ({
   selectedDungeonIds: [],
   ...createCombatActions(set, get),
   syncedCloudState: null,
+  activeRegularSetRules: [],
   autoRecalculateDerivedStats: true,
   setAutoRecalculateDerivedStats: (enabled, options) => {
     set((state) => {
-      if (!enabled && options?.restoreCloudState && state.syncedCloudState) {
+      if (options?.restoreCloudState && state.syncedCloudState) {
         return {
           ...state.syncedCloudState,
           syncedCloudState: state.syncedCloudState,
-          autoRecalculateDerivedStats: false,
+          activeRegularSetRules: state.activeRegularSetRules,
+          autoRecalculateDerivedStats: enabled,
         };
       }
 
@@ -113,6 +119,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
     });
 
     if (enabled) {
+      get().recalculateCombatStats();
+    }
+  },
+  setActiveRegularSetRules: (rules) => {
+    set({ activeRegularSetRules: rules });
+    if (get().autoRecalculateDerivedStats) {
       get().recalculateCombatStats();
     }
   },

@@ -16,6 +16,7 @@ export {
 
 export {
   createAdminSimulatorOcrDictionary,
+  getAdminSimulatorOcrMetrics,
   deleteAdminSimulatorOcrDictionary,
   listAdminSimulatorInventoryEntries,
   listAdminSimulatorOcrDictionary,
@@ -30,3 +31,5 @@ export {
   listAdminSimulatorStarResonanceRules,
   updateAdminSimulatorStarResonanceRule,
 } from './simulator-star';
+
+export { listAdminSimulatorAdvisorAudits } from './simulator-advisor-audit';

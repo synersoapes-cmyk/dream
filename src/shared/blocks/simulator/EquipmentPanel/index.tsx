@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
@@ -24,12 +24,24 @@ import type {
   SimulatorPrimaryEquipmentType,
 } from '@/shared/lib/simulator-equipment';
 import {
+  SIMULATOR_PRIMARY_EQUIPMENT_TYPES,
+} from '@/shared/lib/simulator-equipment';
+import {
   findSimulatorSlotDefinition,
   getSimulatorSlotLabel,
   SIMULATOR_JADE_SLOT_DEFINITIONS,
   SIMULATOR_PRIMARY_SLOT_DEFINITIONS,
   SIMULATOR_TRINKET_SLOT_DEFINITIONS,
 } from '@/shared/lib/simulator-slot-config';
+import {
+  formatEquipmentExtraAttributeSummary,
+  sumEquipmentExtraAttributeTotals,
+} from '@/shared/lib/simulator-extra-attribute-summary';
+import {
+  buildActiveRegularSetSummaries,
+  formatActiveRegularSetSummary,
+  parseRegularSetRulesConfig,
+} from '@/shared/lib/simulator-regular-set';
 
 import { EquipmentDetailModal } from './EquipmentDetailModal';
 import { EquipmentLibraryModal } from './EquipmentLibraryModal';
@@ -38,6 +50,7 @@ import {
   type EquipmentPanelSlotInfo,
 } from './EquipmentPanelSlot';
 import { getEquipmentRuneStoneSetInfo } from './RuneStoneHelper';
+import { useEquipmentExtensionConfigs } from '../use-equipment-extension-configs';
 
 function toDisplayText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
@@ -156,6 +169,9 @@ export function EquipmentPanel() {
   const removeEquipmentSet = useGameStore((state) => state.removeEquipmentSet);
   const moveEquipmentSet = useGameStore((state) => state.moveEquipmentSet);
   const updateEquipment = useGameStore((state) => state.updateEquipment);
+  const setActiveRegularSetRules = useGameStore(
+    (state) => state.setActiveRegularSetRules
+  );
 
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(
     null
@@ -183,6 +199,22 @@ export function EquipmentPanel() {
       .filter((item) => item.status === 'confirmed')
       .map((item) => item.equipment)
   );
+  const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'regular_set_rules',
+  ]);
+  const regularSetRules = useMemo(
+    () =>
+      parseRegularSetRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'regular_set_rules'
+        )?.value
+    ),
+    [equipmentExtensionConfigs]
+  );
+
+  useEffect(() => {
+    setActiveRegularSetRules(regularSetRules);
+  }, [regularSetRules, setActiveRegularSetRules]);
 
   // 获取装备组合名称（从state获取，或使用默认名称）
   const getSetName = (index: number) => {
@@ -268,6 +300,19 @@ export function EquipmentPanel() {
     includeExtraStat: true,
     includeHighlights: true,
   });
+  const equippedPrimaryItems = equipment.filter((item) =>
+    (SIMULATOR_PRIMARY_EQUIPMENT_TYPES as readonly string[]).includes(item.type)
+  );
+  const primaryExtraAttributeSummary = formatEquipmentExtraAttributeSummary(
+    sumEquipmentExtraAttributeTotals(equippedPrimaryItems)
+  );
+  const regularSetSummary = buildActiveRegularSetSummaries(
+    equippedPrimaryItems.map((item) => ({
+      slot: item.type,
+      setName: item.setName,
+    })),
+    regularSetRules
+  ).map((item) => formatActiveRegularSetSummary(item));
 
   const renderEffectSummary = (
     labels: string[],
@@ -537,6 +582,40 @@ export function EquipmentPanel() {
               filledClassName:
                 'rounded-lg border border-cyan-700/30 bg-cyan-900/20 px-3 py-2',
               textClassName: 'border-cyan-500/40 bg-cyan-950/40 text-cyan-200',
+            })}
+          </div>
+
+          <div className="mt-3 border-t border-yellow-800/30 pt-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
+              <div className="text-xs font-medium text-emerald-300">
+                常规套装效果
+              </div>
+            </div>
+            {renderEffectSummary(regularSetSummary, {
+              emptyText: '暂无常规套装',
+              emptyClassName:
+                'rounded-lg bg-slate-900/40 px-3 py-2 text-center text-xs text-emerald-300/50 italic',
+              filledClassName:
+                'rounded-lg border border-emerald-700/30 bg-emerald-900/10 px-3 py-2',
+              textClassName:
+                'border-emerald-500/40 bg-emerald-950/40 text-emerald-100',
+            })}
+          </div>
+
+          <div className="mt-3 border-t border-yellow-800/30 pt-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+              <div className="text-xs font-medium text-amber-300">双加汇总</div>
+            </div>
+            {renderEffectSummary(primaryExtraAttributeSummary, {
+              emptyText: '暂无双加汇总',
+              emptyClassName:
+                'rounded-lg bg-slate-900/40 px-3 py-2 text-center text-xs text-amber-300/50 italic',
+              filledClassName:
+                'rounded-lg border border-amber-700/30 bg-amber-900/10 px-3 py-2',
+              textClassName:
+                'border-amber-500/40 bg-amber-950/40 text-amber-100',
             })}
           </div>
         </div>

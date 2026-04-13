@@ -1242,6 +1242,48 @@ export const inventoryEntry = table(
   ]
 );
 
+export const simulatorAdvisorAudit = table(
+  'simulator_advisor_audit',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    characterId: text('character_id').references(() => gameCharacter.id, {
+      onDelete: 'set null',
+    }),
+    status: text('status').notNull().default('success'),
+    provider: text('provider').notNull().default('gemini'),
+    model: text('model').notNull().default(''),
+    question: text('question').notNull().default(''),
+    answer: text('answer').notNull().default(''),
+    errorMessage: text('error_message').notNull().default(''),
+    contextSummaryJson: text('context_summary_json').notNull().default('{}'),
+    historyJson: text('history_json').notNull().default('[]'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index('idx_simulator_advisor_audit_user_created').on(
+      table.userId,
+      table.createdAt
+    ),
+    index('idx_simulator_advisor_audit_character_created').on(
+      table.characterId,
+      table.createdAt
+    ),
+    index('idx_simulator_advisor_audit_status_created').on(
+      table.status,
+      table.createdAt
+    ),
+  ]
+);
+
 export const candidateEquipment = table(
   'candidate_equipment',
   {

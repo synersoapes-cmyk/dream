@@ -490,6 +490,11 @@
 - 当前线上实现里，`special_effect_json` 主要保存高亮标签、特效、精炼效果等展示字段。
 - `set_effect_json` 保存符石套装文本、灵饰套装文本等摘要字段。
 - `notes_json` 会额外持久化激活符石组、符石颜色序列、开孔数、跨服费等扩展元数据，供服务端规则链路自动命中 `rule_skill_bonus`，避免前端试算和正式保存口径分叉。
+- 2026-04 新增结构化约束：
+  - `gemstones`：结构化宝石数组，单颗宝石可保存名称、类型、五行、等级、数量与属性摘要
+  - `runeStoneSets / runeStoneSetsNames / activeRuneStoneSet`：结构化符石组合，服务端会在保存与回填时自动归一化为“最多 2 套、每套最多 5 颗”
+  - `starPositionConfig / starAlignmentConfig`：结构化星石与星相互合配置，优先于旧文本字段供伤害引擎消费
+  - 当前前台推导和服务端 domain 汇总都会消费 `gemstones[].stats`；旧 `gemstone` 文本保留为摘要兼容字段，但不再是唯一数据源
 
 ### `equipment_plan`
 
@@ -853,6 +858,33 @@
 - 当前实现里，这张表主要承担 OCR 审计链和结构化草稿留痕
 - 前台 OCR 成功后会自动把草稿标记为 `approved`，并同步写入 `candidate_equipment.pending`
 - 当前不再依赖后台逐条人工处理才能进入候选装备库；是否确认入正式资产，仍由候选装备后续流程决定
+- 后台新增的 `OCR 质量统计` 页面不另建新表，而是直接聚合 `ocr_job + ocr_draft_item + candidate_equipment`，统计成功率、失败原因、缺失字段和同步分布
+
+### `simulator_advisor_audit`
+
+用途：记录前台 Gemini 顾问的问答留痕与失败原因，供后台审计和提示词优化。
+
+| 字段                   | 类型      | 说明                               |
+| ---------------------- | --------- | ---------------------------------- |
+| `id`                   | `TEXT PK` | 审计记录 ID                        |
+| `user_id`              | `TEXT`    | 发起问答的用户                     |
+| `character_id`         | `TEXT`    | 当前活动角色，可为空               |
+| `status`               | `TEXT`    | `success` / `failed`               |
+| `provider`             | `TEXT`    | 当前固定 `gemini`                  |
+| `model`                | `TEXT`    | 实际命中的模型或配置模型           |
+| `question`             | `TEXT`    | 用户问题                           |
+| `answer`               | `TEXT`    | 顾问回答，失败时为空               |
+| `error_message`        | `TEXT`    | 失败原因，成功时为空               |
+| `context_summary_json` | `TEXT`    | 角色 / 战斗 / 资产数量的上下文摘要 |
+| `history_json`         | `TEXT`    | 最近对话历史快照                   |
+| `created_at`           | `INTEGER` | 创建时间                           |
+| `updated_at`           | `INTEGER` | 更新时间                           |
+
+说明：
+
+- 这张表不承载完整前台 store，只保留后台排障和审计真正需要的轻量摘要
+- 前台顾问成功和失败都会尽量写入该表；若审计写入失败，不反向影响用户问答主链
+- 后台 `顾问问答审计` 页面直接读取这张表，可按状态、用户、角色、模型和问题关键词检索
 
 ### `inventory_equipment_asset`
 
@@ -941,12 +973,28 @@
 - 所以继承策略需要单独落字段，不能只靠前端临时传参
 - 当前版本已覆盖常规装备、灵饰、玉魄三套独立持久化链路
 - 灵饰套装快照摘要已落地到 `ornament_set_effect`
+- 当前汇总门槛已按产品规则收紧为“4 件同名灵饰且总等级 >= 8”才写入 `ornament_set_effect`
 - 规则中心现已补充扩展装备规则配置区，可集中维护灵饰套装档位、玉魄属性池和百分比语义
 - 玉魄关键百分比语义已经进入服务端伤害链路和实验室估值链路，当前覆盖：
   - `spell_ignore_percent` / `法术忽视 %`：按 `目标法防 * (1 - 忽视比例)` 修正目标法防
   - `spell_damage_percent` / `基础法术伤害 %`：按 `面板法伤 * (1 + 百分比)` 修正参与公式的面板法伤
-- 灵饰套装当前仍停留在“快照摘要 + 后台扩展配置”层；档位效果如何转成正式 `rule_damage_modifier` 并由 `damage-engine` 消费，仍是后续项
-- 玉魄属性池当前也仍是后台扩展配置 JSON，尚未作为 OCR / 入库 / 编辑阶段的强校验来源
+- 当前前台编辑器也已支持结构化维护玉魄百分比词条；`magic_upper_percent`、`element_overcome_percent` 等暂先持久化保存，待后续规则中心继续接入正式数值消费
+- 当前这两类词条也已开始进入正式消费：
+  - `magic_upper_percent`：修正前台 / 服务端面板 `mp`
+  - `element_overcome_percent`：当前按“词条元素匹配我方五行且处于克制关系时，直接加到五行系数”执行
+- 灵饰套装不再只是“快照摘要 + 后台扩展配置”：
+  - `getDamageRuleSet` 现会把 `equipment_extension / ornament_set_rules` 一并带入运行时规则集
+  - `damage-engine` 现会按当前角色佩戴的 4 件同名灵饰、总等级档位和扩展配置，自动派生灵饰套装效果
+  - 当前支持的运行时效果类型为 `panel_stat_bonus`、`attribute_source_bonus`、`skill_damage_addend`
+- 常规套装当前也已进入同一条装备扩展规则链路：
+  - `getDamageRuleSet` 现会把 `equipment_extension / regular_set_rules` 一并带入运行时规则集
+  - `damage-engine` 会按当前角色主装备同名套装件数和扩展配置自动派生常规套装效果
+  - 若规则版本没有配置 `regular_set_rules`，运行时会回退到默认档位：`3件=魔力+10`、`5件=魔力+20`
+- 玉魄属性池当前不再只是后台扩展配置 JSON：
+  - 当前状态页玉魄编辑已开始按 `equipment_extension / jade_attribute_pool` 的槽位配置过滤固定值词条
+  - 玉魄百分比词条编辑器会按属性池限制可选 modifier code，并对历史超池词条给出提示
+  - OCR 候选装备待确认弹窗也会按当前槽位展示属性池提示，帮助人工审核识别结果
+  - OCR / 入库阶段的统一强校验仍是后续项
 
 ### `snapshot_battle_context`
 
@@ -981,6 +1029,10 @@
 - 当前版本优先把“当前状态”和“伤害计算”需要的战斗参数持久化
 - 多套装备方案已迁到独立的 `equipment_plan / equipment_plan_item`，不再依赖 `notes_json`
 - `target_speed` 用于服务端执行 `招云` 套装的目标速度加伤规则；老数据迁移后默认补 `0`
+- `self_formation / target_formation / self_element / target_element` 是当前正式输入源；保存与读取链路会基于这 4 个字段回推 `formation_counter_state / element_relation`
+- 当前实验室估值接口也会优先继承这些战斗上下文字段，并继续补充 `transform_card_factor / shenmu_value / magic_result / target_magic_defense_cultivation`，保证实验室与当前状态页试算口径一致
+- 当前服务端还会根据 `self_formation` 读取阵法自身倍率；已落地的副作用包括 `天覆阵速度系数 = 0.9`
+- 当前 9 阵范围的阵法克制矩阵已作为正式 pair lookup 落地；若后续要纳入 `鹰啸阵 / 雷绝阵`，再继续扩表
 - `notes_json` 当前还会持久化战斗工作台态：
   - `combatTab`
   - `selectedDungeonIds`
@@ -1266,33 +1318,28 @@
 例如龙宫法师当前写死的规则：
 
 - `1点基础气血来源(baseHp) -> 气血 +5`
-- `1点体质 -> 气血 +12`
-- `1点耐力 -> 气血 +4`
-- `1点魔力 -> 魔法值 +1.6`
-- `1点灵力 -> 魔法值 +0.25`
-- `1点魔力 -> 面板法伤 +5`
-- `1点灵力 -> 面板法伤 +1.2`
-- `1级 -> 面板法伤 +3`
-- `1点力量 -> 命中 +2`
-- `1级 -> 命中 +6`
-- `1点力量 -> 伤害 +8`
-- `1级 -> 伤害 +6`
-- `1点耐力 -> 防御 +4`
-- `1点体质 -> 防御 +2`
-- `1级 -> 防御 +3`
-- `1点灵力 -> 法防 +0.6`
-- `1点耐力 -> 法防 +2`
-- `1级 -> 法防 +2.6`
-- `1点敏捷 -> 速度 +4`
-- `1级 -> 速度 +2`
-- `1点敏捷 -> 躲避 +2`
-- `躲避` 的等级项按 `floor(level * 0.8)` 计入
+- `1点体质 -> 气血 +4.5`
+- `1点体质 -> 灵力 +0.3`
+- `1点体质 -> 速度 +0.1`
+- `1点魔力 -> 魔法值 +3.5`
+- `1点魔力 -> 灵力 +0.7`
+- `1点力量 -> 伤害 +0.56`
+- `1点力量 -> 命中 +1.7`
+- `1点力量 -> 灵力 +0.4`
+- `1点力量 -> 速度 +0.1`
+- `1点耐力 -> 防御 +1.6`
+- `1点耐力 -> 灵力 +0.2`
+- `1点耐力 -> 速度 +0.1`
+- `1点敏捷 -> 速度 +0.7`
+- `1点敏捷 -> 躲避 +1`
+- `1点灵力 -> 面板法伤 +1`
+- `1点灵力 -> 法防 +1`
 
 说明：
 
 - 上述条目表示当前 `damage_v1` 生效版本已经落到 D1 的服务端规则口径。
-- `baseHp` 为运行时来源属性，读取自 `character_profile.raw_body_json.baseHp`；历史快照缺失该字段时，服务端按当前面板气血、体质、耐力和装备气血反推。
-- `躲避` 的等级项在规则表里通过 `value_type = 'floor_linear'` 表达 `floor(level * 0.8)`，用于和 `gameLogic` 保持一致。
+- `baseHp` 为运行时来源属性，读取自 `character_profile.raw_body_json.baseHp`；当前 profile 保存会优先落显式 `baseHp`，历史快照缺失该字段时，服务端会先剔除 `强身` 倍率，再按当前面板气血、体质和装备气血反推，避免把已放大的面板气血重复写回基础来源。
+- 当前这组规则已不再额外叠加旧版“等级直加面板属性”口径；角色等级继续作为展示字段保留，但不直接参与龙宫法师现阶段的服务端面板换算。
 
 这类规则建议落在：
 
@@ -1499,6 +1546,7 @@ SQLite 没有原生枚举类型，建议：
 - `ornament_set_effect`
 - `ocr_job`
 - `ocr_draft_item`
+- `simulator_advisor_audit`
 - `inventory_entry`
 - `lab_session`
 - `lab_slot_change`
@@ -1540,6 +1588,7 @@ SQLite 没有原生枚举类型，建议：
 - 符石组合：`equipment_rune` + `rune_set_rule` + `equipment_rune_match`
 - 星石与互合：`star_stone_item` + `star_resonance_rule`
 - OCR 与待确认：`ocr_job` + `ocr_draft_item`
+- 顾问问答审计：`simulator_advisor_audit`
 - 装备库：`inventory_entry`
 - 实验室对比：`lab_session` + `lab_slot_change` + `lab_result`
 - 目标怪物模板：`battle_target_template`

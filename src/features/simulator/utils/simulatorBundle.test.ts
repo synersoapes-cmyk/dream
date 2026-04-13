@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
+import {
+  applySimulatorBundleToStore,
+  buildSimulatorBundleStorePreview,
+} from '@/features/simulator/utils/simulatorBundle';
 
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
@@ -54,6 +57,14 @@ function createBundle(): SimulatorCharacterBundle {
       rawBodyJson: JSON.stringify({
         magicPower: 610,
         dodge: 205,
+        meridianConfig: {
+          physique: 0,
+          magic: 12,
+          strength: 0,
+          endurance: 0,
+          agility: 0,
+          magicPower: 8,
+        },
       }),
     },
     skills: [
@@ -69,6 +80,12 @@ function createBundle(): SimulatorCharacterBundle {
       },
     ],
     cultivations: [
+      {
+        id: 'cult_0',
+        snapshotId: 'snapshot_1',
+        cultivationType: 'bodyStrength',
+        level: 20,
+      },
       {
         id: 'cult_1',
         snapshotId: 'snapshot_1',
@@ -97,7 +114,12 @@ function createBundle(): SimulatorCharacterBundle {
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '地载阵',
-      notesJson: '{}',
+      notesJson: JSON.stringify({
+        weather: '雨天',
+        targetDefenseState: '防御',
+        targetMagicDefenseResult: 50,
+        specialMagicDamageReductionFactor: 0.6,
+      }),
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -137,7 +159,7 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
   assert.equal(state.currentCharacter?.id, 'char_1');
   assert.equal(state.currentCharacter?.name, '测试龙宫');
   assert.equal(state.baseAttributes.faction, '龙宫');
-  assert.equal(state.baseAttributes.hp, 716);
+  assert.equal(state.baseAttributes.hp, 804);
   assert.equal(state.combatStats.hp, 4200);
   assert.equal(state.combatTarget.name, '乌鸡国树怪');
   assert.equal(state.combatTarget.formation, '地载阵');
@@ -146,6 +168,30 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
   assert.equal(state.formation, '虎翼阵');
   assert.equal(state.playerSetup.formation, '虎翼阵');
   assert.equal(state.playerSetup.element, '水');
+  assert.equal(state.syncedCloudState?.battleContext.weather, '雨天');
+  assert.equal(state.syncedCloudState?.battleContext.targetDefenseState, '防御');
+  assert.equal(state.syncedCloudState?.battleContext.targetMagicDefenseResult, 50);
+  assert.equal(
+    state.syncedCloudState?.battleContext.specialMagicDamageReductionFactor,
+    0.6
+  );
+  assert.equal(state.cultivation.bodyStrength, 20);
+  assert.equal(state.playerSetup.cultivation.bodyStrength, 20);
+  assert.equal(state.meridian.magic, 12);
+  assert.equal(state.meridian.magicPower, 8);
+  assert.equal(state.playerSetup.meridian.magic, 12);
+});
+
+test('buildSimulatorBundleStorePreview matches the hydrated profile values', () => {
+  const bundle = createBundle();
+  const preview = buildSimulatorBundleStorePreview(bundle);
+
+  applySimulatorBundleToStore(bundle);
+
+  const state = useGameStore.getState();
+  assert.deepEqual(preview.baseAttributes, state.baseAttributes);
+  assert.deepEqual(preview.combatStats, state.combatStats);
+  assert.deepEqual(preview.currentCharacter, state.currentCharacter);
 });
 
 test('applySimulatorBundleToStore preserves workbench state when requested', () => {
@@ -233,12 +279,66 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
                 type: 'black',
                 stats: { magicDamage: 4 },
               },
+              {
+                id: 'rune_2',
+                name: '红符石',
+                type: 'red',
+                stats: { hit: 1 },
+              },
+              {
+                id: 'rune_3',
+                name: '白符石',
+                type: 'white',
+                stats: { magicDamage: 1 },
+              },
+              {
+                id: 'rune_4',
+                name: '蓝符石',
+                type: 'blue',
+                stats: { speed: 1 },
+              },
+              {
+                id: 'rune_5',
+                name: '紫符石',
+                type: 'purple',
+                stats: { magicDefense: 1 },
+              },
+              {
+                id: 'rune_6',
+                name: '绿符石',
+                type: 'green',
+                stats: { hp: 1 },
+              },
+            ],
+            [
+              { id: 'secondary_1', name: '白符石', type: 'white', stats: {} },
+            ],
+            [
+              { id: 'overflow_1', name: '黄符石', type: 'yellow', stats: {} },
             ],
           ],
-          runeStoneSetsNames: ['腾蛟'],
+          runeStoneSetsNames: ['腾蛟', '隔山打牛', '未生效'],
           runeSetEffect: '破血狂攻',
           extraStat: '魔力 +28',
-          luckyHoles: '1',
+          luckyHoles: '6',
+          gemstones: [
+            {
+              id: 'gem_1',
+              name: '舍利子',
+              type: 'spirit',
+              level: 8,
+              quantity: 1,
+              stats: { spirit: 6 },
+            },
+            {
+              id: 'gem_2',
+              name: '黑宝石',
+              type: 'speed',
+              level: 10,
+              quantity: 1,
+              stats: { speed: 8 },
+            },
+          ],
         }),
       },
       attrs: [
@@ -301,9 +401,15 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
   assert.equal(state.equipmentSets[1]?.items[0]?.name, '当前云端武器');
   assert.equal(state.syncedCloudState?.activeSetIndex, 1);
   assert.equal(state.equipment[0]?.runeStoneSets?.[0]?.[0]?.name, '黑符石');
+  assert.equal(state.equipment[0]?.runeStoneSets?.length, 2);
+  assert.equal(state.equipment[0]?.runeStoneSets?.[0]?.length, 5);
   assert.equal(state.equipment[0]?.runeStoneSetsNames?.[0], '腾蛟');
+  assert.equal(state.equipment[0]?.runeStoneSetsNames?.length, 2);
   assert.equal(state.equipment[0]?.extraStat, '魔力 +28');
-  assert.equal(state.equipment[0]?.luckyHoles, '1');
+  assert.equal(state.equipment[0]?.luckyHoles, '6');
+  assert.equal(state.equipment[0]?.gemstones?.length, 2);
+  assert.equal(state.equipment[0]?.gemstones?.[0]?.name, '舍利子');
+  assert.equal(state.equipment[0]?.gemstone, '8 舍利子，10 黑宝石');
 });
 
 test('applySimulatorBundleToStore restores persisted combat workbench state', () => {

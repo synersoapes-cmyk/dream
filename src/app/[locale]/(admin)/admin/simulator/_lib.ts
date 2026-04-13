@@ -67,6 +67,13 @@ export const SIMULATOR_ADMIN_SECTIONS = [
     group: 'ocr',
   },
   {
+    slug: 'ocr-metrics',
+    title: 'OCR 质量统计',
+    description:
+      '聚合查看 OCR 成功率、失败原因、缺失字段和草稿同步分布，为后续优化提供依据。',
+    group: 'ocr',
+  },
+  {
     slug: 'ocr-dictionary',
     title: 'OCR 字典',
     description: '维护 OCR 纠错映射，统一装备名、属性词和套装词的归一化结果。',
@@ -93,6 +100,13 @@ export const SIMULATOR_ADMIN_SECTIONS = [
     group: 'rules',
   },
   {
+    slug: 'equipment-extensions',
+    title: '装备扩展规则',
+    description:
+      '统一维护灵饰套装档位、玉魄属性池和玉魄百分比语义，并联动星相互合工作台。',
+    group: 'rules',
+  },
+  {
     slug: 'user-diagnostics',
     title: '用户排障',
     description: '按用户、邮箱或角色检索 Simulator 数据，快速排查线上问题。',
@@ -103,6 +117,13 @@ export const SIMULATOR_ADMIN_SECTIONS = [
     title: '实验室记录',
     description: '查看用户实验室会话、样本席位与对比席位，便于复盘换装过程。',
     group: 'support',
+  },
+  {
+    slug: 'advisor-audit',
+    title: '顾问问答审计',
+    description:
+      '查看 AI 顾问的问答留痕、上下文摘要、模型与失败原因，支持后台排查。',
+    group: 'setup',
   },
 ] as const;
 
@@ -132,6 +153,7 @@ export const SIMULATOR_ADMIN_WORKFLOWS: {
       { title: '修正候选装备', slug: 'candidate-equipment' },
       { title: '核对入库台账', slug: 'inventory' },
       { title: '查看失败任务', slug: 'ocr-jobs' },
+      { title: '看质量统计', slug: 'ocr-metrics' },
       { title: '补充 OCR 字典', slug: 'ocr-dictionary' },
     ],
   },
@@ -158,6 +180,7 @@ export const SIMULATOR_ADMIN_WORKFLOWS: {
     steps: [
       { title: '跑规则试算', slug: 'rule-playground' },
       { title: '编辑规则版本', slug: 'rule-center' },
+      { title: '维护装备扩展', slug: 'equipment-extensions' },
       { title: '维护目标模板', slug: 'target-templates' },
       { title: '维护星相互合', slug: 'star-resonance-rules' },
     ],
@@ -173,6 +196,7 @@ export const SIMULATOR_ADMIN_WORKFLOWS: {
       { title: '编辑默认模板', slug: 'defaults' },
       { title: '维护目标模板', slug: 'target-templates' },
       { title: '调整顾问配置', slug: 'advisor' },
+      { title: '查看顾问审计', slug: 'advisor-audit' },
       { title: '检查 OCR 配置', slug: 'ocr' },
     ],
   },

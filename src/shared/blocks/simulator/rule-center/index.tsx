@@ -28,6 +28,7 @@ type RuleCenterPanelProps = {
   canEdit?: boolean;
   initialVersions: DamageRuleVersionListItem[];
   initialDetail: DamageRuleVersionDetail | null;
+  starResonanceRuleCount: number;
 };
 
 const EQUIPMENT_EXTENSION_SECTIONS = [
@@ -40,6 +41,12 @@ const EQUIPMENT_EXTENSION_SECTIONS = [
     key: 'ornament_set_rules',
     title: '灵饰套装档位规则',
     description: '建议维护套装名、激活阈值、档位和每档位效果。',
+  },
+  {
+    key: 'regular_set_rules',
+    title: '常规套装档位规则',
+    description:
+      '建议维护动物套 / 变身套等同名主装备套装的件数阈值与每档效果。',
   },
   {
     key: 'jade_attribute_pool',
@@ -132,6 +139,7 @@ export function RuleCenterPanel({
   canEdit = false,
   initialVersions,
   initialDetail,
+  starResonanceRuleCount,
 }: RuleCenterPanelProps) {
   const [versions, setVersions] = useState(initialVersions);
   const [selectedId, setSelectedId] = useState(
@@ -800,9 +808,14 @@ export function RuleCenterPanel({
                   <div>
                     <div className="text-sm font-medium">装备扩展规则配置</div>
                     <div className="text-muted-foreground text-xs">
-                      这里展示当前版本挂载的装备扩展配置。星相互合请到专门页面维护，其它配置暂不开放表单编辑。
+                      这里展示当前版本挂载的装备扩展配置。星相互合请到专门页面维护，其它扩展项已迁移到独立的装备扩展规则工作台。
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="/admin/simulator/equipment-extensions">
+                          打开装备扩展规则工作台
+                        </Link>
+                      </Button>
                       <Button asChild size="sm" variant="outline">
                         <Link href="/admin/simulator/star-resonance-rules">
                           打开星相互合规则工作台
@@ -825,11 +838,13 @@ export function RuleCenterPanel({
                           </div>
                         </div>
                         <div className="bg-muted/30 rounded-md px-3 py-2 text-sm">
-                          {summarizeExtensionValue(
-                            equipmentExtensionRows.find(
-                              (item) => item.configKey === section.key
-                            )?.value
-                          )}
+                          {section.key === 'star_resonance_rules'
+                            ? `${starResonanceRuleCount} 条规则`
+                            : summarizeExtensionValue(
+                                equipmentExtensionRows.find(
+                                  (item) => item.configKey === section.key
+                                )?.value
+                              )}
                         </div>
                       </div>
                     ))}

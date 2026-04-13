@@ -105,6 +105,7 @@
               "active_urls": [
                 "/admin/simulator/inventory",
                 "/admin/simulator/ocr-jobs",
+                "/admin/simulator/ocr-metrics",
                 "/admin/simulator/ocr-dictionary"
               ],
               "icon": "ScanLine"
@@ -120,6 +121,7 @@
               "url": "/admin/simulator/rule-center",
               "active_urls": [
                 "/admin/simulator/star-resonance-rules",
+                "/admin/simulator/equipment-extensions",
                 "/admin/simulator/rule-playground"
               ],
               "icon": "Scale"
@@ -129,6 +131,7 @@
               "url": "/admin/simulator/defaults",
               "active_urls": [
                 "/admin/simulator/advisor",
+                "/admin/simulator/advisor-audit",
                 "/admin/simulator/ocr",
                 "/admin/simulator/target-templates"
               ],

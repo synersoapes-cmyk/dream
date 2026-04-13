@@ -27,11 +27,13 @@ import {
 import { mapCandidateEquipmentRow } from './simulator-mappers';
 import type {
   AdminSimulatorInventoryEntryItem,
+  AdminSimulatorOcrMetrics,
   AdminSimulatorOcrDictionaryItem,
   AdminSimulatorOcrJobItem,
   SimulatorCandidateEquipment,
   SimulatorInventoryEntry,
   SimulatorInventoryEquipmentAsset,
+  SimulatorOcrJob,
   SimulatorOcrDraftItem,
 } from './simulator-types';
 
@@ -57,6 +59,107 @@ function mapAdminSimulatorOcrDictionaryItem(row: {
     createdAt: row.createdAt?.getTime?.() ?? 0,
     updatedAt: row.updatedAt?.getTime?.() ?? 0,
   };
+}
+
+const OCR_EXPECTED_FIELDS: Record<string, string[]> = {
+  equipment: ['type', 'name', 'mainStat', 'level'],
+  ornament: ['type', 'name', 'mainStat', 'level'],
+  jade: ['type', 'name', 'mainStat', 'slot'],
+  profile: [
+    'level',
+    'faction',
+    'physique',
+    'magic',
+    'strength',
+    'endurance',
+    'agility',
+    'magicDamage',
+    'magicDefense',
+    'speed',
+  ],
+};
+
+function normalizeOcrFailureReason(errorMessage: string) {
+  const normalized = errorMessage.trim();
+  if (!normalized) {
+    return '未记录原因';
+  }
+
+  if (normalized.includes('识图配置未完成')) {
+    return '配置缺失';
+  }
+  if (
+    normalized.includes('Gemini 当前不支持此服务器出口地区') ||
+    normalized.includes('failed_precondition')
+  ) {
+    return '模型地区限制';
+  }
+  if (
+    normalized.includes('Gemini 识图失败') ||
+    normalized.includes('generatecontent')
+  ) {
+    return '模型调用失败';
+  }
+  if (normalized.includes('未检测到游戏组件')) {
+    return '未识别到有效游戏区域';
+  }
+  if (normalized.includes('json')) {
+    return '模型返回无法解析';
+  }
+
+  return normalized.length > 30 ? `${normalized.slice(0, 30)}...` : normalized;
+}
+
+function getOcrStructuredSource(params: {
+  rawResultJson?: string | null;
+  draftBodyJson?: string | null;
+}) {
+  const draft = parseJsonObject(params.draftBodyJson);
+  if (Object.keys(draft).length > 0) {
+    return draft;
+  }
+
+  const raw = parseJsonObject(params.rawResultJson);
+  const recognized =
+    raw.recognized && typeof raw.recognized === 'object' && !Array.isArray(raw.recognized)
+      ? (raw.recognized as Record<string, unknown>)
+      : null;
+
+  return recognized && Object.keys(recognized).length > 0 ? recognized : raw;
+}
+
+function collectMissingFields(sceneType: string, source: Record<string, unknown>) {
+  const expectedFields = OCR_EXPECTED_FIELDS[sceneType] ?? ['name', 'type'];
+
+  return expectedFields.filter((field) => {
+    const value = source[field];
+
+    if (value === null || value === undefined) {
+      return true;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim().length === 0;
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0;
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value ?? {}).length === 0;
+    }
+
+    return false;
+  });
+}
+
+function toDayKey(value: Date | null | undefined) {
+  if (!value) {
+    return 'unknown';
+  }
+
+  return value.toISOString().slice(0, 10);
 }
 
 function mapAdminSimulatorInventoryEntryRow(row: {
@@ -375,6 +478,186 @@ export async function listAdminSimulatorOcrJobs(params?: {
         ),
       })
     );
+  });
+}
+
+export async function getAdminSimulatorOcrMetrics(): Promise<AdminSimulatorOcrMetrics> {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('getAdminSimulatorOcrMetrics', async () => {
+    const jobs = await db()
+      .select()
+      .from(ocrJob)
+      .orderBy(desc(ocrJob.createdAt));
+
+    const jobIds = jobs.map((item: SimulatorOcrJob) => item.id);
+    const drafts =
+      jobIds.length > 0
+        ? await db()
+            .select()
+            .from(ocrDraftItem)
+            .where(inArray(ocrDraftItem.ocrJobId, jobIds))
+        : [];
+    const draftIds = drafts.map((item: SimulatorOcrDraftItem) => item.id);
+    const candidateRows =
+      draftIds.length > 0
+        ? await db()
+            .select({
+              ocrDraftItemId: candidateEquipment.ocrDraftItemId,
+              status: candidateEquipment.status,
+            })
+            .from(candidateEquipment)
+            .where(inArray(candidateEquipment.ocrDraftItemId, draftIds))
+        : [];
+
+    const draftsByJobId = new Map<string, SimulatorOcrDraftItem[]>();
+    for (const draft of drafts) {
+      const current = draftsByJobId.get(draft.ocrJobId) ?? [];
+      current.push(draft);
+      draftsByJobId.set(draft.ocrJobId, current);
+    }
+
+    const candidateStatusByDraftId = new Map<string, string>(
+      candidateRows
+        .filter(
+          (row: any): row is { ocrDraftItemId: string; status: string } =>
+            typeof row.ocrDraftItemId === 'string' &&
+            row.ocrDraftItemId.length > 0 &&
+            typeof row.status === 'string'
+        )
+        .map((row: { ocrDraftItemId: string; status: string }) => [
+          row.ocrDraftItemId,
+          row.status,
+        ] as const)
+    );
+
+    const totals = {
+      totalJobs: jobs.length,
+      successJobs: 0,
+      failedJobs: 0,
+      pendingJobs: 0,
+      reviewingJobs: 0,
+      successRate: 0,
+    };
+    const sceneMap = new Map<
+      string,
+      { sceneType: string; total: number; success: number; failed: number }
+    >();
+    const failureReasonMap = new Map<string, number>();
+    const missingFieldMap = new Map<string, number>();
+    const draftReviewMap = new Map<string, number>();
+    const candidateSyncMap = new Map<string, number>();
+    const trendMap = new Map<
+      string,
+      { date: string; total: number; success: number; failed: number }
+    >();
+
+    for (const draft of drafts) {
+      draftReviewMap.set(
+        draft.reviewStatus,
+        (draftReviewMap.get(draft.reviewStatus) ?? 0) + 1
+      );
+
+      const candidateStatus = candidateStatusByDraftId.get(draft.id);
+      candidateSyncMap.set(
+        candidateStatus ?? 'unsynced',
+        (candidateSyncMap.get(candidateStatus ?? 'unsynced') ?? 0) + 1
+      );
+    }
+
+    for (const job of jobs) {
+      if (job.status === 'success') {
+        totals.successJobs += 1;
+      } else if (job.status === 'failed') {
+        totals.failedJobs += 1;
+      } else if (job.status === 'reviewing') {
+        totals.reviewingJobs += 1;
+      } else {
+        totals.pendingJobs += 1;
+      }
+
+      const sceneBucket = sceneMap.get(job.sceneType) ?? {
+        sceneType: job.sceneType,
+        total: 0,
+        success: 0,
+        failed: 0,
+      };
+      sceneBucket.total += 1;
+      if (job.status === 'success') {
+        sceneBucket.success += 1;
+      }
+      if (job.status === 'failed') {
+        sceneBucket.failed += 1;
+      }
+      sceneMap.set(job.sceneType, sceneBucket);
+
+      const dayKey = toDayKey(job.createdAt);
+      const dayBucket = trendMap.get(dayKey) ?? {
+        date: dayKey,
+        total: 0,
+        success: 0,
+        failed: 0,
+      };
+      dayBucket.total += 1;
+      if (job.status === 'success') {
+        dayBucket.success += 1;
+      }
+      if (job.status === 'failed') {
+        dayBucket.failed += 1;
+      }
+      trendMap.set(dayKey, dayBucket);
+
+      if (job.status === 'failed') {
+        const reason = normalizeOcrFailureReason(job.errorMessage);
+        failureReasonMap.set(reason, (failureReasonMap.get(reason) ?? 0) + 1);
+      }
+
+      const primaryDraft = (draftsByJobId.get(job.id) ?? [])[0];
+      const source = getOcrStructuredSource({
+        rawResultJson: job.rawResultJson,
+        draftBodyJson: primaryDraft?.draftBodyJson,
+      });
+      const missingFields = collectMissingFields(job.sceneType, source);
+      for (const field of missingFields) {
+        const fieldKey = `${job.sceneType}.${field}`;
+        missingFieldMap.set(fieldKey, (missingFieldMap.get(fieldKey) ?? 0) + 1);
+      }
+    }
+
+    totals.successRate =
+      totals.totalJobs > 0
+        ? Number(((totals.successJobs / totals.totalJobs) * 100).toFixed(1))
+        : 0;
+
+    return {
+      totals,
+      sceneBreakdown: [...sceneMap.values()]
+        .map((item) => ({
+          ...item,
+          successRate:
+            item.total > 0
+              ? Number(((item.success / item.total) * 100).toFixed(1))
+              : 0,
+        }))
+        .sort((left, right) => right.total - left.total),
+      failureReasons: [...failureReasonMap.entries()]
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((left, right) => right.count - left.count)
+        .slice(0, 10),
+      missingFields: [...missingFieldMap.entries()]
+        .map(([field, count]) => ({ field, count }))
+        .sort((left, right) => right.count - left.count)
+        .slice(0, 20),
+      draftReviewBreakdown: [...draftReviewMap.entries()]
+        .map(([status, count]) => ({ status, count }))
+        .sort((left, right) => right.count - left.count),
+      candidateSyncBreakdown: [...candidateSyncMap.entries()]
+        .map(([status, count]) => ({ status, count }))
+        .sort((left, right) => right.count - left.count),
+      recentDailyTrend: [...trendMap.values()]
+        .sort((left, right) => left.date.localeCompare(right.date))
+        .slice(-14),
+    };
   });
 }
 

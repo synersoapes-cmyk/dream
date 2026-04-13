@@ -56,6 +56,14 @@ function createBundle(): SimulatorCharacterBundle {
       rawBodyJson: JSON.stringify({
         magicPower: 610,
         dodge: 205,
+        meridianConfig: {
+          physique: 0,
+          magic: 10,
+          strength: 0,
+          endurance: 0,
+          agility: 0,
+          magicPower: 8,
+        },
       }),
     },
     skills: [
@@ -99,7 +107,12 @@ function createBundle(): SimulatorCharacterBundle {
       targetMagicDefenseCultivation: 12,
       targetElement: '火',
       targetFormation: '普通阵',
-      notesJson: '{}',
+      notesJson: JSON.stringify({
+        weather: '雨天',
+        targetDefenseState: '防御',
+        targetMagicDefenseResult: 50,
+        specialMagicDamageReductionFactor: 0.6,
+      }),
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -150,6 +163,30 @@ function createBundle(): SimulatorCharacterBundle {
           setEffectJson: '{}',
           notesJson: JSON.stringify({
             activeRuneStoneSet: 0,
+            gemstones: [
+              {
+                id: 'gem_1',
+                name: '舍利子',
+                type: 'spirit',
+                element: '土',
+                level: 8,
+                quantity: 2,
+                stats: {
+                  spirit: 6,
+                },
+              },
+              {
+                id: 'gem_2',
+                name: '黑宝石',
+                type: 'speed',
+                element: '水',
+                level: 10,
+                quantity: 1,
+                stats: {
+                  speed: 8,
+                },
+              },
+            ],
             runeStoneSets: [
               [
                 {
@@ -203,16 +240,24 @@ test('buildSimulatorCharacterDomain maps profile, battle context, and equipment 
 
   assert.ok(domain);
   assert.equal(domain.school, '龙宫');
-  assert.equal(domain.attributeSources.baseHp, 716);
-  assert.equal(domain.profile.spirit, 610);
+  assert.equal(domain.attributeSources.baseHp, 804);
+  assert.equal(domain.profile.spirit, 618);
   assert.equal(domain.profile.dodge, 205);
+  assert.equal(domain.attributeSources.magic, 240);
+  assert.equal(domain.attributeSources.magicPower, 618);
   assert.equal(domain.cultivationLevels.magicAttack, 23);
   assert.equal(domain.equipmentAttributeTotals.magicDamage, 232);
+  assert.equal(domain.equipmentAttributeTotals.spirit, 12);
+  assert.equal(domain.equipmentAttributeTotals.speed, 8);
   assert.equal(domain.equipmentAttributeTotals.magic, 8);
   assert.equal(domain.equipmentAttributeTotals.magicResult, 35);
   assert.equal(domain.battleContext?.selfElement, '水');
   assert.equal(domain.battleContext?.targetName, '乌鸡国树怪');
   assert.equal(domain.battleContext?.targetSpeed, 720);
+  assert.equal(domain.battleContext?.weather, '雨天');
+  assert.equal(domain.battleContext?.targetDefenseState, '防御');
+  assert.equal(domain.battleContext?.targetMagicDefenseResult, 50);
+  assert.equal(domain.battleContext?.specialMagicDamageReductionFactor, 0.6);
   assert.equal(domain.skills[0]?.finalLevel, 152);
 });
 

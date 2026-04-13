@@ -1,16 +1,40 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  startTransition,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import { DUNGEON_DATABASE } from '@/features/simulator/store/gameData';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Dungeon, Skill } from '@/features/simulator/store/gameTypes';
-import { buildDungeonDatabaseFromTemplates } from '@/features/simulator/utils/targetTemplates';
+import {
+  buildDungeonDatabaseFromTemplates,
+  mergeDungeonDatabases,
+} from '@/features/simulator/utils/targetTemplates';
 import { Calculator, ChevronDown, RefreshCw, X, Zap } from 'lucide-react';
+import {
+  resolveBattleContextDerivedFields,
+  resolveElementRelationFromElements,
+} from '@/shared/lib/simulator-battle-context';
+import { getSimulatorNetworkErrorMessage } from '@/shared/lib/simulator-network';
+import {
+  getSkillTargetCountOptions,
+  resolveLaboratorySkillLevels,
+} from '@/shared/lib/simulator-rune-skill';
 
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/shared/components/ui/tooltip';
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
+import { SimpleSelect } from './SimpleSelect';
 import type {
   DamageEngineResult,
   DamageEngineTargetInput,
@@ -18,8 +42,6 @@ import type {
 } from '@/shared/services/damage-engine';
 
 const ELEMENT_RELATION_OPTIONS = ['克制', '无克/普通', '被克制'];
-const DEFAULT_SELF_FORMATION_LABEL = '天覆阵';
-const DEFAULT_FORMATION_COUNTER_LABEL = '无克/普通';
 const PREFERRED_DAMAGE_SKILL_NAMES = ['龙卷雨击', '龙腾'];
 
 type PanelMagicContribution = {
@@ -70,10 +92,15 @@ type DamageTargetDetails = {
   magicDamage: number;
   targetDef: number;
   formationRatio: string;
+  transformCardFactor: string;
   cultDiff: number;
   magicResult: number;
   shenmuValue: number;
   elementFactor: string;
+  luohanFactor: string;
+  damageVarianceFactor: string;
+  criticalChance: string;
+  expectedDamage: number;
   finalDamage: number;
   critDamage: number;
   formulaExpression: string;
@@ -254,6 +281,11 @@ const mapTargetResult = (
     magicResult?: number;
     elementFactor?: number;
     shenmuValue?: number;
+    transformCardFactor?: number;
+    luohanFactor?: number;
+    damageVarianceFactor?: number;
+    criticalChance?: number;
+    expectedDamage?: number;
     finalDamage?: number;
     critDamage?: number;
     formulaExpression?: string;
@@ -273,6 +305,14 @@ const mapTargetResult = (
   const magicResult = toNumber(breakdown.magicResult);
   const elementFactor = toNumber(breakdown.elementFactor, 1);
   const shenmuValue = toNumber(breakdown.shenmuValue);
+  const transformCardFactor = toNumber(breakdown.transformCardFactor, 1);
+  const luohanFactor = toNumber(breakdown.luohanFactor, 1);
+  const damageVarianceFactor = toNumber(breakdown.damageVarianceFactor, 1);
+  const criticalChance = toNumber(breakdown.criticalChance, 0);
+  const expectedDamage = toNumber(
+    breakdown.expectedDamage,
+    (result as { expectedDamage?: number } | undefined)?.expectedDamage
+  );
 
   return {
     ...target,
@@ -288,10 +328,15 @@ const mapTargetResult = (
       magicDamage: panelMagicDamage,
       targetDef: targetMagicDefense,
       formationRatio: combinedFormationFactor.toFixed(2),
+      transformCardFactor: transformCardFactor.toFixed(2),
       cultDiff: cultivationDiff,
       magicResult,
       shenmuValue,
       elementFactor: elementFactor.toFixed(2),
+      luohanFactor: luohanFactor.toFixed(2),
+      damageVarianceFactor: damageVarianceFactor.toFixed(2),
+      criticalChance: `${(criticalChance * 100).toFixed(1)}%`,
+      expectedDamage,
       finalDamage: toNumber(breakdown.finalDamage, result?.damage),
       critDamage: toNumber(breakdown.critDamage, result?.critDamage),
       formulaExpression: localizeFormulaExpression(
@@ -308,10 +353,25 @@ const mapTargetResult = (
 async function requestDamageCalculation(params: {
   skillName?: string;
   targetCount: number;
+  selfFormation: string;
+  targetFormation: string;
+  formationFactor: number;
+  formationCounterState: string;
+  selfElement: string;
+  targetElement: string;
   elementRelation: string;
+  weather: string;
   shenmuValue: number;
   magicResult: number;
+  targetMagicDefenseResult: number;
+  targetDefenseState: string;
+  specialMagicDamageReductionFactor: number;
   transformCardFactor: number;
+  luohanFactor: number;
+  damageVarianceFactor: number;
+  criticalChance: number;
+  criticalExpectationMultiplier: number;
+  signal?: AbortSignal;
   targets: Array<{
     name: string;
     defense: number;
@@ -340,16 +400,32 @@ async function requestDamageCalculation(params: {
     body: JSON.stringify({
       skillName: params.skillName,
       targetCount: params.targetCount,
+      selfFormation: params.selfFormation,
+      targetFormation: params.targetFormation,
+      formationFactor: params.formationFactor,
+      formationCounterState: params.formationCounterState,
+      selfElement: params.selfElement,
+      targetElement: params.targetElement,
       elementRelation: params.elementRelation,
+      weather: params.weather,
       shenmuValue: params.shenmuValue,
       magicResult: params.magicResult,
+      targetMagicDefenseResult: params.targetMagicDefenseResult,
+      targetDefenseState: params.targetDefenseState,
+      specialMagicDamageReductionFactor:
+        params.specialMagicDamageReductionFactor,
       transformCardFactor: params.transformCardFactor,
+      luohanFactor: params.luohanFactor,
+      damageVarianceFactor: params.damageVarianceFactor,
+      criticalChance: params.criticalChance,
+      criticalExpectationMultiplier: params.criticalExpectationMultiplier,
       targets: params.targets.map((target) => ({
         name: target.name,
         magicDefense: target.magicDefense,
         speed: target.speed,
       })),
     }),
+    signal: params.signal,
   });
 
   const payload = await response.json();
@@ -379,9 +455,12 @@ export function SkillDamagePanel({
   onClose?: () => void;
 }) {
   const combatTarget = useGameStore((state) => state.combatTarget);
+  const equipment = useGameStore((state) => state.equipment);
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
   const selectSkill = useGameStore((state) => state.selectSkill);
+  const playerSetup = useGameStore((state) => state.playerSetup);
+  const syncedCloudState = useGameStore((state) => state.syncedCloudState);
 
   const [showModal, setShowModal] = useState(false);
   const [modalSkillDetails, setModalSkillDetails] =
@@ -412,10 +491,68 @@ export function SkillDamagePanel({
   const [shenmuValue, setShenmuValue] = useState(0);
   const [magicResult, setMagicResult] = useState(0);
   const [transformCardFactor, setTransformCardFactor] = useState(1);
+  const [weather, setWeather] = useState('');
+  const [targetDefenseState, setTargetDefenseState] = useState('');
+  const [targetMagicDefenseResult, setTargetMagicDefenseResult] = useState(0);
+  const [
+    specialMagicDamageReductionFactor,
+    setSpecialMagicDamageReductionFactor,
+  ] = useState(1);
+  const [luohanEnabled, setLuohanEnabled] = useState(false);
+  const [damageVariancePercent, setDamageVariancePercent] = useState(100);
+  const [criticalChancePercent, setCriticalChancePercent] = useState(0);
+  const latestCalculationRequestRef = useRef(0);
+  const activeCalculationAbortRef = useRef<AbortController | null>(null);
+
+  const updatePercentInput = (
+    setter: Dispatch<SetStateAction<number>>,
+    value: string,
+    fallback: number,
+    min: number,
+    max: number
+  ) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      setter(fallback);
+      return;
+    }
+
+    setter(Math.min(max, Math.max(min, parsed)));
+  };
+
+  const resolvedSkills = useMemo(
+    () =>
+      resolveLaboratorySkillLevels(skills, equipment, {
+        baselineEquipment: syncedCloudState?.equipment ?? [],
+      }),
+    [skills, equipment, syncedCloudState]
+  );
+
+  const derivedBattleContext = useMemo(
+    () =>
+      resolveBattleContextDerivedFields({
+        selfFormation: playerSetup.formation,
+        targetFormation: combatTarget.formation,
+        selfElement: playerSetup.element,
+        targetElement: combatTarget.element,
+      }),
+    [
+      combatTarget.element,
+      combatTarget.formation,
+      playerSetup.element,
+      playerSetup.formation,
+    ]
+  );
 
   const activeSkill = useMemo(
-    () => skills.find((skill) => skill.name === activeSkillId) || skills[0],
-    [skills, activeSkillId]
+    () =>
+      resolvedSkills.find((skill) => skill.name === activeSkillId) ||
+      resolvedSkills[0],
+    [resolvedSkills, activeSkillId]
+  );
+  const targetCountOptions = useMemo(
+    () => getSkillTargetCountOptions(resolvedSkills, activeSkillId),
+    [resolvedSkills, activeSkillId]
   );
 
   const selectedDungeon = useMemo(
@@ -445,7 +582,10 @@ export function SkillDamagePanel({
         }
 
         if (!cancelled) {
-          const dungeons = buildDungeonDatabaseFromTemplates(payload.data);
+          const dungeons = mergeDungeonDatabases(
+            buildDungeonDatabaseFromTemplates(payload.data),
+            DUNGEON_DATABASE
+          );
           setTargetDungeons(dungeons);
           if (dungeons.length > 0) {
             setSelectedDungeonId((current) =>
@@ -455,7 +595,16 @@ export function SkillDamagePanel({
             );
           }
         }
-      } catch {}
+      } catch {
+        if (!cancelled) {
+          setTargetDungeons(DUNGEON_DATABASE);
+          setSelectedDungeonId((current) =>
+            DUNGEON_DATABASE.some((dungeon) => dungeon.id === current)
+              ? current
+              : DUNGEON_DATABASE[0]?.id || ''
+          );
+        }
+      }
     };
 
     void loadTemplates();
@@ -466,15 +615,26 @@ export function SkillDamagePanel({
   }, []);
 
   useEffect(() => {
-    if (activeSkillId && skills.some((skill) => skill.name === activeSkillId)) {
+    if (
+      activeSkillId &&
+      resolvedSkills.some((skill) => skill.name === activeSkillId)
+    ) {
       return;
     }
 
-    const nextSkillName = getPreferredDamageSkillName(skills);
+    const nextSkillName = getPreferredDamageSkillName(resolvedSkills);
     if (nextSkillName) {
       setActiveSkillId(nextSkillName);
     }
-  }, [skills, activeSkillId]);
+  }, [resolvedSkills, activeSkillId]);
+
+  useEffect(() => {
+    const maxTargetCount =
+      targetCountOptions[targetCountOptions.length - 1] ?? 1;
+    setTargetCount((current) =>
+      current > maxTargetCount ? maxTargetCount : current
+    );
+  }, [targetCountOptions]);
 
   useEffect(() => {
     if (!isOpen || targetDungeons.length === 0) {
@@ -504,7 +664,39 @@ export function SkillDamagePanel({
     combatTarget.name,
   ]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const persistedBattleContext = syncedCloudState?.battleContext;
+    setElementRelation(
+      resolveElementRelationFromElements(playerSetup.element, combatTarget.element)
+    );
+    setShenmuValue(persistedBattleContext?.shenmuValue ?? 0);
+    setMagicResult(persistedBattleContext?.magicResult ?? 0);
+    setTransformCardFactor(persistedBattleContext?.transformCardFactor ?? 1);
+    setWeather(persistedBattleContext?.weather ?? '');
+    setTargetDefenseState(persistedBattleContext?.targetDefenseState ?? '');
+    setTargetMagicDefenseResult(
+      persistedBattleContext?.targetMagicDefenseResult ?? 0
+    );
+    setSpecialMagicDamageReductionFactor(
+      persistedBattleContext?.specialMagicDamageReductionFactor ?? 1
+    );
+  }, [
+    isOpen,
+    syncedCloudState?.battleContext,
+    playerSetup.element,
+    combatTarget.element,
+  ]);
+
   const loadDamageData = async () => {
+    const requestId = latestCalculationRequestRef.current + 1;
+    latestCalculationRequestRef.current = requestId;
+    activeCalculationAbortRef.current?.abort();
+    const requestController = new AbortController();
+    activeCalculationAbortRef.current = requestController;
     setIsCalculating(true);
     setCalculationError('');
 
@@ -555,22 +747,56 @@ export function SkillDamagePanel({
         requestDamageCalculation({
           skillName: activeSkill.name,
           targetCount,
+          selfFormation: playerSetup.formation,
+          targetFormation: combatTarget.formation || '普通阵',
+          formationFactor: derivedBattleContext.formationFactor,
+          formationCounterState: derivedBattleContext.formationCounterState,
+          selfElement: playerSetup.element,
+          targetElement: combatTarget.element || '',
           elementRelation,
+          weather,
           shenmuValue,
           magicResult,
+          targetMagicDefenseResult,
+          targetDefenseState,
+          specialMagicDamageReductionFactor,
           transformCardFactor,
+          luohanFactor: luohanEnabled ? 0.5 : 1,
+          damageVarianceFactor: damageVariancePercent / 100,
+          criticalChance: criticalChancePercent / 100,
+          criticalExpectationMultiplier: 2,
+          signal: requestController.signal,
           targets: manualTargetInputs,
         }),
         requestDamageCalculation({
           skillName: activeSkill.name,
           targetCount,
+          selfFormation: playerSetup.formation,
+          targetFormation: '普通阵',
+          formationFactor: derivedBattleContext.formationFactor,
+          formationCounterState: derivedBattleContext.formationCounterState,
+          selfElement: playerSetup.element,
+          targetElement: '',
           elementRelation,
+          weather,
           shenmuValue,
           magicResult,
+          targetMagicDefenseResult,
+          targetDefenseState,
+          specialMagicDamageReductionFactor,
           transformCardFactor,
+          luohanFactor: luohanEnabled ? 0.5 : 1,
+          damageVarianceFactor: damageVariancePercent / 100,
+          criticalChance: criticalChancePercent / 100,
+          criticalExpectationMultiplier: 2,
+          signal: requestController.signal,
           targets: dungeonTargetInputs,
         }),
       ]);
+
+      if (requestId !== latestCalculationRequestRef.current) {
+        return;
+      }
 
       setRuleVersionInfo(
         manualResults.ruleVersion || dungeonResults.ruleVersion || null
@@ -592,15 +818,23 @@ export function SkillDamagePanel({
         });
       }
 
-      setDamageDisplayData(nextDisplayData);
+      startTransition(() => {
+        setDamageDisplayData(nextDisplayData);
+      });
     } catch (error) {
+      if (requestId !== latestCalculationRequestRef.current) {
+        return;
+      }
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
       console.error('failed to calculate skill damage panel:', error);
-      setCalculationError(
-        error instanceof Error ? error.message : '伤害试算失败'
-      );
+      setCalculationError(getSimulatorNetworkErrorMessage(error, '伤害试算失败'));
       setDamageDisplayData([]);
     } finally {
-      setIsCalculating(false);
+      if (requestId === latestCalculationRequestRef.current) {
+        setIsCalculating(false);
+      }
     }
   };
 
@@ -619,12 +853,29 @@ export function SkillDamagePanel({
     elementRelation,
     shenmuValue,
     magicResult,
+    weather,
+    targetDefenseState,
+    targetMagicDefenseResult,
+    specialMagicDamageReductionFactor,
     transformCardFactor,
+    luohanEnabled,
+    damageVariancePercent,
+    criticalChancePercent,
+    playerSetup.element,
+    playerSetup.formation,
+    derivedBattleContext,
     combatTarget.name,
     combatTarget.dungeonName,
     combatTarget.templateId,
     isDungeonTargetSelected,
   ]);
+
+  useEffect(
+    () => () => {
+      activeCalculationAbortRef.current?.abort();
+    },
+    []
+  );
 
   const handleRecalculate = () => {
     void loadDamageData();
@@ -706,7 +957,7 @@ export function SkillDamagePanel({
                       />
                     </div>
                     <div className="max-h-48 overflow-y-auto p-1.5">
-                      {skills
+                      {resolvedSkills
                         .filter((skill) =>
                           skill.name
                             .toLowerCase()
@@ -755,7 +1006,7 @@ export function SkillDamagePanel({
                 {isTargetCountOpen && (
                   <div className="absolute top-full left-0 z-50 mt-2 flex w-28 flex-col overflow-hidden rounded-xl border border-yellow-800/80 bg-slate-900 shadow-2xl">
                     <div className="max-h-64 overflow-y-auto p-1.5">
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
+                      {targetCountOptions.map((count) => (
                         <div
                           key={count}
                           onClick={() => {
@@ -810,6 +1061,193 @@ export function SkillDamagePanel({
                 </span>
               )}
             </span>
+          </div>
+
+          <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl border border-yellow-900/30 bg-slate-900/35 p-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label
+                id="skill-damage-weather-label"
+                className="text-xs text-yellow-300/80"
+              >
+                天气
+              </Label>
+              <SimpleSelect
+                triggerId="skill-damage-weather-select"
+                ariaLabelledBy="skill-damage-weather-label"
+                value={weather || '无天气'}
+                onValueChange={(value) =>
+                  setWeather(value === '无天气' ? '' : value)
+                }
+                className="h-9 py-1 text-sm"
+              >
+                {['无天气', '雨天'].map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </SimpleSelect>
+            </div>
+            <div className="space-y-1.5">
+              <Label
+                id="skill-damage-target-defense-state-label"
+                className="text-xs text-yellow-300/80"
+              >
+                目标状态
+              </Label>
+              <SimpleSelect
+                triggerId="skill-damage-target-defense-state-select"
+                ariaLabelledBy="skill-damage-target-defense-state-label"
+                value={targetDefenseState || '普通'}
+                onValueChange={(value) =>
+                  setTargetDefenseState(value === '普通' ? '' : value)
+                }
+                className="h-9 py-1 text-sm"
+              >
+                {['普通', '防御'].map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </SimpleSelect>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">变身卡倍率</Label>
+              <Input
+                value={transformCardFactor}
+                type="number"
+                min={0}
+                step={0.01}
+                onChange={(e) =>
+                  updatePercentInput(
+                    setTransformCardFactor,
+                    e.target.value,
+                    1,
+                    0,
+                    10
+                  )
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">伤害波动 %</Label>
+              <Input
+                value={damageVariancePercent}
+                type="number"
+                min={95}
+                max={105}
+                step={1}
+                onChange={(e) =>
+                  updatePercentInput(
+                    setDamageVariancePercent,
+                    e.target.value,
+                    100,
+                    95,
+                    105
+                  )
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">法爆率 %</Label>
+              <Input
+                value={criticalChancePercent}
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                onChange={(e) =>
+                  updatePercentInput(
+                    setCriticalChancePercent,
+                    e.target.value,
+                    0,
+                    0,
+                    100
+                  )
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">神木符</Label>
+              <Input
+                value={shenmuValue}
+                type="number"
+                step={1}
+                onChange={(e) =>
+                  updatePercentInput(setShenmuValue, e.target.value, 0, -99999, 99999)
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">法伤结果</Label>
+              <Input
+                value={magicResult}
+                type="number"
+                step={1}
+                onChange={(e) =>
+                  updatePercentInput(setMagicResult, e.target.value, 0, -99999, 99999)
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">
+                目标法防结果
+              </Label>
+              <Input
+                value={targetMagicDefenseResult}
+                type="number"
+                min={0}
+                step={1}
+                onChange={(e) =>
+                  updatePercentInput(
+                    setTargetMagicDefenseResult,
+                    e.target.value,
+                    0,
+                    0,
+                    99999
+                  )
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-yellow-300/80">
+                法术减伤系数
+              </Label>
+              <Input
+                value={specialMagicDamageReductionFactor}
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(e) =>
+                  updatePercentInput(
+                    setSpecialMagicDamageReductionFactor,
+                    e.target.value,
+                    1,
+                    0,
+                    1
+                  )
+                }
+                className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
+              />
+            </div>
+            <label className="flex items-center gap-3 rounded-lg border border-yellow-800/30 bg-slate-950/40 px-3 py-2.5 text-sm text-yellow-100">
+              <input
+                type="checkbox"
+                checked={luohanEnabled}
+                onChange={(e) => setLuohanEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-yellow-700/50 bg-slate-900 text-yellow-500"
+              />
+              <span>开启罗汉减伤</span>
+              <span className="ml-auto text-xs text-yellow-500/70">
+                非结果部分 x0.5
+              </span>
+            </label>
           </div>
 
           {calculationError && (
@@ -949,6 +1387,21 @@ export function SkillDamagePanel({
 
                         <div className="w-px bg-gradient-to-b from-transparent via-slate-700 to-transparent" />
 
+                        {target.details.expectedDamage > 0 && (
+                          <>
+                            <div className="flex min-w-[88px] flex-col items-end justify-center rounded-lg border border-cyan-900/30 bg-cyan-950/20 px-3 py-1.5">
+                              <span className="mb-0.5 text-[10px] text-cyan-400/80">
+                                法爆期望
+                              </span>
+                              <span className="text-sm font-bold text-cyan-300 tabular-nums">
+                                {target.details.expectedDamage.toLocaleString()}
+                              </span>
+                            </div>
+
+                            <div className="w-px bg-gradient-to-b from-transparent via-slate-700 to-transparent" />
+                          </>
+                        )}
+
                         <div className="flex min-w-[80px] flex-col items-end justify-center rounded-lg border border-yellow-900/30 bg-yellow-950/20 px-3 py-1.5">
                           <span className="mb-0.5 text-[10px] text-yellow-600/80">
                             总伤 (x{targetCount})
@@ -1066,13 +1519,51 @@ export function SkillDamagePanel({
                     <span>
                       阵法系数: {modalSkillDetails.details.formationRatio}
                     </span>
+                    <span>
+                      变身卡: {modalSkillDetails.details.transformCardFactor}
+                    </span>
+                    <span>罗汉: {modalSkillDetails.details.luohanFactor}</span>
                     <span>修炼差: {modalSkillDetails.details.cultDiff}</span>
                     <span>
                       五行系数: {modalSkillDetails.details.elementFactor}
                     </span>
+                    <span>
+                      波动: {modalSkillDetails.details.damageVarianceFactor}
+                    </span>
+                    <span>
+                      法爆率: {modalSkillDetails.details.criticalChance}
+                    </span>
                     <span>神木符: {modalSkillDetails.details.shenmuValue}</span>
                     <span>
                       法伤结果: {modalSkillDetails.details.magicResult}
+                    </span>
+                    <span>
+                      目标法防结果:{' '}
+                      {toNumber(
+                        modalSkillDetails.details.rawBreakdown
+                          ?.targetMagicDefenseResult
+                      )}
+                    </span>
+                    <span>
+                      天气:{' '}
+                      {String(
+                        modalSkillDetails.details.rawBreakdown?.weather || '无天气'
+                      )}
+                    </span>
+                    <span>
+                      目标状态:{' '}
+                      {String(
+                        modalSkillDetails.details.rawBreakdown
+                          ?.targetDefenseState || '普通'
+                      )}
+                    </span>
+                    <span>
+                      法术减伤系数:{' '}
+                      {toNumber(
+                        modalSkillDetails.details.rawBreakdown
+                          ?.specialMagicDamageReductionFactor,
+                        1
+                      )}
                     </span>
                   </div>
                 </div>
@@ -1081,12 +1572,16 @@ export function SkillDamagePanel({
                   {modalSkillDetails.details.magicDamage} -{' '}
                   {modalSkillDetails.details.targetDef}) *{' '}
                   {modalSkillDetails.details.formationRatio} *{' '}
+                  {modalSkillDetails.details.transformCardFactor} *{' '}
                   {modalSkillDetails.details.elementFactor} *{' '}
                   {modalSkillDetails.details.splitRatio} * (1 +{' '}
                   {modalSkillDetails.details.cultDiff} * 0.02) +{' '}
                   {modalSkillDetails.details.cultDiff} * 5 +{' '}
-                  {modalSkillDetails.details.shenmuValue} +{' '}
-                  {modalSkillDetails.details.magicResult}
+                  {modalSkillDetails.details.shenmuValue}
+                  <br />
+                  罗汉后非结果部分 x {modalSkillDetails.details.luohanFactor}
+                  ，再 + {modalSkillDetails.details.magicResult}，最后波动 x{' '}
+                  {modalSkillDetails.details.damageVarianceFactor}，再扣目标法防结果
                   <br />
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <div className="rounded border border-yellow-600/40 bg-yellow-900/30 px-4 py-2 font-bold text-yellow-300">
@@ -1101,6 +1596,14 @@ export function SkillDamagePanel({
                       </span>
                       {modalSkillDetails.details.critDamage}
                     </div>
+                    {modalSkillDetails.details.expectedDamage > 0 && (
+                      <div className="rounded border border-cyan-600/40 bg-cyan-900/30 px-4 py-2 font-bold text-cyan-300">
+                        <span className="mb-1 block text-[10px] text-cyan-500/80">
+                          法爆期望
+                        </span>
+                        {modalSkillDetails.details.expectedDamage}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

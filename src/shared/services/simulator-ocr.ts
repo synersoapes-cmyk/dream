@@ -47,6 +47,7 @@ type SimulatorProfileLike = {
   faction?: string;
   physique?: number;
   magic?: number;
+  potentialPoints?: number;
   strength?: number;
   endurance?: number;
   agility?: number;
@@ -76,6 +77,7 @@ const STAT_KEYS = new Set([
   'dodge',
   'physique',
   'magicPower',
+  'potentialPoints',
   'strength',
   'endurance',
   'agility',
@@ -98,6 +100,23 @@ const PROFILE_FACTION_ALIASES: Record<string, string> = {
   普陀山: '普陀山',
   普陀: '普陀山',
   pt: '普陀山',
+};
+
+const EQUIPMENT_STAT_TEXT_ALIASES: Record<string, string[]> = {
+  hp: ['气血'],
+  magic: ['魔力'],
+  hit: ['命中'],
+  damage: ['伤害'],
+  magicDamage: ['法伤', '法术伤害'],
+  defense: ['防御', '防御力', '物理防御'],
+  magicDefense: ['法防', '法术防御', '法术防御力'],
+  speed: ['速度'],
+  dodge: ['躲避'],
+  physique: ['体质'],
+  magicPower: ['灵力'],
+  strength: ['力量'],
+  endurance: ['耐力'],
+  agility: ['敏捷'],
 };
 
 const OCR_ALLOWED_MIME_TYPES = new Set([
@@ -128,14 +147,44 @@ function toOptionalFiniteNumber(value: unknown) {
     return undefined;
   }
 
-  const normalized = value.replace(/[,+，\s]/g, '').replace(/[^\d.-]/g, '');
-
+  const normalized = value.trim().replace(/[，,]/g, '');
   if (!normalized) {
     return undefined;
   }
 
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  const directParsed = Number(normalized.replace(/\s/g, ''));
+  if (Number.isFinite(directParsed)) {
+    return directParsed;
+  }
+
+  const matches = normalized.match(/[+-]?\d+(?:\.\d+)?/g);
+  if (!matches || matches.length === 0) {
+    return undefined;
+  }
+
+  if (matches.length === 1) {
+    const parsed = Number(matches[0]);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  const shouldSumMatches =
+    /[（(][^()]*[+-]?\d+(?:\.\d+)?[^()]*[)）]/.test(normalized) ||
+    /^[+-]?\d+(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)+$/.test(
+      normalized.replace(/\s/g, '')
+    );
+
+  const parsedMatches = matches
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item));
+  if (parsedMatches.length === 0) {
+    return undefined;
+  }
+
+  if (shouldSumMatches) {
+    return parsedMatches.reduce((sum, item) => sum + item, 0);
+  }
+
+  return parsedMatches[0];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -195,9 +244,135 @@ function normalizeStats(value: unknown) {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([key]) => STAT_KEYS.has(key))
-      .map(([key, statValue]) => [key, toFiniteNumber(statValue)])
-      .filter(([, statValue]) => Number.isFinite(statValue))
+      .map(([key, statValue]) => [key, toOptionalFiniteNumber(statValue)])
+      .filter(([, statValue]) => statValue !== undefined)
   ) as Record<string, number>;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractStatsFromEquipmentText(text: string) {
+  const directStats: Record<string, number> = {};
+  const compositeStats = new Set<string>();
+  const refineStats: Record<string, number> = {};
+
+  for (const [key, aliases] of Object.entries(EQUIPMENT_STAT_TEXT_ALIASES)) {
+    for (const alias of aliases) {
+      const directMatch = text.match(
+        new RegExp(
+          `${escapeRegExp(alias)}\\s*[:：]?\\s*([+＋-]?\\d+(?:\\.\\d+)?(?:\\s*[（(]\\s*[+＋-]?\\d+(?:\\.\\d+)?\\s*[)）])?)`
+        )
+      );
+      if (directMatch?.[0]) {
+        const parsed = toOptionalFiniteNumber(directMatch[0]);
+        if (parsed !== undefined) {
+          directStats[key] = Math.max(directStats[key] ?? parsed, parsed);
+          if ((directMatch[0].match(/[+-]?\d+(?:\.\d+)?/g) ?? []).length > 1) {
+            compositeStats.add(key);
+          }
+        }
+      }
+
+      const refineMatch = text.match(
+        new RegExp(
+          `熔炼\\s*[:：]?\\s*([+＋-]?\\d+(?:\\.\\d+)?)\\s*${escapeRegExp(alias)}`
+        )
+      );
+      if (refineMatch?.[1]) {
+        const parsed = toOptionalFiniteNumber(refineMatch[1]);
+        if (parsed !== undefined) {
+          refineStats[key] = (refineStats[key] ?? 0) + parsed;
+        }
+      }
+    }
+  }
+
+  return {
+    directStats,
+    compositeStats,
+    refineStats,
+  };
+}
+
+function enrichEquipmentStatsFromText(
+  stats: Record<string, number>,
+  value: Record<string, unknown>
+) {
+  const textSources = [
+    value.mainStat,
+    value.extraStat,
+    value.refinementEffect,
+    ...(Array.isArray(value.highlights) ? value.highlights : []),
+  ]
+    .map((item) => String(item || '').trim())
+    .filter((item) => item.length > 0);
+
+  if (textSources.length === 0) {
+    return stats;
+  }
+
+  const mergedStats = { ...stats };
+  const compositeStats = new Set<string>();
+  const refineStats: Record<string, number> = {};
+
+  for (const text of textSources) {
+    const extracted = extractStatsFromEquipmentText(text);
+    for (const [key, parsed] of Object.entries(extracted.directStats)) {
+      mergedStats[key] = Math.max(mergedStats[key] ?? parsed, parsed);
+    }
+    extracted.compositeStats.forEach((key) => compositeStats.add(key));
+    for (const [key, parsed] of Object.entries(extracted.refineStats)) {
+      refineStats[key] = (refineStats[key] ?? 0) + parsed;
+    }
+  }
+
+  for (const [key, parsed] of Object.entries(refineStats)) {
+    if (compositeStats.has(key)) {
+      continue;
+    }
+    if (mergedStats[key] !== undefined) {
+      mergedStats[key] += parsed;
+    } else {
+      mergedStats[key] = parsed;
+    }
+  }
+
+  return mergedStats;
+}
+
+export function hasRecognizedProfileFields(profile: SimulatorProfileLike) {
+  return Object.keys(profile).length > 0;
+}
+
+export function hasRecognizedEquipmentFields(value: Record<string, unknown>) {
+  const textFields = [
+    value.type,
+    value.name,
+    value.mainStat,
+    value.extraStat,
+    value.specialEffect,
+    value.refinementEffect,
+    value.description,
+  ];
+  const hasTextField = textFields.some(
+    (item) => typeof item === 'string' && item.trim().length > 0
+  );
+  if (hasTextField) {
+    return true;
+  }
+
+  if (Array.isArray(value.highlights)) {
+    const hasHighlights = value.highlights.some(
+      (item) => String(item || '').trim().length > 0
+    );
+    if (hasHighlights) {
+      return true;
+    }
+  }
+
+  return Object.keys(normalizeStats(value.stats)).length > 0;
 }
 
 function normalizeFaction(value: unknown) {
@@ -249,6 +424,9 @@ export function normalizeRecognizedProfile(
     ),
     magic: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['magic', '魔力'])
+    ),
+    potentialPoints: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, ['potentialPoints', '潜力点'])
     ),
     strength: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['strength', '力量'])
@@ -339,6 +517,9 @@ export function mergeRecognizedProfileWithBundle(
     magic:
       recognizedProfile.magic ??
       toFiniteNumber(currentProfile?.magic, rawProfile.magic),
+    potentialPoints:
+      recognizedProfile.potentialPoints ??
+      toFiniteNumber(currentProfile?.potentialPoints, rawProfile.potentialPoints),
     strength:
       recognizedProfile.strength ??
       toFiniteNumber(currentProfile?.strength, rawProfile.strength),
@@ -380,7 +561,7 @@ export function normalizeRecognizedEquipment(
   imageUrl?: string
 ): SimulatorEquipmentLike {
   const type = normalizeEquipmentType(value.type);
-  const stats = normalizeStats(value.stats);
+  const stats = enrichEquipmentStatsFromText(normalizeStats(value.stats), value);
   let slot: number | undefined;
 
   if (type === 'trinket') {
@@ -649,7 +830,7 @@ async function callGeminiEquipmentOcr(params: {
     'name, mainStat, extraStat, level, element, durability, forgeLevel, gemstone, luckyHoles, starPosition, starAlignment, factionRequirement, positionRequirement, specialEffect, manufacturer, refinementEffect, description, equippableRoles',
     'highlights: string[]',
     'price, crossServerFee: number，可缺省',
-    'stats: 对应数值对象，key 仅允许 hp, magic, hit, damage, magicDamage, defense, magicDefense, speed, dodge, physique, magicPower, strength, endurance, agility',
+    'stats: 对应数值对象，key 仅允许 hp, magic, hit, damage, magicDamage, defense, magicDefense, speed, dodge, physique, magicPower, potentialPoints, strength, endurance, agility',
     '如果无法确认就留空，不要编造明显不在图中的字段。',
   ].join('\n');
 
@@ -737,7 +918,7 @@ async function callGeminiProfileOcr(params: {
     '你正在识别中文游戏《梦幻西游》的人物属性面板截图。',
     '请只返回一个 JSON 对象，不要输出 markdown，不要解释。',
     '只提取图片中明确可见的人物基础属性和面板数值；无法确认的字段请返回 null 或留空，不要猜。',
-    '字段仅允许：level, faction, physique, magic, strength, endurance, agility, magicPower, hp, mp, damage, defense, magicDamage, magicDefense, speed, hit, dodge, sealHit。',
+    '字段仅允许：level, faction, physique, magic, potentialPoints, strength, endurance, agility, magicPower, hp, mp, damage, defense, magicDamage, magicDefense, speed, hit, dodge, sealHit。',
     '其中 faction 使用中文门派名，例如 龙宫、大唐官府、狮驼岭、化生寺、方寸山、普陀山。',
     'magic 表示基础加点里的“魔力”，mp 表示面板里的“魔法”，magicPower 表示“灵力”。',
     '如果图片里同时出现多个区域，只以主角色当前属性面板为准。',
@@ -762,6 +943,9 @@ export async function recognizeSimulatorEquipmentFromImage(file: File) {
     mimeType: file.type,
     imageBytes: uploaded.buffer,
   });
+  if (!hasRecognizedEquipmentFields(recognized)) {
+    throw new Error('未检测到游戏组件');
+  }
 
   return {
     key: uploaded.key,
@@ -787,11 +971,15 @@ export async function recognizeSimulatorProfileFromImage(file: File) {
     mimeType: file.type,
     imageBytes: uploaded.buffer,
   });
+  const profile = normalizeRecognizedProfile(recognized);
+  if (!hasRecognizedProfileFields(profile)) {
+    throw new Error('未检测到游戏组件');
+  }
 
   return {
     key: uploaded.key,
     url: uploaded.url,
-    profile: normalizeRecognizedProfile(recognized),
+    profile,
     raw: recognized,
   };
 }

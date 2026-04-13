@@ -3,9 +3,19 @@ import {
   normalizeSimulatorEquipmentSlot,
   type SimulatorEquipmentSlot,
 } from '@/shared/lib/simulator-equipment';
+import {
+  parseEquipmentGemstones,
+  sumEquipmentGemstoneStats,
+} from '@/shared/lib/simulator-equipment-meta';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 type JsonObject = Record<string, unknown>;
+type BattleContextNotes = {
+  weather?: unknown;
+  targetDefenseState?: unknown;
+  targetMagicDefenseResult?: unknown;
+  specialMagicDamageReductionFactor?: unknown;
+};
 type RuneStoneView = {
   id: string;
   name?: string;
@@ -108,6 +118,7 @@ export type SimulatorCharacterDomain = {
     selfElement: string;
     formationCounterState: string;
     elementRelation: string;
+    weather: string;
     transformCardFactor: number;
     splitTargetCount: number;
     shenmuValue: number;
@@ -117,8 +128,11 @@ export type SimulatorCharacterDomain = {
     targetHp: number;
     targetDefense: number;
     targetMagicDefense: number;
+    targetMagicDefenseResult: number;
     targetSpeed: number;
     targetMagicDefenseCultivation: number;
+    targetDefenseState: string;
+    specialMagicDamageReductionFactor: number;
     targetElement: string;
     targetFormation: string;
   } | null;
@@ -143,10 +157,32 @@ function parseJsonObject(value: string | null | undefined): JsonObject {
   }
 }
 
+function parseMeridianConfig(value: unknown) {
+  const config =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    physique: toFiniteNumber(config.physique),
+    magic: toFiniteNumber(config.magic),
+    strength: toFiniteNumber(config.strength),
+    endurance: toFiniteNumber(config.endurance),
+    agility: toFiniteNumber(config.agility),
+    magicPower: toFiniteNumber(config.magicPower),
+  };
+}
+
 function parseEquipmentPersistedMeta(
   value: string | null | undefined
 ): EquipmentPersistedMeta {
   return parseJsonObject(value) as EquipmentPersistedMeta;
+}
+
+function parseBattleContextNotes(
+  value: string | null | undefined
+): BattleContextNotes {
+  return parseJsonObject(value) as BattleContextNotes;
 }
 
 function parseRuneStoneSets(value: unknown): RuneStoneView[][] {
@@ -221,7 +257,9 @@ export function buildSimulatorCharacterDomain(
   }
 
   const rawProfile = parseJsonObject(profile.rawBodyJson);
-  const spirit = toFiniteNumber(rawProfile.magicPower);
+  const meridianConfig = parseMeridianConfig(rawProfile.meridianConfig);
+  const spirit =
+    toFiniteNumber(rawProfile.magicPower) + toFiniteNumber(meridianConfig.magicPower);
   const dodge = toFiniteNumber(rawProfile.dodge);
 
   const equipment = bundle.equipments.map((item) => {
@@ -262,6 +300,17 @@ export function buildSimulatorCharacterDomain(
         totals[key] = (totals[key] ?? 0) + toFiniteNumber(value);
       }
 
+      const gemstoneTotals = sumEquipmentGemstoneStats(
+        parseEquipmentGemstones({
+          gemstones: item.build?.notes.gemstones,
+          gemstoneText: item.build?.notes.gemstone,
+          fallbackLevel: item.build?.gemLevelTotal,
+        })
+      );
+      for (const [key, value] of Object.entries(gemstoneTotals)) {
+        totals[key] = (totals[key] ?? 0) + toFiniteNumber(value);
+      }
+
       const activeRuneStoneSet = getActiveRuneStoneSet(item.build?.notes ?? {});
       for (const runeStone of activeRuneStoneSet) {
         for (const [key, value] of Object.entries(runeStone.stats)) {
@@ -294,11 +343,11 @@ export function buildSimulatorCharacterDomain(
 
   const normalizedProfile: SimulatorCoreAttributes = {
     level: toFiniteNumber(profile.level),
-    physique: toFiniteNumber(profile.physique),
-    magic: toFiniteNumber(profile.magic),
-    strength: toFiniteNumber(profile.strength),
-    endurance: toFiniteNumber(profile.endurance),
-    agility: toFiniteNumber(profile.agility),
+    physique: toFiniteNumber(profile.physique) + meridianConfig.physique,
+    magic: toFiniteNumber(profile.magic) + meridianConfig.magic,
+    strength: toFiniteNumber(profile.strength) + meridianConfig.strength,
+    endurance: toFiniteNumber(profile.endurance) + meridianConfig.endurance,
+    agility: toFiniteNumber(profile.agility) + meridianConfig.agility,
     potentialPoints: toFiniteNumber(profile.potentialPoints),
     hp: toFiniteNumber(profile.hp),
     mp: toFiniteNumber(profile.mp),
@@ -317,9 +366,11 @@ export function buildSimulatorCharacterDomain(
     inferBaseHpSource({
       panelHp: normalizedProfile.hp,
       physique: normalizedProfile.physique,
-      endurance: normalizedProfile.endurance,
       equipmentHp: equipmentAttributeTotals.hp,
     })
+  );
+  const battleContextNotes = parseBattleContextNotes(
+    bundle.battleContext?.notesJson
   );
 
   return {
@@ -342,6 +393,10 @@ export function buildSimulatorCharacterDomain(
           selfElement: bundle.battleContext.selfElement,
           formationCounterState: bundle.battleContext.formationCounterState,
           elementRelation: bundle.battleContext.elementRelation,
+          weather:
+            typeof battleContextNotes.weather === 'string'
+              ? battleContextNotes.weather
+              : '',
           transformCardFactor: toFiniteNumber(
             bundle.battleContext.transformCardFactor,
             1
@@ -359,12 +414,23 @@ export function buildSimulatorCharacterDomain(
           targetMagicDefense: toFiniteNumber(
             bundle.battleContext.targetMagicDefense
           ),
+          targetMagicDefenseResult: toFiniteNumber(
+            battleContextNotes.targetMagicDefenseResult
+          ),
           targetSpeed: toFiniteNumber(
             bundle.battleContext.targetSpeed,
             bundle.battleTargetTemplate?.speed ?? 0
           ),
           targetMagicDefenseCultivation: toFiniteNumber(
             bundle.battleContext.targetMagicDefenseCultivation
+          ),
+          targetDefenseState:
+            typeof battleContextNotes.targetDefenseState === 'string'
+              ? battleContextNotes.targetDefenseState
+              : '',
+          specialMagicDamageReductionFactor: toFiniteNumber(
+            battleContextNotes.specialMagicDamageReductionFactor,
+            1
           ),
           targetElement: bundle.battleContext.targetElement,
           targetFormation: bundle.battleContext.targetFormation,

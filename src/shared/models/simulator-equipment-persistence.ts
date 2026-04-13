@@ -6,6 +6,12 @@ import {
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
 import {
+  extractActiveRuneSetMeta,
+  isStrictStarAlignmentConfigActive,
+  matchesRuneColorsIgnoringOrder,
+  normalizeRuneColor,
+} from '@/shared/lib/simulator-equipment-meta';
+import {
   toSimulatorJadeSlotKey,
   toSimulatorTrinketSlotKey,
 } from '@/shared/lib/simulator-equipment';
@@ -46,33 +52,6 @@ const STAR_ALIGNMENT_ATTR_ALIAS: Array<[string, string]> = [
   ['耐力', 'endurance'],
   ['敏捷', 'agility'],
 ];
-const RUNE_COLOR_ALIAS: Record<string, string> = {
-  red: '红',
-  blue: '蓝',
-  green: '绿',
-  yellow: '黄',
-  white: '白',
-  black: '黑',
-  purple: '紫',
-  orange: '橙',
-  hong: '红',
-  lan: '蓝',
-  lv: '绿',
-  huang: '黄',
-  bai: '白',
-  hei: '黑',
-  zi: '紫',
-  cheng: '橙',
-  红: '红',
-  蓝: '蓝',
-  绿: '绿',
-  黄: '黄',
-  金: '黄',
-  白: '白',
-  黑: '黑',
-  紫: '紫',
-  橙: '橙',
-};
 
 export function isPrimaryEquipmentSlot(slot: string | null | undefined) {
   const normalized = String(slot ?? '')
@@ -228,77 +207,23 @@ function parseStructuredStarAlignmentConfig(value: unknown) {
   };
 }
 
-function normalizeRuneColor(value: unknown) {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const exactMatch =
-    RUNE_COLOR_ALIAS[trimmed.toLowerCase()] ?? RUNE_COLOR_ALIAS[trimmed];
-  if (exactMatch) {
-    return exactMatch;
-  }
-
-  for (const [alias, normalized] of Object.entries(RUNE_COLOR_ALIAS)) {
-    if (trimmed.toLowerCase().includes(alias.toLowerCase())) {
-      return normalized;
-    }
-  }
-
-  return null;
-}
-
-function extractActiveRuneSetMeta(notesJson: string | null | undefined) {
-  const notes = parseJsonObject(notesJson);
-  const activeIndex = Math.max(
-    0,
-    Math.floor(Number(notes.activeRuneStoneSet ?? 0) || 0)
-  );
-  const runeSetNames = Array.isArray(notes.runeStoneSetsNames)
-    ? notes.runeStoneSetsNames
-    : [];
-  const activeName =
-    typeof runeSetNames[activeIndex] === 'string'
-      ? String(runeSetNames[activeIndex]).trim()
-      : typeof runeSetNames[0] === 'string'
-        ? String(runeSetNames[0]).trim()
-        : '';
-  const runeStoneSets = Array.isArray(notes.runeStoneSets)
-    ? notes.runeStoneSets
-    : [];
-  const activeSet = Array.isArray(runeStoneSets[activeIndex])
-    ? runeStoneSets[activeIndex]
-    : Array.isArray(runeStoneSets[0])
-      ? runeStoneSets[0]
-      : [];
-  const activeColors = activeSet
-    .filter(
-      (item): item is Record<string, unknown> =>
-        Boolean(item) && typeof item === 'object'
-    )
-    .map((item) => normalizeRuneColor(item.type ?? item.color ?? item.name))
-    .filter((item): item is string => Boolean(item));
-
-  return {
-    activeName,
-    activeColors,
-  };
-}
-
 function requiredColorsFromRule(
   rule: Pick<SimulatorStarResonanceRule, 'requiredColorsJson'>
 ) {
-  const parsed = parseJsonObject(rule.requiredColorsJson);
-  const source: unknown[] = Array.isArray(parsed)
-    ? (parsed as unknown[])
-    : Array.isArray((parsed as Record<string, unknown>).colors)
-      ? ((parsed as Record<string, unknown>).colors as unknown[])
-      : [];
+  let source: unknown[] = [];
+
+  if (rule.requiredColorsJson) {
+    try {
+      const parsed = JSON.parse(rule.requiredColorsJson);
+      source = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as Record<string, unknown>).colors)
+          ? ((parsed as Record<string, unknown>).colors as unknown[])
+          : [];
+    } catch {
+      source = [];
+    }
+  }
 
   return source
     .map((item) => normalizeRuneColor(item))
@@ -332,19 +257,6 @@ function buildStarAlignmentLabelFromRule(rule: SimulatorStarResonanceRule) {
   return `${attrLabelMap[bonusType] ?? bonusType} +${bonusValue}`;
 }
 
-function colorsMatchIgnoringOrder(actual: string[], expected: string[]) {
-  if (actual.length !== expected.length) {
-    return false;
-  }
-
-  const normalizedActual = [...actual].sort();
-  const normalizedExpected = [...expected].sort();
-
-  return normalizedActual.every(
-    (color, index) => color === normalizedExpected[index]
-  );
-}
-
 function findMatchedStarResonanceRule(params: {
   slot: string;
   notesJson: string | null | undefined;
@@ -370,7 +282,7 @@ function findMatchedStarResonanceRule(params: {
         return false;
       }
 
-      return colorsMatchIgnoringOrder(runeMeta.activeColors, requiredColors);
+      return matchesRuneColorsIgnoringOrder(runeMeta.activeColors, requiredColors);
     }) ?? null
   );
 }
@@ -559,7 +471,10 @@ export function buildStarStonePersistenceRows(params: {
       snapshotId: params.snapshotId,
       slot: params.slot,
       ruleId: structuredStarAlignment.id,
-      matched: true,
+      matched: isStrictStarAlignmentConfigActive({
+        notes,
+        config: structuredStarAlignment,
+      }),
       bonusJson: JSON.stringify({
         label: structuredStarAlignment.label,
         attrType: structuredStarAlignment.attrType,
@@ -831,5 +746,10 @@ export function buildOrnamentSetEffectRows(params: {
       slotCount: summary.slotCount,
       slots: summary.slots,
     }),
-  })) as Array<typeof ornamentSetEffect.$inferInsert>;
+  }))
+    .filter((item) => {
+      const effect = parseJsonObject(item.effectJson);
+      const slotCount = Number(effect.slotCount ?? 0);
+      return slotCount >= 4 && item.totalLevel >= 8 && item.tier >= 8;
+    }) as Array<typeof ornamentSetEffect.$inferInsert>;
 }

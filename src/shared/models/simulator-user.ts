@@ -31,6 +31,8 @@ export {
 export {
   createSimulatorOcrJob,
   finalizeSimulatorEquipmentOcrJob,
+  finalizeSimulatorProfileOcrJob,
+  listSimulatorRecentOcrLogs,
   listEnabledSimulatorOcrDictionaryEntries,
   markSimulatorOcrJobFailed,
 } from './simulator-ocr';

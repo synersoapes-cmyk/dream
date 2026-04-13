@@ -2705,6 +2705,7 @@ export async function updateSimulatorEquipment(
       gemstone?: string;
       gemstones?: Array<Record<string, unknown>>;
       luckyHoles?: string;
+      repairFailCount?: number;
       starPosition?: string;
       starAlignment?: string;
       factionRequirement?: string;

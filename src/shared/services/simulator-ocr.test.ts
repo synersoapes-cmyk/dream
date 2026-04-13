@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 
 import {
   applySimulatorOcrDictionaryToEquipment,
@@ -100,6 +101,22 @@ test('normalizeRecognizedEquipment coerces recognized payload into simulator equ
     magicPower: 32,
     speed: 15,
   });
+  assert.equal(equipment.imageUrl, getEquipmentDefaultImage('helmet'));
+});
+
+test('normalizeRecognizedEquipment keeps repair fail count and lucky hole metadata', () => {
+  const equipment = normalizeRecognizedEquipment({
+    name: '测试头盔',
+    type: 'helmet',
+    mainStat: '魔法 +200',
+    luckyHoles: '5',
+    repairFailCount: '2',
+    specialEffect: '晶清诀',
+  });
+
+  assert.equal(equipment.luckyHoles, '5');
+  assert.equal(equipment.repairFailCount, 2);
+  assert.equal(equipment.specialEffect, '晶清诀');
 });
 
 test('normalizeRecognizedEquipment clamps jade slot to supported range 1-2', () => {

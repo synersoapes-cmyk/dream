@@ -4,6 +4,7 @@ import {
   parseEquipmentGemstones,
   summarizeEquipmentGemstones,
 } from '@/shared/lib/simulator-equipment-meta';
+import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
 
 type EquipmentSlotLike = {
   type: string;
@@ -219,6 +220,11 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
     meta.durability = durability;
   }
 
+  const repairFailCount = toOptionalEquipmentNumber(item.repairFailCount);
+  if (repairFailCount !== undefined) {
+    meta.repairFailCount = Math.max(0, Math.floor(repairFailCount));
+  }
+
   return meta;
 }
 
@@ -284,7 +290,7 @@ export function normalizeLabSeatPayload(
       inheritRuneStones: false,
       equipment: [],
     },
-    ...compareSeats.slice(0, 5),
+    ...compareSeats.slice(0, LABORATORY_MAX_COMPARE_SEATS),
   ];
 }
 

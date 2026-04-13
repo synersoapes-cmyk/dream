@@ -33,6 +33,7 @@ import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-st
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 
 const AVAILABLE_RUNES = [
   { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
@@ -264,7 +265,7 @@ export function EquipmentDetailModal({
                 <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                   <img
                     src={
-                      simulatedLibEquip.imageUrl ||
+                      getSimulatorDisplayImageUrl(simulatedLibEquip.imageUrl) ||
                       getEquipmentDefaultImage(simulatedLibEquip.type)
                     }
                     alt={simulatedLibEquip.name}

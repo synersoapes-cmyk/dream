@@ -37,6 +37,20 @@ import type {
   SimulatorOcrDraftItem,
 } from './simulator-types';
 
+export type SimulatorOcrTimelineLog = {
+  id: string;
+  timestamp: number;
+  type: 'success' | 'error' | 'info';
+  message: string;
+  details?: string;
+  imagePreview?: string;
+};
+
+type SimulatorOcrCandidateStatusRow = {
+  ocrDraftItemId: string | null;
+  status: string | null;
+};
+
 function mapAdminSimulatorOcrDictionaryItem(row: {
   id: string;
   dictType: string;
@@ -239,6 +253,96 @@ function mapInventoryListRow(row: {
   ) as AdminSimulatorInventoryEntryItem;
 }
 
+function buildProfileOcrSummary(source: Record<string, unknown>) {
+  const faction =
+    typeof source.faction === 'string' && source.faction.trim().length > 0
+      ? source.faction.trim()
+      : '';
+  const level =
+    typeof source.level === 'number' && Number.isFinite(source.level)
+      ? source.level
+      : Number(source.level);
+
+  return [faction, Number.isFinite(level) && level > 0 ? `等级 ${level}` : null]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function mapSimulatorOcrJobToTimelineLog(params: {
+  job: SimulatorOcrJob;
+  drafts: SimulatorOcrDraftItem[];
+  candidateStatusByDraftId: Map<string, string>;
+}): SimulatorOcrTimelineLog {
+  const latestDraft = params.drafts[0] ?? null;
+  const draftBody = latestDraft
+    ? parseJsonObject(latestDraft.draftBodyJson)
+    : {};
+
+  if (params.job.status === 'failed') {
+    return {
+      id: params.job.id,
+      timestamp:
+        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+      type: 'error',
+      message:
+        params.job.sceneType === 'profile' ? '人物属性识别失败' : '图片识别失败',
+      details: params.job.errorMessage || '请重试或更换清晰图片',
+      imagePreview: params.job.imageUrl || undefined,
+    };
+  }
+
+  if (params.job.status === 'pending') {
+    return {
+      id: params.job.id,
+      timestamp:
+        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+      type: 'info',
+      message: '识别任务处理中',
+      details:
+        params.job.sceneType === 'profile'
+          ? '人物属性截图正在识别'
+          : '装备截图正在识别',
+      imagePreview: params.job.imageUrl || undefined,
+    };
+  }
+
+  if (params.job.sceneType === 'profile') {
+    const summary = buildProfileOcrSummary(draftBody);
+    return {
+      id: params.job.id,
+      timestamp:
+        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+      type: 'success',
+      message: '人物属性识别完成',
+      details:
+        latestDraft?.reviewNote?.trim() ||
+        summary ||
+        '请确认后再同步到当前角色',
+      imagePreview: params.job.imageUrl || undefined,
+    };
+  }
+
+  const equipmentName =
+    typeof draftBody.name === 'string' && draftBody.name.trim().length > 0
+      ? draftBody.name.trim()
+      : '新装备';
+  const candidateStatus = latestDraft
+    ? params.candidateStatusByDraftId.get(latestDraft.id)
+    : null;
+
+  return {
+    id: params.job.id,
+    timestamp:
+      params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+    type: 'success',
+    message: `识别到新物品 ${equipmentName}`,
+    details:
+      latestDraft?.reviewNote?.trim() ||
+      (candidateStatus ? `候选库状态：${candidateStatus}` : '已写入待确认列表'),
+    imagePreview: params.job.imageUrl || undefined,
+  };
+}
+
 export async function createSimulatorOcrJob(
   userId: string,
   params: {
@@ -392,6 +496,139 @@ export async function finalizeSimulatorEquipmentOcrJob(params: {
       items: nextItems,
       draftId,
     };
+  });
+}
+
+export async function finalizeSimulatorProfileOcrJob(params: {
+  ocrJobId: string;
+  recognizedProfile: Record<string, unknown>;
+  rawResult: Record<string, unknown>;
+  imageUrl: string;
+  reviewNote?: string;
+}) {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('finalizeSimulatorProfileOcrJob', async () => {
+    const job = await findSimulatorOcrJobById(params.ocrJobId);
+    if (!job) {
+      return null;
+    }
+
+    await db()
+      .update(ocrJob)
+      .set({
+        sceneType: 'profile',
+        imageUrl: params.imageUrl,
+        status: 'success',
+        rawResultJson: JSON.stringify(params.rawResult ?? {}),
+        errorMessage: '',
+      })
+      .where(eq(ocrJob.id, params.ocrJobId));
+
+    const draftId = getUuid();
+    await db()
+      .insert(ocrDraftItem)
+      .values({
+        id: draftId,
+        ocrJobId: params.ocrJobId,
+        characterId: job.characterId,
+        itemType: 'profile',
+        draftBodyJson: JSON.stringify(params.recognizedProfile ?? {}),
+        confidenceScore: inferOcrDraftConfidence(params.rawResult),
+        reviewStatus: 'approved',
+        reviewNote:
+          params.reviewNote?.trim() || '人物属性 OCR 已识别完成，等待用户确认同步',
+      });
+
+    return {
+      draftId,
+    };
+  });
+}
+
+export async function listSimulatorRecentOcrLogs(
+  userId: string,
+  params?: {
+    sceneType?: 'profile' | 'equipment' | 'ornament' | 'jade';
+    limit?: number;
+  }
+) {
+  await ensureSimulatorDbReady();
+
+  return withTransientD1Retry('listSimulatorRecentOcrLogs', async () => {
+    const character = await findActiveCharacter(userId);
+    if (!character) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(params?.limit ?? 20, 100));
+    const sceneType = params?.sceneType;
+    const rows = await db()
+      .select()
+      .from(ocrJob)
+      .where(
+        and(
+          eq(ocrJob.characterId, character.id),
+          sceneType ? eq(ocrJob.sceneType, sceneType) : undefined
+        )
+      )
+      .orderBy(desc(ocrJob.updatedAt), desc(ocrJob.createdAt))
+      .limit(limit);
+
+    const jobIds = rows.map((row: SimulatorOcrJob) => row.id);
+    const drafts =
+      jobIds.length > 0
+        ? await db()
+            .select()
+            .from(ocrDraftItem)
+            .where(inArray(ocrDraftItem.ocrJobId, jobIds))
+            .orderBy(desc(ocrDraftItem.createdAt))
+        : [];
+    const draftIds = drafts.map((row: SimulatorOcrDraftItem) => row.id);
+    const candidateRows: SimulatorOcrCandidateStatusRow[] =
+      draftIds.length > 0
+        ? await db()
+            .select({
+              ocrDraftItemId: candidateEquipment.ocrDraftItemId,
+              status: candidateEquipment.status,
+            })
+            .from(candidateEquipment)
+            .where(inArray(candidateEquipment.ocrDraftItemId, draftIds))
+        : [];
+
+    const draftsByJobId = new Map<string, SimulatorOcrDraftItem[]>();
+    for (const draft of drafts) {
+      const current = draftsByJobId.get(draft.ocrJobId) ?? [];
+      current.push(draft);
+      draftsByJobId.set(draft.ocrJobId, current);
+    }
+
+    const candidateStatusByDraftId = new Map<string, string>(
+      candidateRows
+        .filter(
+          (
+            row
+          ): row is {
+            ocrDraftItemId: string;
+            status: string;
+          } =>
+            typeof row.ocrDraftItemId === 'string' &&
+            row.ocrDraftItemId.length > 0 &&
+            typeof row.status === 'string'
+        )
+        .map((row: { ocrDraftItemId: string; status: string }) => [
+          row.ocrDraftItemId,
+          row.status,
+        ] as const)
+    );
+
+    return rows.map((job: SimulatorOcrJob) =>
+      mapSimulatorOcrJobToTimelineLog({
+        job,
+        drafts: draftsByJobId.get(job.id) ?? [],
+        candidateStatusByDraftId,
+      })
+    );
   });
 }
 

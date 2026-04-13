@@ -1,4 +1,5 @@
 import { getUuid } from '@/shared/lib/hash';
+import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import {
   normalizeSimulatorOcrEquipmentType,
   type SimulatorOcrEquipmentType,
@@ -31,6 +32,7 @@ type SimulatorEquipmentLike = {
   forgeLevel?: number;
   gemstone?: string;
   luckyHoles?: string;
+  repairFailCount?: number;
   starPosition?: string;
   starAlignment?: string;
   factionRequirement?: string;
@@ -64,7 +66,11 @@ type SimulatorProfileLike = {
   sealHit?: number;
 };
 
-const GEMINI_VISION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'] as const;
+const GEMINI_VISION_MODELS = [
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+] as const;
 const STAT_KEYS = new Set([
   'hp',
   'magic',
@@ -558,7 +564,7 @@ export function mergeRecognizedProfileWithBundle(
 
 export function normalizeRecognizedEquipment(
   value: Record<string, unknown>,
-  imageUrl?: string
+  _imageUrl?: string
 ): SimulatorEquipmentLike {
   const type = normalizeEquipmentType(value.type);
   const stats = enrichEquipmentStatsFromText(normalizeStats(value.stats), value);
@@ -589,7 +595,7 @@ export function normalizeRecognizedEquipment(
       value.crossServerFee !== undefined
         ? toFiniteNumber(value.crossServerFee)
         : undefined,
-    imageUrl,
+    imageUrl: getEquipmentDefaultImage(type),
     level: value.level !== undefined ? toFiniteNumber(value.level) : undefined,
     element: value.element ? String(value.element) : undefined,
     durability:
@@ -602,6 +608,10 @@ export function normalizeRecognizedEquipment(
         : undefined,
     gemstone: value.gemstone ? String(value.gemstone) : undefined,
     luckyHoles: value.luckyHoles ? String(value.luckyHoles) : undefined,
+    repairFailCount:
+      value.repairFailCount !== undefined
+        ? toFiniteNumber(value.repairFailCount)
+        : undefined,
     starPosition: value.starPosition ? String(value.starPosition) : undefined,
     starAlignment: value.starAlignment
       ? String(value.starAlignment)
@@ -827,7 +837,7 @@ async function callGeminiEquipmentOcr(params: {
     '字段要求：',
     'type: weapon|helmet|necklace|armor|belt|shoes|trinket|jade',
     'slot: 灵饰或玉魄槽位数字，普通装备不要填',
-    'name, mainStat, extraStat, level, element, durability, forgeLevel, gemstone, luckyHoles, starPosition, starAlignment, factionRequirement, positionRequirement, specialEffect, manufacturer, refinementEffect, description, equippableRoles',
+    'name, mainStat, extraStat, level, element, durability, forgeLevel, gemstone, luckyHoles, repairFailCount, starPosition, starAlignment, factionRequirement, positionRequirement, specialEffect, manufacturer, refinementEffect, description, equippableRoles',
     'highlights: string[]',
     'price, crossServerFee: number，可缺省',
     'stats: 对应数值对象，key 仅允许 hp, magic, hit, damage, magicDamage, defense, magicDefense, speed, dodge, physique, magicPower, potentialPoints, strength, endurance, agility',

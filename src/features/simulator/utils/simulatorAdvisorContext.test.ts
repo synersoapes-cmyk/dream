@@ -54,22 +54,6 @@ test('buildSimulatorAdvisorContext summarizes current role and laboratory state'
           },
         ],
       },
-      {
-        id: 'comp_2',
-        name: '对比席位2',
-        isSample: false,
-        equipment: [
-          {
-            id: 'weapon_new_2',
-            name: '候选法杖二号',
-            type: 'weapon',
-            mainStat: '法伤 +140',
-            baseStats: { magicDamage: 140 },
-            stats: { magicDamage: 140 },
-            price: 19999,
-          },
-        ],
-      },
     ],
   }));
 
@@ -80,6 +64,5 @@ test('buildSimulatorAdvisorContext summarizes current role and laboratory state'
   assert.equal(context.currentEquipment[0]?.name, '当前法杖');
   assert.equal(context.laboratory[0]?.name, '对比席位1');
   assert.equal(context.laboratory[0]?.diffPreview[0]?.nextName, '候选法杖');
-  assert.equal(context.laboratory[1]?.name, '对比席位2');
-  assert.equal(context.laboratory[1]?.diffPreview[0]?.nextName, '候选法杖二号');
+  assert.equal(context.laboratory.length, 1);
 });

@@ -1,6 +1,6 @@
 import type { ExperimentSeat } from '@/features/simulator/store/gameTypes';
 
-export const LABORATORY_MAX_COMPARE_SEATS = 2;
+export const LABORATORY_MAX_COMPARE_SEATS = 1;
 export const LABORATORY_MAX_VISIBLE_SEATS = LABORATORY_MAX_COMPARE_SEATS + 1;
 
 export function getVisibleExperimentSeats(

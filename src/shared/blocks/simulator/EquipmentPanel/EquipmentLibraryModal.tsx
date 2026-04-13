@@ -6,6 +6,8 @@ import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentIm
 import { Package, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+
 interface EquipmentLibraryModalProps {
   slotType: Equipment['type'];
   slotName: string;
@@ -154,7 +156,7 @@ export function EquipmentLibraryModal({
                       <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                         <img
                           src={
-                            equipment.imageUrl ||
+                            getSimulatorDisplayImageUrl(equipment.imageUrl) ||
                             getEquipmentDefaultImage(equipment.type)
                           }
                           alt={equipment.name}

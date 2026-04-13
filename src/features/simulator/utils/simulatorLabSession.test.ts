@@ -125,7 +125,6 @@ test('applySimulatorLabSessionToStore trims extra compare seats to the supported
 
   const state = useGameStore.getState();
   const compareSeats = state.experimentSeats.filter((seat) => !seat.isSample);
-  assert.equal(compareSeats.length, 2);
+  assert.equal(compareSeats.length, 1);
   assert.equal(compareSeats[0]?.id, 'comp_cloud_1');
-  assert.equal(compareSeats[1]?.id, 'comp_cloud_2');
 });

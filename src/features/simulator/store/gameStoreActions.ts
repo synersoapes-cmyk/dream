@@ -49,8 +49,6 @@ export const createExperimentSeatActions = (set: StoreSet) => ({
   },
   removeExperimentSeat: (id: string) => {
     set((state) => {
-      const compSeats = state.experimentSeats.filter((s) => !s.isSample);
-      if (compSeats.length <= 1) return state;
       return {
         experimentSeats: state.experimentSeats.filter((s) => s.id !== id),
       };

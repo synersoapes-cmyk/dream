@@ -623,6 +623,7 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
         typeof notesMeta.luckyHoles === 'string'
           ? notesMeta.luckyHoles
           : undefined,
+      repairFailCount: toOptionalNumber(notesMeta.repairFailCount),
       starPosition:
         typeof notesMeta.starPosition === 'string'
           ? notesMeta.starPosition
@@ -741,6 +742,7 @@ function toPersistedEquipment(
     }),
     luckyHoles:
       typeof value.luckyHoles === 'string' ? value.luckyHoles : undefined,
+    repairFailCount: toOptionalNumber(value.repairFailCount),
     starPosition:
       typeof value.starPosition === 'string' ? value.starPosition : undefined,
     starPositionConfig: toStarPositionConfig(value.starPositionConfig),

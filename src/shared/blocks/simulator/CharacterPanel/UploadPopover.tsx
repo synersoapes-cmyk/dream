@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
+import type { OcrLog } from '@/features/simulator/store/gameTypes';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import {
   applySimulatorBundleToStore,
@@ -233,14 +234,45 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const ocrLogs = useGameStore((state) => state.ocrLogs);
-  const addOcrLog = useGameStore((state) => state.addOcrLog);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
+  const [ocrLogs, setOcrLogs] = useState<OcrLog[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [ocrHistoryError, setOcrHistoryError] = useState<string | null>(null);
+
+  const loadOcrHistory = async () => {
+    setIsLoadingHistory(true);
+    setOcrHistoryError(null);
+
+    try {
+      const sceneType = type === 'attributes' ? 'profile' : 'equipment';
+      const response = await fetch(
+        `/api/simulator/current/ocr-history?sceneType=${sceneType}&limit=20`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      );
+      const payload = await response.json();
+      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+        throw new Error(payload?.message || '读取 OCR 历史失败');
+      }
+
+      setOcrLogs(payload.data as OcrLog[]);
+    } catch (error) {
+      setOcrHistoryError(
+        error instanceof Error ? error.message : '读取 OCR 历史失败'
+      );
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   // Handle pasting when popover is open
   useEffect(() => {
     if (!isOpen) return;
+
+    void loadOcrHistory();
 
     const handleGlobalPaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
@@ -260,7 +292,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
     window.addEventListener('paste', handleGlobalPaste);
     return () => window.removeEventListener('paste', handleGlobalPaste);
-  }, [isOpen]);
+  }, [isOpen, type]);
 
   const processFile = async (file: File): Promise<void> => {
     const validation = validateImageFile(file);
@@ -270,9 +302,6 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
     }
 
     setIsProcessing(true);
-    toast.info('正在识别...', {
-      description: '图片会先上传到 R2，再交给 Gemini 解析',
-    });
 
     try {
       const configResponse = await fetch('/api/simulator/current/ocr/config', {
@@ -309,12 +338,6 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
         throw new Error(payload?.message || '识别失败');
       }
 
-      const now = new Date();
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
-        .getMinutes()
-        .toString()
-        .padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-
       if (type === 'attributes') {
         if (!payload?.data?.bundle) {
           throw new Error('属性识别结果不完整');
@@ -327,14 +350,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
             bundle: payload.data.bundle as SimulatorCharacterBundle,
           })
         );
-        addOcrLog({
-          type: 'info',
-          message: `${timeStr}，人物属性识别完成，等待确认`,
-          details: '请确认差异后再同步到当前档案',
-        });
-        toast.success('识别完成', {
-          description: '请先确认变更，再决定是否同步到当前档案',
-        });
+        await loadOcrHistory();
         return;
       }
 
@@ -346,10 +362,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
       const recognizedName = payload?.data?.item?.equipment?.name || '新装备';
 
-      addOcrLog({
-        type: 'success',
-        message: `${timeStr}，识别到新物品${recognizedName}`,
-      });
+      await loadOcrHistory();
       toast.success('识别到新物品', {
         description: recognizedName,
       });
@@ -357,11 +370,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
       const description =
         error instanceof Error ? error.message : '请重试或更换清晰图片';
       toast.error('识别失败', { description });
-      addOcrLog({
-        type: 'error',
-        message: '图片识别失败',
-        details: description,
-      });
+      await loadOcrHistory();
     } finally {
       setIsProcessing(false);
     }
@@ -386,20 +395,8 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
       return;
     }
 
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-
     applySimulatorBundleToStore(pendingProfileReview.bundle, {
       preserveWorkbenchState: true,
-    });
-
-    addOcrLog({
-      type: 'success',
-      message: `${timeStr}，已确认并更新人物属性`,
-      details: pendingProfileReview.summary || '未识别出的字段已保留原值',
     });
     toast.success('人物属性已更新', {
       description:
@@ -515,7 +512,11 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
                 </div>
 
                 <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto pr-1">
-                  {ocrLogs.length === 0 ? (
+                  {isLoadingHistory ? (
+                    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700/50 py-4 text-xs text-slate-400">
+                      正在读取识别记录...
+                    </div>
+                  ) : ocrLogs.length === 0 ? (
                     <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700/50 py-4 text-xs text-slate-500 italic">
                       暂无识别记录
                     </div>
@@ -534,13 +535,25 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
                         ) : (
                           <Clock className="mt-0.5 h-3 w-3 shrink-0 text-blue-400" />
                         )}
-                        <span className="leading-relaxed break-words text-slate-300">
-                          {log.message}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="leading-relaxed break-words text-slate-300">
+                            {log.message}
+                          </div>
+                          {log.details ? (
+                            <div className="mt-1 text-[10px] leading-relaxed break-words text-slate-500">
+                              {log.details}
+                            </div>
+                          ) : null}
+                        </div>
                       </motion.div>
                     ))
                   )}
                 </div>
+                {!isLoadingHistory && ocrHistoryError ? (
+                  <div className="mt-2 text-[10px] text-red-300">
+                    {ocrHistoryError}
+                  </div>
+                ) : null}
               </div>
             </div>
           </Popover.Content>

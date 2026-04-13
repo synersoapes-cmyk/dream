@@ -152,7 +152,7 @@ test('equipment set CRUD actions create duplicate remove and reorder plans', () 
   assert.equal(state.equipmentSets[2]?.isActive, true);
 });
 
-test('laboratory compare seats are capped at two visible comparison seats', () => {
+test('laboratory compare seats are capped at one visible comparison seat', () => {
   useGameStore.setState((state) => ({
     ...state,
     experimentSeats: [
@@ -172,13 +172,38 @@ test('laboratory compare seats are capped at two visible comparison seats', () =
 
   const state = useGameStore.getState();
   const compareSeats = state.experimentSeats.filter((seat) => !seat.isSample);
-  assert.equal(compareSeats.length, 2);
+  assert.equal(compareSeats.length, 1);
   assert.equal(compareSeats[0]?.name, '对比席位1');
-  assert.equal(compareSeats[1]?.name, '对比席位2');
   assert.equal(compareSeats[0]?.inheritGemstones, true);
   assert.equal(compareSeats[0]?.inheritRuneStones, true);
-  assert.equal(compareSeats[1]?.inheritGemstones, true);
-  assert.equal(compareSeats[1]?.inheritRuneStones, true);
+});
+
+test('laboratory compare seat can be removed when only one seat remains', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    experimentSeats: [
+      {
+        id: 'sample',
+        name: '样本席位',
+        isSample: true,
+        equipment: [],
+      },
+      {
+        id: 'comp_1',
+        name: '对比席位1',
+        isSample: false,
+        equipment: [],
+      },
+    ],
+  }));
+
+  useGameStore.getState().removeExperimentSeat('comp_1');
+
+  const compareSeats = useGameStore
+    .getState()
+    .experimentSeats.filter((seat) => !seat.isSample);
+
+  assert.equal(compareSeats.length, 0);
 });
 
 test('laboratory compare seat updates persist inheritance strategy per seat', () => {

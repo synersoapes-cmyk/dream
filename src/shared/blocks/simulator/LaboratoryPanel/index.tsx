@@ -35,6 +35,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import { formatDateTimeValue } from '@/shared/lib/date';
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
 import {
   getSkillTargetCountOptions,
@@ -152,6 +153,9 @@ export function LaboratoryPanel() {
   const equipmentSets = useGameStore((state) => state.equipmentSets);
   const activeSetIndex = useGameStore((state) => state.activeSetIndex);
   const addExperimentSeat = useGameStore((state) => state.addExperimentSeat);
+  const removeExperimentSeat = useGameStore(
+    (state) => state.removeExperimentSeat
+  );
   const confirmPendingEquipment = useGameStore(
     (state) => state.confirmPendingEquipment
   );
@@ -194,6 +198,20 @@ export function LaboratoryPanel() {
   } | null>(null);
 
   // 初始化技能选择
+  useEffect(() => {
+    const overflowSeats = experimentSeats
+      .filter((seat) => !seat.isSample)
+      .slice(LABORATORY_MAX_COMPARE_SEATS);
+
+    if (overflowSeats.length === 0) {
+      return;
+    }
+
+    overflowSeats.forEach((seat) => {
+      removeExperimentSeat(seat.id);
+    });
+  }, [experimentSeats, removeExperimentSeat]);
+
   useEffect(() => {
     if (skills && skills.length > 0 && !selectedSkillName) {
       setSelectedSkillName(
@@ -790,9 +808,6 @@ export function LaboratoryPanel() {
     }
 
     setIsProcessing(true);
-    toast.info('正在识别...', {
-      description: '图片会先上传到 R2，再交给 Gemini 解析',
-    });
 
     try {
       const configResponse = await fetch('/api/simulator/current/ocr/config', {
@@ -1079,7 +1094,9 @@ export function LaboratoryPanel() {
                       <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                         <img
                           src={
-                            item.equipment.imageUrl ||
+                            getSimulatorDisplayImageUrl(
+                              item.equipment.imageUrl
+                            ) ||
                             getEquipmentDefaultImage(item.equipment.type)
                           }
                           alt={item.equipment.name}
@@ -1394,7 +1411,9 @@ export function LaboratoryPanel() {
                             <div className="h-14 w-14 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                               <img
                                 src={
-                                  equipment.imageUrl ||
+                                  getSimulatorDisplayImageUrl(
+                                    equipment.imageUrl
+                                  ) ||
                                   getEquipmentDefaultImage(equipment.type)
                                 }
                                 alt={equipment.name}
@@ -1519,6 +1538,9 @@ export function LaboratoryPanel() {
                     targetSeat.equipment
                   ),
                 });
+              }}
+              onRemoveSeat={(targetSeat) => {
+                removeExperimentSeat(targetSeat.id);
               }}
               onSelectSlot={setSelectedSlot}
               onClearDetailSelection={() => {

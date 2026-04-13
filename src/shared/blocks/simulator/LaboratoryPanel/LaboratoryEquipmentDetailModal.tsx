@@ -24,6 +24,7 @@ import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-o
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 
 import {
   AVAILABLE_RUNE_SETS,
@@ -144,7 +145,7 @@ export function LaboratoryEquipmentDetailModal({
               <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                 <img
                   src={
-                    draftEquipment.imageUrl ||
+                    getSimulatorDisplayImageUrl(draftEquipment.imageUrl) ||
                     getEquipmentDefaultImage(draftEquipment.type)
                   }
                   alt={draftEquipment.name}

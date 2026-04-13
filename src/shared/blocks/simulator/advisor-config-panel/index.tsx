@@ -112,7 +112,7 @@ export function SimulatorAdvisorConfigPanel({
                 setConfig((current) => ({ ...current, model: e.target.value }))
               }
               disabled={!canEdit}
-              placeholder="gemini-2.5-flash"
+              placeholder="gemini-3-flash-preview"
             />
           </div>
           <div className="space-y-2">

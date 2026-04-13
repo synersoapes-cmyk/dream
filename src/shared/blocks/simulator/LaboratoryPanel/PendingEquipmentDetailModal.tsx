@@ -67,6 +67,22 @@ function normalizeComparable(value: unknown) {
   return value ?? '';
 }
 
+function hasDisplayValue(value: unknown) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  return true;
+}
+
 function buildConsistencyWarnings(draft: Equipment) {
   const warnings: string[] = [];
   const expectedStats = isHintableEquipmentType(draft.type)
@@ -158,6 +174,13 @@ export function PendingEquipmentDetailModal({
         value: draft.stats?.[key] ?? draft.baseStats?.[key] ?? 0,
       })),
     [draft]
+  );
+  const visibleStatEntries = useMemo(
+    () =>
+      isEditing
+        ? statEntries
+        : statEntries.filter((entry) => hasDisplayValue(entry.value) && entry.value !== 0),
+    [isEditing, statEntries]
   );
   const jadeAttributePool = useMemo(
     () =>
@@ -322,6 +345,7 @@ export function PendingEquipmentDetailModal({
 
     return [...scalarChanges, ...statChanges];
   }, [draft, item.equipment]);
+  const shouldShowReadField = (value: unknown) => isEditing || hasDisplayValue(value);
 
   const updateDraft = (patch: Partial<Equipment>) => {
     setDraft((current) => ({
@@ -588,110 +612,179 @@ export function PendingEquipmentDetailModal({
                   基础信息
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label={getFieldLabel('element')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.element || ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            element: event.target.value || undefined,
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue value={draft.element} />
-                    )}
-                  </Field>
-                  <Field label={getFieldLabel('durability')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.durability ?? ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            durability:
-                              event.target.value === ''
-                                ? undefined
-                                : toFiniteNumber(event.target.value, 0),
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue value={draft.durability} />
-                    )}
-                  </Field>
-                  <Field label={getFieldLabel('forgeLevel')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.forgeLevel ?? ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            forgeLevel:
-                              event.target.value === ''
-                                ? undefined
-                                : toFiniteNumber(event.target.value, 0),
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue value={draft.forgeLevel} />
-                    )}
-                  </Field>
-                  <Field label={getFieldLabel('gemstone')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.gemstone || ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            gemstone: event.target.value || undefined,
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue value={draft.gemstone} />
-                    )}
-                  </Field>
-                  <Field label={getFieldLabel('price')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.price ?? ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            price:
-                              event.target.value === ''
-                                ? undefined
-                                : toFiniteNumber(event.target.value, 0),
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue value={`¥ ${formatPrice(draft.price)}`} />
-                    )}
-                  </Field>
-                  <Field label={getFieldLabel('crossServerFee')}>
-                    {isEditing ? (
-                      <input
-                        value={draft.crossServerFee ?? ''}
-                        onChange={(event) =>
-                          updateDraft({
-                            crossServerFee:
-                              event.target.value === ''
-                                ? undefined
-                                : toFiniteNumber(event.target.value, 0),
-                          })
-                        }
-                        className={inputClassName}
-                      />
-                    ) : (
-                      <ReadValue
-                        value={`¥ ${formatPrice(draft.crossServerFee)}`}
-                      />
-                    )}
-                  </Field>
+                  {shouldShowReadField(draft.element) && (
+                    <Field label={getFieldLabel('element')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.element || ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              element: event.target.value || undefined,
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.element} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.specialEffect) && (
+                    <Field label={getFieldLabel('specialEffect')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.specialEffect || ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              specialEffect: event.target.value || undefined,
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.specialEffect} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.durability) && (
+                    <Field label={getFieldLabel('durability')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.durability ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              durability:
+                                event.target.value === ''
+                                  ? undefined
+                                  : toFiniteNumber(event.target.value, 0),
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.durability} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.repairFailCount) && (
+                    <Field label={getFieldLabel('repairFailCount')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.repairFailCount ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              repairFailCount:
+                                event.target.value === ''
+                                  ? undefined
+                                  : toFiniteNumber(event.target.value, 0),
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.repairFailCount} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.forgeLevel) && (
+                    <Field label={getFieldLabel('forgeLevel')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.forgeLevel ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              forgeLevel:
+                                event.target.value === ''
+                                  ? undefined
+                                  : toFiniteNumber(event.target.value, 0),
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.forgeLevel} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.gemstone) && (
+                    <Field label={getFieldLabel('gemstone')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.gemstone || ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              gemstone: event.target.value || undefined,
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.gemstone} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.luckyHoles) && (
+                    <Field label={getFieldLabel('luckyHoles')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.luckyHoles ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              luckyHoles:
+                                event.target.value === ''
+                                  ? undefined
+                                  : event.target.value,
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={draft.luckyHoles} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.price) && (
+                    <Field label={getFieldLabel('price')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.price ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              price:
+                                event.target.value === ''
+                                  ? undefined
+                                  : toFiniteNumber(event.target.value, 0),
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue value={`¥ ${formatPrice(draft.price)}`} />
+                      )}
+                    </Field>
+                  )}
+                  {shouldShowReadField(draft.crossServerFee) && (
+                    <Field label={getFieldLabel('crossServerFee')}>
+                      {isEditing ? (
+                        <input
+                          value={draft.crossServerFee ?? ''}
+                          onChange={(event) =>
+                            updateDraft({
+                              crossServerFee:
+                                event.target.value === ''
+                                  ? undefined
+                                  : toFiniteNumber(event.target.value, 0),
+                            })
+                          }
+                          className={inputClassName}
+                        />
+                      ) : (
+                        <ReadValue
+                          value={`¥ ${formatPrice(draft.crossServerFee)}`}
+                        />
+                      )}
+                    </Field>
+                  )}
                 </div>
               </div>
 
@@ -700,7 +793,7 @@ export function PendingEquipmentDetailModal({
                   数值属性
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {statEntries.map((entry) => (
+                  {visibleStatEntries.map((entry) => (
                     <Field key={entry.key} label={entry.label}>
                       {isEditing ? (
                         <input
@@ -895,7 +988,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ReadValue({ value }: { value?: string | number }) {
   return (
     <div className="min-h-10 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
-      {value || '-'}
+      {hasDisplayValue(value) ? value : '-'}
     </div>
   );
 }

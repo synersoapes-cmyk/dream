@@ -153,6 +153,7 @@ export interface Equipment {
   gemstone?: string;
   gemstones?: EquipmentGemstone[];
   luckyHoles?: string;
+  repairFailCount?: number;
   starPosition?: string;
   starPositionConfig?: StarPositionConfig;
   starAlignment?: string;

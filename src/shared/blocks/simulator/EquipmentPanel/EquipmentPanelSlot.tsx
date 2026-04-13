@@ -4,6 +4,7 @@ import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentIm
 import { motion } from 'motion/react';
 
 import type { SimulatorPrimaryEquipmentType } from '@/shared/lib/simulator-equipment';
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 
 type EquipmentPanelSlotTheme = 'yellow' | 'blue' | 'purple';
 export type EquipmentPanelSlotInfo = {
@@ -100,7 +101,10 @@ export function EquipmentPanelSlot({
           {equip ? (
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
               <img
-                src={equip.imageUrl || getEquipmentDefaultImage(equip.type)}
+                src={
+                  getSimulatorDisplayImageUrl(equip.imageUrl) ||
+                  getEquipmentDefaultImage(equip.type)
+                }
                 alt={equip.name}
                 className="h-full w-full object-cover"
               />

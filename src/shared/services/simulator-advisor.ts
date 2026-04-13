@@ -1,7 +1,7 @@
 import { getAllConfigs } from '@/shared/models/config';
 
-const DEFAULT_GEMINI_TEXT_MODEL = 'gemini-2.5-flash';
-const LEGACY_GEMINI_TEXT_MODEL = 'gemini-2.0-flash';
+export const DEFAULT_GEMINI_TEXT_MODEL = 'gemini-3-flash-preview';
+const LEGACY_GEMINI_TEXT_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 const DEFAULT_ADVISOR_TEMPERATURE = 0.3;
 const DEFAULT_ADVISOR_SYSTEM_PROMPT = [
   '你是《梦幻西游》龙宫数值实验室的配装顾问。',
@@ -28,6 +28,16 @@ export function sanitizeSimulatorAdvisorReply(text: string) {
     .replace(/^\s*\d+\.\s+/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+export function getSimulatorAdvisorCandidateModels(configuredModel?: string) {
+  return Array.from(
+    new Set(
+      [configuredModel, DEFAULT_GEMINI_TEXT_MODEL, ...LEGACY_GEMINI_TEXT_MODELS].filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0
+      )
+    )
+  );
 }
 
 function parseBooleanConfig(value: unknown, fallback = false) {
@@ -159,12 +169,8 @@ export async function generateSimulatorAdvisorReply(params: {
     params.userMessage,
   ].join('\n');
 
-  const candidateModels = Array.from(
-    new Set([
-      advisorConfig.model,
-      DEFAULT_GEMINI_TEXT_MODEL,
-      LEGACY_GEMINI_TEXT_MODEL,
-    ].filter(Boolean))
+  const candidateModels = getSimulatorAdvisorCandidateModels(
+    advisorConfig.model
   );
 
   let lastError: Error | null = null;

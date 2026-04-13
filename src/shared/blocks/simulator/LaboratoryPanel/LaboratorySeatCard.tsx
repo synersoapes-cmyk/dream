@@ -10,7 +10,7 @@ import type {
   Treasure,
 } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
-import { Upload } from 'lucide-react';
+import { Trash2, Upload } from 'lucide-react';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
 import { SIMULATOR_PRIMARY_EQUIPMENT_TYPES } from '@/shared/lib/simulator-equipment';
@@ -34,6 +34,7 @@ import {
   formatLaboratoryDamageDelta,
   getLaboratoryOutcomeTone,
 } from '@/shared/lib/laboratory-outcome-summary';
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 import { matchesSimulatorSlotDefinition } from '@/shared/lib/simulator-slot-config';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import type { LabValuationSeatResult } from '@/shared/services/lab-valuation';
@@ -67,6 +68,7 @@ type Props = {
   selectedSampleSetIndex: number;
   onSelectedSampleSetIndexChange: (index: number) => void;
   onApplySeat: (seat: ExperimentSeat) => void;
+  onRemoveSeat: (seat: ExperimentSeat) => void;
   onSelectSlot: (selection: LaboratorySelectedSlot) => void;
   onClearDetailSelection: () => void;
   baseAttributes: BaseAttributes;
@@ -88,6 +90,7 @@ export function LaboratorySeatCard({
   selectedSampleSetIndex,
   onSelectedSampleSetIndexChange,
   onApplySeat,
+  onRemoveSeat,
   onSelectSlot,
   onClearDetailSelection,
   baseAttributes,
@@ -316,6 +319,16 @@ export function LaboratorySeatCard({
         <div className="flex items-center gap-2">
           {!seat.isSample && (
             <button
+              onClick={() => onRemoveSeat(seat)}
+              className="flex items-center gap-1 rounded border border-red-600/30 bg-red-950/20 px-2 py-1 text-xs font-medium text-red-300 transition-colors hover:bg-red-950/35"
+              title="删除此对比席位"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>删除</span>
+            </button>
+          )}
+          {!seat.isSample && (
+            <button
               onClick={() => onApplySeat(seat)}
               className="flex items-center gap-1 rounded border border-yellow-600/40 bg-yellow-600/20 px-2 py-1 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-600/30 hover:text-yellow-300"
               title="将此席位装备应用到当前装备"
@@ -426,7 +439,7 @@ export function LaboratorySeatCard({
                       <div className="ml-2 h-8 w-8 shrink-0 overflow-hidden rounded border border-slate-700/50 bg-slate-950/50">
                         <img
                           src={
-                            equipment.imageUrl ||
+                            getSimulatorDisplayImageUrl(equipment.imageUrl) ||
                             getEquipmentDefaultImage(equipment.type)
                           }
                           alt={equipment.name}

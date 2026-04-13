@@ -1,6 +1,8 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 
+import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+
 interface EquipmentImageProps {
   equipment: Equipment;
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -24,7 +26,10 @@ export function EquipmentImage({
       className={`${sizeClasses[size]} shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50 ${className}`}
     >
       <img
-        src={equipment.imageUrl || getEquipmentDefaultImage(equipment.type)}
+        src={
+          getSimulatorDisplayImageUrl(equipment.imageUrl) ||
+          getEquipmentDefaultImage(equipment.type)
+        }
         alt={equipment.name}
         className="h-full w-full object-cover"
       />

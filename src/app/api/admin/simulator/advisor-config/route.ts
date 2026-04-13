@@ -1,6 +1,7 @@
 import { PERMISSIONS } from '@/core/rbac';
 import { respData, respErr } from '@/shared/lib/resp';
 import { saveConfigs } from '@/shared/models/config';
+import { DEFAULT_GEMINI_TEXT_MODEL } from '@/shared/services/simulator-advisor';
 import { getUserInfo } from '@/shared/models/user';
 import { hasAllPermissions } from '@/shared/services/rbac';
 import { getSimulatorAdvisorAdminConfig } from '@/shared/services/simulator-advisor';
@@ -50,7 +51,7 @@ export async function PATCH(req: Request) {
       simulator_advisor_model:
         typeof body?.model === 'string' && body.model.trim()
           ? body.model.trim()
-          : 'gemini-2.5-flash',
+          : DEFAULT_GEMINI_TEXT_MODEL,
       simulator_advisor_system_prompt:
         typeof body?.systemPrompt === 'string' && body.systemPrompt.trim()
           ? body.systemPrompt

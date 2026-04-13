@@ -10,6 +10,21 @@ type GemstoneAliasMeta = Pick<EquipmentGemstone, 'type' | 'element'> & {
   statLabel: string;
 };
 
+const GEMSTONE_LEVEL_VALUE_PER_LEVEL: Record<string, number> = {
+  舍利子: 8,
+  太阳石: 8,
+  月亮石: 12,
+  翡翠石: 12,
+  黑宝石: 8,
+  光芒石: 40,
+  红玛瑙: 25,
+  神秘石: 25,
+  红宝石: 1,
+  黄宝石: 1,
+  蓝宝石: 1,
+  绿宝石: 1,
+};
+
 const RUNE_COLOR_ALIAS: Record<string, string> = {
   red: '红',
   blue: '蓝',
@@ -177,6 +192,24 @@ function normalizeGemstoneStatMap(value: unknown) {
   return Object.fromEntries(entries);
 }
 
+export function deriveEquipmentGemstoneStats(
+  name: unknown,
+  level: unknown
+): EquipmentGemstone['stats'] | undefined {
+  const definition = findEquipmentGemstoneDefinition(name);
+  const numericLevel = toPositiveInteger(level);
+  const perLevel =
+    typeof name === 'string' ? GEMSTONE_LEVEL_VALUE_PER_LEVEL[name] : undefined;
+
+  if (!definition || numericLevel === undefined || perLevel === undefined) {
+    return undefined;
+  }
+
+  return {
+    [definition.defaultStat]: numericLevel * perLevel,
+  };
+}
+
 function buildStructuredGemstone(
   record: JsonRecord,
   index: number
@@ -205,14 +238,16 @@ function buildStructuredGemstone(
     type:
       typeof record.type === 'string' && record.type.trim().length > 0
         ? record.type.trim()
-        : alias?.type ?? 'unknown',
+        : (alias?.type ?? 'unknown'),
     element:
       typeof record.element === 'string' && record.element.trim().length > 0
         ? record.element.trim()
         : alias?.element,
     level,
     quantity: Math.max(1, Math.floor(toFiniteNumber(record.quantity) ?? 1)),
-    stats: normalizeGemstoneStatMap(record.stats),
+    stats:
+      normalizeGemstoneStatMap(record.stats) ??
+      deriveEquipmentGemstoneStats(name, level),
   };
 }
 
@@ -228,7 +263,9 @@ function parseLegacyGemstoneEntry(
 
   const matched = trimmed.match(/(\d+)\s*([^\d\s]+)/);
   const level = matched ? Number(matched[1]) : fallbackLevel;
-  const name = matched ? matched[2].trim() : trimmed.replace(/^\+?\d+\s*/, '').trim();
+  const name = matched
+    ? matched[2].trim()
+    : trimmed.replace(/^\+?\d+\s*/, '').trim();
   if (!name) {
     return null;
   }
@@ -242,6 +279,7 @@ function parseLegacyGemstoneEntry(
     element: alias?.element,
     level: Number.isFinite(level) ? level : undefined,
     quantity: 1,
+    stats: deriveEquipmentGemstoneStats(name, level),
   };
 }
 
@@ -268,7 +306,9 @@ export function parseEquipmentGemstones(params: {
 
   return params.gemstoneText
     .split(/[，,、;+]/)
-    .map((entry, index) => parseLegacyGemstoneEntry(entry, fallbackLevel, index))
+    .map((entry, index) =>
+      parseLegacyGemstoneEntry(entry, fallbackLevel, index)
+    )
     .filter((item): item is EquipmentGemstone => Boolean(item));
 }
 
@@ -278,7 +318,7 @@ export function findEquipmentGemstoneDefinition(name: unknown) {
   }
 
   const trimmed = name.trim();
-  return trimmed ? GEMSTONE_TYPE_ALIAS[trimmed] ?? null : null;
+  return trimmed ? (GEMSTONE_TYPE_ALIAS[trimmed] ?? null) : null;
 }
 
 export function createEquipmentGemstoneDraft(
@@ -327,7 +367,8 @@ export function countEquipmentGemLevelTotal(
         ? gemstone.level
         : 0;
     const quantity =
-      typeof gemstone.quantity === 'number' && Number.isFinite(gemstone.quantity)
+      typeof gemstone.quantity === 'number' &&
+      Number.isFinite(gemstone.quantity)
         ? gemstone.quantity
         : 1;
 
@@ -344,7 +385,8 @@ export function sumEquipmentGemstoneStats(
 
   return gemstones.reduce<Record<string, number>>((totals, gemstone) => {
     const quantity =
-      typeof gemstone.quantity === 'number' && Number.isFinite(gemstone.quantity)
+      typeof gemstone.quantity === 'number' &&
+      Number.isFinite(gemstone.quantity)
         ? Math.max(1, Math.floor(gemstone.quantity))
         : 1;
 
@@ -386,7 +428,10 @@ export function normalizeRuneColor(value: unknown) {
   return null;
 }
 
-function normalizeSingleRuneStone(value: unknown, index: number): RuneStone | null {
+function normalizeSingleRuneStone(
+  value: unknown,
+  index: number
+): RuneStone | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -414,14 +459,15 @@ function normalizeSingleRuneStone(value: unknown, index: number): RuneStone | nu
         ? value.quality.trim()
         : undefined,
     description:
-      typeof value.description === 'string' && value.description.trim().length > 0
+      typeof value.description === 'string' &&
+      value.description.trim().length > 0
         ? value.description.trim()
         : undefined,
     price: toFiniteNumber(value.price),
     color:
       typeof value.color === 'string' && value.color.trim().length > 0
         ? value.color.trim()
-        : normalizeRuneColor(type) ?? undefined,
+        : (normalizeRuneColor(type) ?? undefined),
     element:
       typeof value.element === 'string' && value.element.trim().length > 0
         ? value.element.trim()
@@ -473,7 +519,8 @@ export function extractActiveRuneSetMeta(value: unknown) {
     0,
     Math.floor(toFiniteNumber(notes.activeRuneStoneSet) ?? 0)
   );
-  const runeStoneSets = normalizeEquipmentRuneStoneSets(notes.runeStoneSets) ?? [];
+  const runeStoneSets =
+    normalizeEquipmentRuneStoneSets(notes.runeStoneSets) ?? [];
   const rawActiveSet = runeStoneSets[activeIndex] ?? runeStoneSets[0] ?? [];
   const holeCount =
     toPositiveInteger(notes.holeCount) ??
@@ -501,7 +548,10 @@ export function extractActiveRuneSetMeta(value: unknown) {
   };
 }
 
-export function matchesRuneColorsIgnoringOrder(actual: string[], expected: string[]) {
+export function matchesRuneColorsIgnoringOrder(
+  actual: string[],
+  expected: string[]
+) {
   if (actual.length !== expected.length) {
     return false;
   }
@@ -509,7 +559,9 @@ export function matchesRuneColorsIgnoringOrder(actual: string[], expected: strin
   const normalizedActual = [...actual].sort();
   const normalizedExpected = [...expected].sort();
 
-  return normalizedActual.every((color, index) => color === normalizedExpected[index]);
+  return normalizedActual.every(
+    (color, index) => color === normalizedExpected[index]
+  );
 }
 
 export function isStrictStarAlignmentConfigActive(params: {

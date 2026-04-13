@@ -60,6 +60,7 @@ import {
   AVAILABLE_STAR_POSITIONS,
   calculateEquipmentTotalStats,
   getSeatDisplayName,
+  resolveLaboratorySeatEquipment,
 } from './laboratory-utils';
 import { LaboratoryComparisonTable } from './LaboratoryComparisonTable';
 import {
@@ -470,7 +471,7 @@ export function LaboratoryPanel() {
             isSample: seat.isSample,
             inheritGemstones: seat.inheritGemstones,
             inheritRuneStones: seat.inheritRuneStones,
-            equipment: seat.equipment,
+            equipment: resolveLaboratorySeatEquipment(seat, sampleEquipment),
           })),
         }),
       });
@@ -680,7 +681,7 @@ export function LaboratoryPanel() {
         formation: combatTarget.formation || '普通阵',
       },
       seats: visibleExperimentSeats.map((seat) => {
-        const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
+        const seatEquip = resolveLaboratorySeatEquipment(seat, sampleEquipment);
         const { totalPrice } = calculateEquipmentTotalStats(seatEquip);
 
         return {
@@ -717,16 +718,17 @@ export function LaboratoryPanel() {
 
   useEffect(() => {
     if (!labValuationPayload) {
+      setIsLoadingLabValuation(false);
       setLabValuationBySeatId({});
       setLabValuationError(null);
       return;
     }
 
     const controller = new AbortController();
+    setIsLoadingLabValuation(true);
+    setLabValuationError(null);
     const timer = window.setTimeout(async () => {
       try {
-        setIsLoadingLabValuation(true);
-        setLabValuationError(null);
         const response = await fetch('/api/simulator/current/lab-valuation', {
           method: 'POST',
           headers: {

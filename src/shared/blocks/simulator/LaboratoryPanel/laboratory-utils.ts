@@ -2,6 +2,7 @@ import type {
   BaseAttributes,
   CombatStats,
   Equipment,
+  ExperimentSeat,
 } from '@/features/simulator/store/gameTypes';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
@@ -196,6 +197,13 @@ export function summarizeEquipmentEffects(
   return getEquipmentEffectTexts(equipments, options).join(' / ');
 }
 
+export function resolveLaboratorySeatEquipment(
+  seat: Pick<ExperimentSeat, 'isSample' | 'equipment'>,
+  sampleEquipment: Equipment[]
+): Equipment[] {
+  return seat.isSample ? sampleEquipment : seat.equipment;
+}
+
 export function cloneEquipmentForEditor(equipment: Equipment): Equipment {
   return {
     ...equipment,
@@ -309,6 +317,71 @@ export function calculateEquipmentTotalStats(equipments: Equipment[]) {
   });
 
   return { totals, totalPrice };
+}
+
+const LABORATORY_DISPLAY_ALIAS_GROUPS = [
+  {
+    displayKey: 'spiritualPower',
+    keys: ['spiritualPower', 'magicPower', 'spirit'],
+  },
+] as const;
+
+const LABORATORY_ALIAS_KEY_SET: ReadonlySet<string> = new Set(
+  LABORATORY_DISPLAY_ALIAS_GROUPS.flatMap((group) => group.keys)
+);
+
+function pickLaboratoryAliasValue(
+  values: Record<string, number>,
+  keys: readonly string[]
+) {
+  for (const key of keys) {
+    const value = values[key];
+    if (typeof value === 'number' && Math.abs(value) > 0.01) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+export function mergeLaboratoryDisplayDiffs(params: {
+  combatDiffs: Record<string, number>;
+  diffs: Record<string, number>;
+}) {
+  const merged: Record<string, number> = {};
+  const { combatDiffs, diffs } = params;
+
+  for (const [key, value] of Object.entries(combatDiffs)) {
+    if (LABORATORY_ALIAS_KEY_SET.has(key) || Math.abs(value) <= 0.01) {
+      continue;
+    }
+
+    merged[key] = value;
+  }
+
+  for (const [key, value] of Object.entries(diffs)) {
+    if (
+      LABORATORY_ALIAS_KEY_SET.has(key) ||
+      key in combatDiffs ||
+      Math.abs(value) <= 0.01
+    ) {
+      continue;
+    }
+
+    merged[key] = value;
+  }
+
+  for (const group of LABORATORY_DISPLAY_ALIAS_GROUPS) {
+    const value =
+      pickLaboratoryAliasValue(combatDiffs, group.keys) ??
+      pickLaboratoryAliasValue(diffs, group.keys);
+
+    if (value !== undefined) {
+      merged[group.displayKey] = value;
+    }
+  }
+
+  return merged;
 }
 
 export function getFallbackSeatTotalDamage(

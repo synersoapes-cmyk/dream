@@ -6,7 +6,9 @@ import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 import {
   calculateEquipmentTotalStats,
+  mergeLaboratoryDisplayDiffs,
   mergeEquipmentWithInheritance,
+  resolveLaboratorySeatEquipment,
 } from './laboratory-utils';
 
 function createEquipment(
@@ -84,6 +86,38 @@ test('calculateEquipmentTotalStats counts cross-server fee into total price', ()
   ]);
 
   assert.equal(totals.totalPrice, 1700);
+});
+
+test('resolveLaboratorySeatEquipment uses sample equipment for the sample seat', () => {
+  const sampleEquipment = [createEquipment('sample_weapon')];
+  const seatEquipment = [createEquipment('stale_sample_weapon')];
+
+  const resolved = resolveLaboratorySeatEquipment(
+    {
+      isSample: true,
+      equipment: seatEquipment,
+    },
+    sampleEquipment
+  );
+
+  assert.equal(resolved, sampleEquipment);
+  assert.equal(resolved[0]?.id, 'sample_weapon');
+});
+
+test('resolveLaboratorySeatEquipment keeps compare seat equipment unchanged', () => {
+  const sampleEquipment = [createEquipment('sample_weapon')];
+  const compareEquipment = [createEquipment('compare_weapon')];
+
+  const resolved = resolveLaboratorySeatEquipment(
+    {
+      isSample: false,
+      equipment: compareEquipment,
+    },
+    sampleEquipment
+  );
+
+  assert.equal(resolved, compareEquipment);
+  assert.equal(resolved[0]?.id, 'compare_weapon');
 });
 
 test('mergeEquipmentWithInheritance keeps candidate build when inheritance is disabled', () => {
@@ -269,4 +303,40 @@ test('M6-04 inheritRuneStones keeps old rune build while gemstone inheritance st
   assert.equal(totals.totals.hit, 2);
   assert.equal(combatStats.magicDamage, 121.5);
   assert.equal(combatStats.hit, 2);
+});
+
+test('mergeLaboratoryDisplayDiffs prefers canonical 灵力 key from combat stats aliases', () => {
+  const displayDiffs = mergeLaboratoryDisplayDiffs({
+    combatDiffs: {
+      spiritualPower: 64,
+      magicPower: 64,
+      spirit: 64,
+      magicDamage: 64,
+    },
+    diffs: {
+      spirit: 64,
+      magicDefense: 64,
+    },
+  });
+
+  assert.deepEqual(displayDiffs, {
+    spiritualPower: 64,
+    magicDamage: 64,
+    magicDefense: 64,
+  });
+});
+
+test('mergeLaboratoryDisplayDiffs falls back to raw 灵力 aliases when combat stats omit them', () => {
+  const displayDiffs = mergeLaboratoryDisplayDiffs({
+    combatDiffs: {},
+    diffs: {
+      spirit: 96,
+      hit: 12,
+    },
+  });
+
+  assert.deepEqual(displayDiffs, {
+    spiritualPower: 96,
+    hit: 12,
+  });
 });

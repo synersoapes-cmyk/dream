@@ -289,7 +289,7 @@ export async function getSettings() {
       name: 'app_description',
       title: 'App Description',
       placeholder:
-        'ShipAny is a NextJS boilerplate for building AI SaaS startups. ',
+        'Dream is a Fantasy Westward Journey combat simulator for role builds, equipment comparisons, and AI-guided decisions.',
       type: 'textarea',
       group: 'appinfo',
       tab: 'general',

@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "title": "ShipAny 模板二",
-    "description": "ShipAny 是用于构建 AI SaaS 创业项目的 NextJS 脚手架。提供丰富模板和组件，助您快速上线产品。",
-    "keywords": "shipany, shipany-boilerplate, shipany-template-two-demo"
+    "title": "Dream",
+    "description": "Dream 是一个梦幻西游数值实验室，用来测试角色面板、装备更换、实验室对比和 AI 顾问建议。",
+    "keywords": "Dream, 梦幻西游, 数值实验室, 装备模拟, 伤害计算"
   },
   "sign": {
     "sign_in_title": "登录",

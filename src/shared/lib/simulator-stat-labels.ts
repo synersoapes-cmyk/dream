@@ -6,7 +6,7 @@ const SIMULATOR_STAT_LABELS: Record<
 > = {
   default: {
     hp: '气血',
-    magic: '魔法',
+    magic: '魔力',
     hit: '命中',
     damage: '伤害',
     magicDamage: '法伤',

@@ -9,8 +9,26 @@ const DEFAULT_ADVISOR_SYSTEM_PROMPT = [
   '优先给出直接结论，再用 2-4 条说明原因。',
   '如果用户的问题涉及换装建议，请明确指出提升可能来自哪些属性或装备槽位。',
   '如果上下文不足，要直接说缺什么，不要编造。',
-  '回答使用简洁中文，不要输出 Markdown 标题。',
+  '回答使用简洁中文。',
+  '不要输出任何 Markdown 格式。',
+  '不要使用 **、##、-、*、`、```、1. 这类格式标记。',
+  '直接输出纯文本自然段，必要时用中文句号、分号、换行表达层次。',
 ].join('\n');
+
+export function sanitizeSimulatorAdvisorReply(text: string) {
+  return text
+    .replace(/```[\s\S]*?```/g, (match) =>
+      match.replace(/```(?:\w+)?/g, '').trim()
+    )
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 function parseBooleanConfig(value: unknown, fallback = false) {
   if (typeof value === 'boolean') {
@@ -192,8 +210,9 @@ export async function generateSimulatorAdvisorReply(params: {
       .trim();
 
     if (text) {
+      const sanitizedReply = sanitizeSimulatorAdvisorReply(text);
       return {
-        reply: text,
+        reply: sanitizedReply,
         provider: 'gemini',
         model,
       };

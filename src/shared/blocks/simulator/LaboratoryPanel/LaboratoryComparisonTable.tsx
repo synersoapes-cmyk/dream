@@ -27,6 +27,7 @@ import {
   getFallbackSeatTotalDamage,
   getSeatDisplayName,
   LABORATORY_ATTRIBUTE_LIST,
+  resolveLaboratorySeatEquipment,
   summarizeEquipmentEffects,
 } from './laboratory-utils';
 
@@ -66,7 +67,7 @@ export function LaboratoryComparisonTable({
 }: Props) {
   const displaySeats = getVisibleExperimentSeats(experimentSeats);
   const allSeatsData: TableSeatData[] = displaySeats.map((seat) => {
-    const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
+    const seatEquip = resolveLaboratorySeatEquipment(seat, sampleEquipment);
     const { totals, totalPrice } = calculateEquipmentTotalStats(seatEquip);
     const seatCombatStats = computeDerivedStats(
       baseAttributes,

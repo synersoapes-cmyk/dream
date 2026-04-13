@@ -8,6 +8,7 @@ import { Plus, Trash2 } from 'lucide-react';
 
 import {
   createEquipmentGemstoneDraft,
+  deriveEquipmentGemstoneStats,
   findEquipmentGemstoneDefinition,
   SIMULATOR_GEMSTONE_DEFINITIONS,
   summarizeEquipmentGemstones,
@@ -29,7 +30,8 @@ function buildNextEquipment(
   equipment: Equipment,
   gemstones: EquipmentGemstone[] | undefined
 ) {
-  const nextGemstones = gemstones && gemstones.length > 0 ? gemstones : undefined;
+  const nextGemstones =
+    gemstones && gemstones.length > 0 ? gemstones : undefined;
   return {
     ...equipment,
     gemstones: nextGemstones,
@@ -63,7 +65,9 @@ export function GemstoneEditor({
   };
 
   const handleRemoveGemstone = (index: number) => {
-    updateGemstones(gemstones.filter((_, currentIndex) => currentIndex !== index));
+    updateGemstones(
+      gemstones.filter((_, currentIndex) => currentIndex !== index)
+    );
   };
 
   const handleGemstonePatch = (
@@ -95,6 +99,7 @@ export function GemstoneEditor({
       level: previous.level,
       quantity: previous.quantity,
       imageUrl: previous.imageUrl,
+      stats: deriveEquipmentGemstoneStats(name, previous.level),
     });
   };
 
@@ -119,7 +124,8 @@ export function GemstoneEditor({
 
       {gemstones.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-700 px-3 py-4 text-sm text-slate-400">
-          还没有配置结构化宝石，添加后会自动同步摘要文本，并进入前台 / 服务端属性汇总。
+          还没有配置结构化宝石，添加后会自动同步摘要文本，并进入前台 /
+          服务端属性汇总。
         </div>
       )}
 
@@ -193,11 +199,16 @@ export function GemstoneEditor({
                   <div className="text-xs text-slate-400">等级</div>
                   <input
                     value={gemstone.level ?? ''}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextLevel = toOptionalNumber(event.target.value);
                       handleGemstonePatch(index, {
-                        level: toOptionalNumber(event.target.value),
-                      })
-                    }
+                        level: nextLevel,
+                        stats: deriveEquipmentGemstoneStats(
+                          gemstone.name,
+                          nextLevel
+                        ),
+                      });
+                    }}
                     className={inputClassName}
                     inputMode="numeric"
                   />
@@ -235,7 +246,9 @@ export function GemstoneEditor({
                     className={inputClassName}
                     inputMode="decimal"
                     placeholder={
-                      statKey === 'spellAbsorbRate' ? '例如 5 表示 5%' : '请输入数值'
+                      statKey === 'spellAbsorbRate'
+                        ? '例如 5 表示 5%'
+                        : '请输入数值'
                     }
                   />
                 </label>

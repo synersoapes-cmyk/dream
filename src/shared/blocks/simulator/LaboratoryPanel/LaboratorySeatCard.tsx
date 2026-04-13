@@ -44,6 +44,8 @@ import {
   getFallbackSeatTotalDamage,
   getSeatDisplayName,
   LABORATORY_CATEGORIES,
+  mergeLaboratoryDisplayDiffs,
+  resolveLaboratorySeatEquipment,
 } from './laboratory-utils';
 
 type LaboratorySelectedSlot = {
@@ -98,7 +100,7 @@ export function LaboratorySeatCard({
   isLoadingLabValuation,
   regularSetRules,
 }: Props) {
-  const seatEquip = seat.isSample ? sampleEquipment : seat.equipment;
+  const seatEquip = resolveLaboratorySeatEquipment(seat, sampleEquipment);
   const { totals, totalPrice } = calculateEquipmentTotalStats(seatEquip);
   const seatCombatStats = computeDerivedStats(
     baseAttributes,
@@ -218,11 +220,9 @@ export function LaboratorySeatCard({
     }
   }
 
-  const displayDiffs = { ...combatDiffs };
-  Object.keys(diffs).forEach((key) => {
-    if (!(key in combatDiffs)) {
-      displayDiffs[key] = diffs[key];
-    }
+  const displayDiffs = mergeLaboratoryDisplayDiffs({
+    combatDiffs,
+    diffs,
   });
   const inheritanceBadges = seat.isSample
     ? []
@@ -271,6 +271,8 @@ export function LaboratorySeatCard({
   });
   const damageDeltaText = formatLaboratoryDamageDelta(totalDamageDiff);
   const damageTone = getLaboratoryOutcomeTone(totalDamageDiff);
+  const getDisplayDiffLabel = (key: string) =>
+    key === 'magic' ? '魔力' : getSimulatorStatLabel(key);
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden rounded-xl border border-yellow-800/40 bg-slate-900/60 p-4">
@@ -334,7 +336,7 @@ export function LaboratorySeatCard({
               </div>
               <div className="space-y-2">
                 {category.slots.map((slotDef) => {
-                  const equipment = seat.equipment.find((item) =>
+                  const equipment = seatEquip.find((item) =>
                     matchesSimulatorSlotDefinition(slotDef, item)
                   );
                   const currentEquip = sampleEquipment.find((item) =>
@@ -540,7 +542,7 @@ export function LaboratorySeatCard({
                   return (
                     <div key={key} className="flex justify-between text-xs">
                       <span className="text-slate-400">
-                        {getSimulatorStatLabel(key)}:
+                        {getDisplayDiffLabel(key)}:
                       </span>
                       <span
                         className={

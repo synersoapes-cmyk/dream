@@ -3,12 +3,21 @@ import type {
   Equipment,
   PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
-import { Check, Edit2, Eye, Save, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Edit2,
+  Eye,
+  Save,
+  X,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import { EquipmentImageComparePanel } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImageComparePanel';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
-import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
 import {
   getSimulatorEquipmentFieldLabel,
   SIMULATOR_CHANGE_TRACKED_FIELDS,
@@ -16,6 +25,10 @@ import {
   SIMULATOR_EQUIPMENT_TYPE_OPTIONS,
   SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
 } from '@/shared/lib/simulator-equipment-editor';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
+import { buildSimulatorEquipmentOcrReviewSummary } from '@/shared/lib/simulator-equipment-ocr-review';
+import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
+import { readSimulatorEquipmentOcrImageHintMeta } from '@/shared/lib/simulator-ocr-image-hint';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 
 type EditableStatKey = (typeof SIMULATOR_EDITABLE_STAT_KEYS)[number];
@@ -26,8 +39,14 @@ interface PendingEquipmentDetailModalProps {
   onClose: () => void;
   onDelete: () => void;
   onConfirm: () => void;
+  onConfirmAndNext?: () => void;
   onReplaceToCurrentState: () => void;
   onSave: (equipment: Equipment) => Promise<void> | void;
+  onViewPrevious?: () => void;
+  onViewNext?: () => void;
+  canViewPrevious?: boolean;
+  canViewNext?: boolean;
+  reviewProgressLabel?: string;
 }
 
 function toFiniteNumber(value: string | number | undefined, fallback = 0) {
@@ -145,13 +164,31 @@ function buildConsistencyWarnings(draft: Equipment) {
   return warnings;
 }
 
+function readPendingEquipmentOcrHintMeta(rawText?: string) {
+  if (!rawText?.trim()) {
+    return null;
+  }
+
+  try {
+    return readSimulatorEquipmentOcrImageHintMeta(JSON.parse(rawText));
+  } catch {
+    return null;
+  }
+}
+
 export function PendingEquipmentDetailModal({
   item,
   onClose,
   onDelete,
   onConfirm,
+  onConfirmAndNext,
   onReplaceToCurrentState,
   onSave,
+  onViewPrevious,
+  onViewNext,
+  canViewPrevious = false,
+  canViewNext = false,
+  reviewProgressLabel,
 }: PendingEquipmentDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -159,6 +196,24 @@ export function PendingEquipmentDetailModal({
   const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
     'jade_attribute_pool',
   ]);
+  const ocrHintMeta = useMemo(
+    () => readPendingEquipmentOcrHintMeta(item.rawText),
+    [item.rawText]
+  );
+  const ocrReview = useMemo(
+    () =>
+      buildSimulatorEquipmentOcrReviewSummary({
+        ...item,
+        equipment: draft,
+      }),
+    [draft, item]
+  );
+  const confidenceBadgeClassName =
+    ocrReview.confidenceTone === 'high'
+      ? 'border-emerald-600/50 bg-emerald-500/10 text-emerald-200'
+      : ocrReview.confidenceTone === 'medium'
+        ? 'border-amber-600/50 bg-amber-500/10 text-amber-200'
+        : 'border-rose-600/50 bg-rose-500/10 text-rose-200';
 
   useEffect(() => {
     setDraft(item.equipment);
@@ -179,7 +234,9 @@ export function PendingEquipmentDetailModal({
     () =>
       isEditing
         ? statEntries
-        : statEntries.filter((entry) => hasDisplayValue(entry.value) && entry.value !== 0),
+        : statEntries.filter(
+            (entry) => hasDisplayValue(entry.value) && entry.value !== 0
+          ),
     [isEditing, statEntries]
   );
   const jadeAttributePool = useMemo(
@@ -203,9 +260,11 @@ export function PendingEquipmentDetailModal({
             (key) =>
               Boolean(
                 Number(
-                  (draft.stats as Record<string, number | undefined> | undefined)?.[
-                    key
-                  ]
+                  (
+                    draft.stats as
+                      | Record<string, number | undefined>
+                      | undefined
+                  )?.[key]
                 )
               ) && !jadeAttributePool.allowedStatKeys.includes(key)
           )
@@ -273,7 +332,12 @@ export function PendingEquipmentDetailModal({
     }
 
     return [...warnings, ...buildConsistencyWarnings(draft)];
-  }, [disallowedJadeModifierCodes, disallowedJadeStatKeys, draft, jadeAttributePool]);
+  }, [
+    disallowedJadeModifierCodes,
+    disallowedJadeStatKeys,
+    draft,
+    jadeAttributePool,
+  ]);
 
   const suggestedChecks = useMemo(() => {
     const suggestions: string[] = [];
@@ -345,7 +409,13 @@ export function PendingEquipmentDetailModal({
 
     return [...scalarChanges, ...statChanges];
   }, [draft, item.equipment]);
-  const shouldShowReadField = (value: unknown) => isEditing || hasDisplayValue(value);
+  const hasUnsavedChanges = changedFields.length > 0;
+  const spotlightTags = useMemo(
+    () => getEquipmentSpotlightTags(draft),
+    [draft]
+  );
+  const shouldShowReadField = (value: unknown) =>
+    isEditing || hasDisplayValue(value);
 
   const updateDraft = (patch: Partial<Equipment>) => {
     setDraft((current) => ({
@@ -421,15 +491,47 @@ export function PendingEquipmentDetailModal({
         className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-yellow-700/60 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-6 py-4">
-          <div>
+          <div className="min-w-0">
             <h2 className="text-xl font-bold text-yellow-100">
               {draft.name || '未命名装备'}
             </h2>
             <p className="mt-1 text-xs text-yellow-400/80">
               {isEditing ? '编辑识别结果' : '待确认装备详情'}
             </p>
+            {reviewProgressLabel && (
+              <p className="mt-1 text-xs text-slate-300">
+                {reviewProgressLabel}
+              </p>
+            )}
+            {isEditing && hasUnsavedChanges && (
+              <p className="mt-1 text-xs text-amber-300">
+                当前有未保存修改，保存后再切换下一件更稳妥。
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {(onViewPrevious || onViewNext) && (
+              <div className="mr-1 flex items-center gap-1">
+                <button
+                  onClick={onViewPrevious}
+                  disabled={
+                    !canViewPrevious || (isEditing && hasUnsavedChanges)
+                  }
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-2 text-xs text-slate-200 transition hover:border-slate-500/70 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  上一件
+                </button>
+                <button
+                  onClick={onViewNext}
+                  disabled={!canViewNext || (isEditing && hasUnsavedChanges)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-2 text-xs text-slate-200 transition hover:border-slate-500/70 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  下一件
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             <button
               onClick={() => setIsEditing((current) => !current)}
               className="inline-flex items-center gap-1 rounded-lg border border-yellow-700/40 bg-slate-900/60 px-3 py-2 text-sm text-yellow-100 transition hover:border-yellow-500/70"
@@ -535,8 +637,123 @@ export function PendingEquipmentDetailModal({
                             {draft.extraStat}
                           </div>
                         )}
+                        {ocrHintMeta ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-sky-600/50 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-200">
+                              {ocrHintMeta.label}
+                            </span>
+                            <span className="rounded-full border border-slate-700/70 bg-slate-900/80 px-2 py-1 text-[10px] text-slate-300">
+                              {ocrHintMeta.routingMode === 'manual'
+                                ? '手动指定'
+                                : '自动识别'}
+                            </span>
+                          </div>
+                        ) : null}
                       </>
                     )}
+                  </div>
+                </div>
+
+                <EquipmentImageComparePanel
+                  equipment={draft}
+                  imagePreview={item.imagePreview}
+                  className="mt-4"
+                  artworkHeightClassName="h-40"
+                  previewHeightClassName="h-40"
+                />
+
+                <div className="mt-4 grid gap-3 rounded-xl border border-amber-700/30 bg-amber-950/10 p-4 md:grid-cols-[1.15fr_0.85fr]">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-100">
+                      <Eye className="h-4 w-4 text-amber-300" />
+                      OCR 结果解释
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span
+                        className={`rounded-full border px-2 py-1 text-[10px] ${confidenceBadgeClassName}`}
+                      >
+                        {ocrReview.confidenceLabel}
+                      </span>
+                      <span className="rounded-full border border-slate-700/70 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-200">
+                        有效字段 {ocrReview.recognizedFieldCount}
+                      </span>
+                      <span className="rounded-full border border-cyan-700/50 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-200">
+                        数值属性 {ocrReview.recognizedStatCount}
+                      </span>
+                      <span className="rounded-full border border-rose-700/50 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-200">
+                        缺失关键项 {ocrReview.missingFields.length}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-1 text-xs leading-6 text-slate-300">
+                      {ocrReview.summaryLines.map((line) => (
+                        <div key={line}>{line}</div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-rose-800/30 bg-rose-950/10 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-rose-100">
+                      <AlertCircle className="h-4 w-4 text-rose-300" />
+                      建议核对
+                    </div>
+                    {ocrReview.recognizedCoreFields.length > 0 ? (
+                      <div className="mt-3">
+                        <div className="text-[11px] text-slate-400">
+                          已识别关键项
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {ocrReview.recognizedCoreFields.map((field) => (
+                            <span
+                              key={field.key}
+                              className="rounded-full border border-emerald-600/40 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-200"
+                            >
+                              {field.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {ocrReview.missingFields.length > 0 ? (
+                      <div className="mt-3">
+                        <div className="text-[11px] text-slate-400">
+                          缺失关键项
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {ocrReview.missingFields.map((field) => (
+                            <span
+                              key={field.key}
+                              title={field.reason}
+                              className="rounded-full border border-rose-600/40 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-200"
+                            >
+                              {field.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {ocrReview.missingSuggestedStats.length > 0 ? (
+                      <div className="mt-3">
+                        <div className="text-[11px] text-slate-400">
+                          疑似漏识别属性
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {ocrReview.missingSuggestedStats.map((field) => (
+                            <span
+                              key={field.key}
+                              title={field.reason}
+                              className="rounded-full border border-amber-600/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200"
+                            >
+                              {field.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="mt-3 space-y-1 text-xs leading-6 text-slate-300">
+                      {ocrReview.recommendedChecks.slice(0, 3).map((line) => (
+                        <div key={line}>{line}</div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -591,10 +808,9 @@ export function PendingEquipmentDetailModal({
                     </Field>
                   </div>
                 ) : (
-                  draft.highlights &&
-                  draft.highlights.length > 0 && (
+                  spotlightTags.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {draft.highlights.map((highlight, index) => (
+                      {spotlightTags.map((highlight, index) => (
                         <span
                           key={index}
                           className="rounded border border-red-500/50 px-2 py-1 text-xs font-medium text-red-400"
@@ -890,16 +1106,16 @@ export function PendingEquipmentDetailModal({
                   )}
                   {jadeAttributePool.allowedStatKeys.length > 0 && (
                     <div className="mt-3 text-xs leading-relaxed text-cyan-100/90">
-                      固定值词条：{jadeAttributePool.allowedStatKeys
+                      固定值词条：
+                      {jadeAttributePool.allowedStatKeys
                         .map((key) => getStatName(key))
                         .join(' / ')}
                     </div>
                   )}
                   {jadeAttributePool.allowedModifierCodes.length > 0 && (
                     <div className="mt-2 text-xs leading-relaxed text-cyan-100/90">
-                      百分比词条：{jadeAttributePool.allowedModifierCodes.join(
-                        ' / '
-                      )}
+                      百分比词条：
+                      {jadeAttributePool.allowedModifierCodes.join(' / ')}
                     </div>
                   )}
                 </div>
@@ -945,6 +1161,15 @@ export function PendingEquipmentDetailModal({
           >
             确认入库
           </button>
+          {onConfirmAndNext && (
+            <button
+              onClick={onConfirmAndNext}
+              disabled={isEditing && hasUnsavedChanges}
+              className="flex-1 rounded-lg border border-emerald-700/50 bg-emerald-900/30 px-4 py-2.5 font-medium text-emerald-300 transition-colors hover:bg-emerald-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              确认并看下一件
+            </button>
+          )}
           <button
             onClick={onReplaceToCurrentState}
             className="flex-1 rounded-lg border border-yellow-700/50 bg-yellow-900/30 px-4 py-2.5 font-medium text-yellow-400 transition-colors hover:bg-yellow-900/50"

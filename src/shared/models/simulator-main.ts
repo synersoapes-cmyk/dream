@@ -96,6 +96,7 @@ import {
   insertSnapshotState,
   type PersistedSnapshotState,
 } from './simulator-snapshots';
+import { syncMirroredInventoryEntriesForCharacter } from './simulator-inventory';
 import type {
   AdminBattleTargetTemplateItem,
   AdminSimulatorInventoryEntryItem,
@@ -314,9 +315,16 @@ type ActiveSimulatorContext = {
 
 async function loadActiveSimulatorContext(
   userId: string,
-  options?: { includeEquipments?: boolean }
+  options?:
+    | string
+    | {
+        characterId?: string;
+        includeEquipments?: boolean;
+      }
 ): Promise<ActiveSimulatorContext | null> {
-  const character = await findActiveCharacter(userId);
+  const characterId =
+    typeof options === 'string' ? options : options?.characterId;
+  const character = await findActiveCharacter(userId, characterId);
   if (!character) {
     return null;
   }
@@ -326,7 +334,8 @@ async function loadActiveSimulatorContext(
     return null;
   }
 
-  const includeEquipments = options?.includeEquipments ?? true;
+  const includeEquipments =
+    typeof options === 'string' ? true : options?.includeEquipments ?? true;
   const [profileRows, skills, cultivations, battleContextRows, equipments] =
     await Promise.all([
       db()
@@ -2129,14 +2138,16 @@ export async function updateSimulatorProfile(
     dodge: number;
     sealHit?: number;
     meridianConfig?: unknown;
-  }
+    artifactConfig?: unknown;
+  },
+  characterId?: string
 ) {
   await ensureSimulatorDbReady();
 
   const timer = createPerfTimer('updateSimulatorProfile:model', {
     slowThresholdMs: 250,
   });
-  const context = await loadActiveSimulatorContext(userId);
+  const context = await loadActiveSimulatorContext(userId, characterId);
   timer.mark('load_context');
   if (!context) {
     timer.finish({ status: 'missing_character_or_snapshot' });
@@ -2193,6 +2204,7 @@ export async function updateSimulatorProfile(
     spiritualPower: payload.spiritualPower ?? currentRawBody.spiritualPower,
     dodge: payload.dodge,
     meridianConfig: nextMeridianConfig,
+    artifactConfig: payload.artifactConfig ?? currentRawBody.artifactConfig ?? null,
   });
   const nextCharacter: SimulatorCharacter = {
     ...character,
@@ -3120,6 +3132,13 @@ export async function updateSimulatorEquipment(
     });
     timer.mark('write_equipment_plan');
 
+    await syncMirroredInventoryEntriesForCharacter({
+      characterId: character.id,
+      currentEquipment: normalizedEquipment.map((item) => ({ ...item })),
+      equipmentPlan: persistedPlan,
+    });
+    timer.mark('sync_inventory_mirror');
+
     const nextBattleContextValue = {
       ruleVersionId: existingContext?.ruleVersionId ?? null,
       selfFormation: existingContext?.selfFormation ?? '天覆阵',
@@ -3287,6 +3306,13 @@ export async function rollbackSimulatorEquipmentToLatestSnapshot(
         }),
       ]);
       const equipmentPlan = await loadCharacterEquipmentPlanState(character.id);
+      await syncMirroredInventoryEntriesForCharacter({
+        characterId: character.id,
+        currentEquipment: restoredState.equipments.map((item) => ({
+          ...item,
+        })),
+        equipmentPlan,
+      });
       timer.mark('reload_bundle');
 
       const bundle = buildSimulatorCharacterBundle({

@@ -22,6 +22,11 @@ export async function POST(req: Request) {
 
     const formData = await req.formData();
     const file = formData.get('file');
+    const rawCharacterId = formData.get('characterId');
+    const characterId =
+      typeof rawCharacterId === 'string' && rawCharacterId.trim().length > 0
+        ? rawCharacterId.trim()
+        : undefined;
 
     if (!(file instanceof File)) {
       return respErr('缺少图片文件');
@@ -32,13 +37,14 @@ export async function POST(req: Request) {
       return respErr(validation.error || '图片文件不合法');
     }
 
-    const currentBundle = await getSimulatorCharacterBundle(user.id);
+    const currentBundle = await getSimulatorCharacterBundle(user.id, characterId);
     if (!currentBundle) {
       return respErr('simulator character not found');
     }
 
     const job = await createSimulatorOcrJob(user.id, {
       sceneType: 'profile',
+      characterId,
     });
 
     if (!job) {
@@ -49,7 +55,8 @@ export async function POST(req: Request) {
       const recognized = await recognizeSimulatorProfileFromImage(file);
       const bundle = await updateSimulatorProfile(
         user.id,
-        mergeRecognizedProfileWithBundle(currentBundle, recognized.profile)
+        mergeRecognizedProfileWithBundle(currentBundle, recognized.profile),
+        characterId
       );
 
       if (!bundle) {

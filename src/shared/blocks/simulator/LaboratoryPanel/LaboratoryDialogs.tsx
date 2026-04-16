@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Trash2, Upload } from 'lucide-react';
 
@@ -8,6 +9,9 @@ import type { LaboratoryRuneGuardSummary } from '@/shared/lib/simulator-rune-gua
 type BulkDeleteDialogProps = {
   open: boolean;
   selectedCount: number;
+  title?: string;
+  description?: ReactNode;
+  confirmLabel?: string;
   onClose: () => void;
   onConfirm: () => void;
 };
@@ -15,6 +19,9 @@ type BulkDeleteDialogProps = {
 export function LaboratoryBulkDeleteDialog({
   open,
   selectedCount,
+  title = '确认删除',
+  description,
+  confirmLabel = '确认删除',
   onClose,
   onConfirm,
 }: BulkDeleteDialogProps) {
@@ -36,11 +43,17 @@ export function LaboratoryBulkDeleteDialog({
             <Trash2 className="h-5 w-5 text-red-400" />
           </div>
           <div className="flex-1">
-            <h3 className="mb-1 text-lg font-bold text-red-400">确认删除</h3>
+            <h3 className="mb-1 text-lg font-bold text-red-400">{title}</h3>
             <p className="text-sm text-slate-300">
-              确定要删除选中的{' '}
-              <span className="font-bold text-red-400">{selectedCount}</span>{' '}
-              件装备吗？此操作无法撤销。
+              {description ?? (
+                <>
+                  确定要删除选中的{' '}
+                  <span className="font-bold text-red-400">
+                    {selectedCount}
+                  </span>{' '}
+                  件装备吗？此操作无法撤销。
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -56,7 +69,7 @@ export function LaboratoryBulkDeleteDialog({
             onClick={onConfirm}
             className="flex-1 rounded-lg border border-red-500 bg-red-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-red-500"
           >
-            确认删除
+            {confirmLabel}
           </button>
         </div>
       </div>

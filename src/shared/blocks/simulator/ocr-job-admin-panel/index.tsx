@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from '@/shared/components/ui/card';
 import { formatDateTimeValue } from '@/shared/lib/date';
+import { readSimulatorEquipmentOcrImageHintMeta } from '@/shared/lib/simulator-ocr-image-hint';
 
 type OcrJobItem = {
   id: string;
@@ -122,6 +123,7 @@ function formatOcrValue(value: unknown) {
 }
 
 function getOcrSummaryRows(rawResult: Record<string, unknown>) {
+  const ocrHintMeta = readSimulatorEquipmentOcrImageHintMeta(rawResult);
   const preferredKeys = [
     'name',
     'slot',
@@ -144,12 +146,22 @@ function getOcrSummaryRows(rawResult: Record<string, unknown>) {
       ? (rawResult.recognized as Record<string, unknown>)
       : rawResult) ?? {};
 
-  const rows = preferredKeys
-    .filter((key) => key in source)
-    .map((key) => ({
-      label: key,
-      value: formatOcrValue(source[key]),
-    }));
+  const rows = [
+    ...(ocrHintMeta
+      ? [
+          {
+            label: 'hint',
+            value: `${ocrHintMeta.label} (${ocrHintMeta.routingMode === 'manual' ? '手动指定' : '自动识别'})`,
+          },
+        ]
+      : []),
+    ...preferredKeys
+      .filter((key) => key in source)
+      .map((key) => ({
+        label: key,
+        value: formatOcrValue(source[key]),
+      })),
+  ];
 
   if (rows.length > 0) {
     return rows;

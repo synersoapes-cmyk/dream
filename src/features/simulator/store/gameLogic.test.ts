@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
+import {
+  computeCombatStatsWithPanelBaseline,
+  computeDerivedStats,
+} from '@/features/simulator/store/gameLogic';
 import type {
   BaseAttributes,
   Equipment,
@@ -235,6 +238,125 @@ test('computeDerivedStats converts agility into speed at the expected rate', () 
   const result = computeDerivedStats(baseAttributes, [], null);
 
   assert.equal(result.speed, 7);
+});
+
+test('computeCombatStatsWithPanelBaseline preserves OCR panel when current and baseline inputs match', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 100,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 0,
+    agility: 0,
+    faction: '龙宫',
+  };
+
+  const equipment: Equipment[] = [
+    {
+      id: 'weapon_live',
+      name: '当前武器',
+      type: 'weapon',
+      mainStat: '法伤 +120',
+      baseStats: { magicDamage: 120 },
+      stats: { magicDamage: 120 },
+    },
+  ];
+
+  const result = computeCombatStatsWithPanelBaseline(
+    {
+      baseAttributes,
+      equipment,
+      treasure: null,
+    },
+    {
+      panelStats: {
+        hp: 3850,
+        magic: 2200,
+        hit: 990,
+        damage: 0,
+        magicDamage: 1460,
+        defense: 920,
+        magicDefense: 1180,
+        speed: 540,
+        dodge: 180,
+        spiritualPower: 1180,
+      },
+      baseAttributes,
+      equipment,
+      treasure: null,
+    }
+  );
+
+  assert.equal(result.magicDamage, 1460);
+  assert.equal(result.magicDefense, 1180);
+  assert.equal(result.speed, 540);
+});
+
+test('computeCombatStatsWithPanelBaseline applies only incremental deltas on top of OCR panel', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 100,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 0,
+    agility: 0,
+    faction: '龙宫',
+  };
+
+  const baselineEquipment: Equipment[] = [
+    {
+      id: 'weapon_live',
+      name: '当前武器',
+      type: 'weapon',
+      mainStat: '法伤 +120',
+      baseStats: { magicDamage: 120 },
+      stats: { magicDamage: 120 },
+    },
+  ];
+  const upgradedEquipment: Equipment[] = [
+    {
+      id: 'weapon_upgrade',
+      name: '升级武器',
+      type: 'weapon',
+      mainStat: '法伤 +220',
+      baseStats: { magicDamage: 220 },
+      stats: { magicDamage: 220 },
+    },
+  ];
+
+  const result = computeCombatStatsWithPanelBaseline(
+    {
+      baseAttributes,
+      equipment: upgradedEquipment,
+      treasure: null,
+    },
+    {
+      panelStats: {
+        hp: 3850,
+        magic: 2200,
+        hit: 990,
+        damage: 0,
+        magicDamage: 1460,
+        defense: 920,
+        magicDefense: 1180,
+        speed: 540,
+        dodge: 180,
+        spiritualPower: 1180,
+      },
+      baseAttributes,
+      equipment: baselineEquipment,
+      treasure: null,
+    }
+  );
+
+  assert.equal(result.magicDamage, 1560);
+  assert.equal(result.magicDefense, 1180);
 });
 
 test('computeDerivedStats applies meridian magic bonus to panel values', () => {

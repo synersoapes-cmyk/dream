@@ -16,6 +16,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Label } from '@/shared/components/ui/label';
 import { formatDateTimeValue } from '@/shared/lib/date';
 import { getSimulatorEquipmentFieldLabel } from '@/shared/lib/simulator-equipment-editor';
+import { readSimulatorEquipmentOcrImageHintMeta } from '@/shared/lib/simulator-ocr-image-hint';
 import { cn } from '@/shared/lib/utils';
 
 type ReviewItem = {
@@ -153,6 +154,18 @@ function getRawTextSummary(rawText?: string) {
   }
 }
 
+function getRawTextHintMeta(rawText?: string) {
+  if (!rawText?.trim()) {
+    return null;
+  }
+
+  try {
+    return readSimulatorEquipmentOcrImageHintMeta(JSON.parse(rawText));
+  } catch {
+    return null;
+  }
+}
+
 export function SimulatorPendingReviewPanel({
   canEdit = false,
   initialItems,
@@ -211,6 +224,10 @@ export function SimulatorPendingReviewPanel({
   const selectedItem = useMemo(
     () => filteredItems.find((item) => item.id === selectedId) ?? null,
     [filteredItems, selectedId]
+  );
+  const selectedItemHintMeta = useMemo(
+    () => getRawTextHintMeta(selectedItem?.rawText),
+    [selectedItem?.rawText]
   );
   const selectedFieldId = (field: string) =>
     buildFieldId('candidate-equipment', selectedItem?.id ?? 'empty', field);
@@ -628,6 +645,18 @@ export function SimulatorPendingReviewPanel({
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-2">
                 <Label>识别来源摘要</Label>
+                {selectedItemHintMeta ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">
+                      {selectedItemHintMeta.label}
+                    </Badge>
+                    <Badge variant="outline">
+                      {selectedItemHintMeta.routingMode === 'manual'
+                        ? '手动指定'
+                        : '自动识别'}
+                    </Badge>
+                  </div>
+                ) : null}
                 <div className="bg-muted/20 rounded-lg border">
                   {getRawTextSummary(selectedItem.rawText).length > 0 ? (
                     <div className="divide-y">

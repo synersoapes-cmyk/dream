@@ -4,6 +4,7 @@ import { useGameStore } from '@/features/simulator/store/gameStore';
 import {
   applySimulatorCandidateEquipmentToStore,
   buildSimulatorCandidateEquipmentPayload,
+  loadSimulatorCandidateEquipmentToStore,
 } from '@/features/simulator/utils/simulatorCandidateEquipment';
 
 import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
@@ -59,4 +60,39 @@ test('buildSimulatorCandidateEquipmentPayload reads latest confirmed status from
   const confirmedItem = payload.find((item) => item.id === 'pending_1');
 
   assert.equal(confirmedItem?.status, 'confirmed');
+});
+
+test('loadSimulatorCandidateEquipmentToStore fetches candidate library into store', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        code: 0,
+        data: createItems(),
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )) as typeof fetch;
+
+  try {
+    useGameStore.setState((state) => ({
+      ...state,
+      pendingEquipments: [],
+      selectedPendingIds: [],
+    }));
+
+    const items = await loadSimulatorCandidateEquipmentToStore();
+    const state = useGameStore.getState();
+
+    assert.equal(items.length, 2);
+    assert.equal(state.pendingEquipments.length, 2);
+    assert.equal(state.pendingEquipments[0]?.equipment.name, '待确认法杖');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

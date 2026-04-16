@@ -152,6 +152,255 @@ test('equipment set CRUD actions create duplicate remove and reorder plans', () 
   assert.equal(state.equipmentSets[2]?.isActive, true);
 });
 
+test('updateEquipmentInSet updates an inactive plan without changing current equipment', () => {
+  const baseSetA = [createEquipment('weapon_a', 'weapon', 100)];
+  const baseSetB = [createEquipment('weapon_b', 'weapon', 200)];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore
+    .getState()
+    .updateEquipmentInSet(1, createEquipment('weapon_b_plus', 'weapon', 260));
+
+  const state = useGameStore.getState();
+  assert.equal(state.activeSetIndex, 0);
+  assert.equal(state.equipment[0]?.id, 'weapon_a');
+  assert.equal(state.equipmentSets[0]?.items[0]?.id, 'weapon_a');
+  assert.equal(state.equipmentSets[1]?.items[0]?.id, 'weapon_b_plus');
+  assert.equal(state.equipmentSets[1]?.isActive, false);
+});
+
+test('updateEquipmentInSet updates active plan and current equipment together', () => {
+  const baseSetA = [createEquipment('weapon_a', 'weapon', 100)];
+  const baseSetB = [createEquipment('weapon_b', 'weapon', 200)];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetB),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: false,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 1,
+  }));
+
+  useGameStore
+    .getState()
+    .updateEquipmentInSet(1, createEquipment('weapon_b_plus', 'weapon', 260));
+
+  const state = useGameStore.getState();
+  assert.equal(state.activeSetIndex, 1);
+  assert.equal(state.equipment[0]?.id, 'weapon_b_plus');
+  assert.equal(state.equipmentSets[1]?.items[0]?.id, 'weapon_b_plus');
+  assert.equal(state.equipmentSets[1]?.isActive, true);
+});
+
+test('updateEquipmentListInSet updates multiple slots in one inactive plan without changing current equipment', () => {
+  const baseSetA = [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('helmet_a', 'helmet', 20),
+  ];
+  const baseSetB = [
+    createEquipment('weapon_b', 'weapon', 200),
+    createEquipment('helmet_b', 'helmet', 40),
+  ];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore.getState().updateEquipmentListInSet(1, [
+    createEquipment('weapon_b_plus', 'weapon', 260),
+    createEquipment('helmet_b_plus', 'helmet', 60),
+  ]);
+
+  const state = useGameStore.getState();
+  assert.equal(state.equipment[0]?.id, 'weapon_a');
+  assert.equal(state.equipmentSets[1]?.items[0]?.id, 'weapon_b_plus');
+  assert.equal(state.equipmentSets[1]?.items[1]?.id, 'helmet_b_plus');
+});
+
+test('updateEquipmentListInSet updates active plan and current equipment together', () => {
+  const baseSet = [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('helmet_a', 'helmet', 20),
+  ];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSet),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSet),
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore.getState().updateEquipmentListInSet(0, [
+    createEquipment('weapon_a_plus', 'weapon', 180),
+    createEquipment('helmet_a_plus', 'helmet', 35),
+  ]);
+
+  const state = useGameStore.getState();
+  assert.equal(state.equipment[0]?.id, 'weapon_a_plus');
+  assert.equal(state.equipment[1]?.id, 'helmet_a_plus');
+  assert.equal(state.equipmentSets[0]?.items[0]?.id, 'weapon_a_plus');
+  assert.equal(state.equipmentSets[0]?.items[1]?.id, 'helmet_a_plus');
+});
+
+test('removeEquipmentInSet removes one slot from an inactive plan without touching current equipment', () => {
+  const baseSetA = [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('helmet_a', 'helmet', 20),
+  ];
+  const baseSetB = [
+    createEquipment('weapon_b', 'weapon', 200),
+    createEquipment('helmet_b', 'helmet', 40),
+  ];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore
+    .getState()
+    .removeEquipmentInSet(1, createEquipment('weapon_b', 'weapon', 200));
+
+  const state = useGameStore.getState();
+  assert.equal(state.equipment[0]?.id, 'weapon_a');
+  assert.equal(state.equipmentSets[1]?.items.length, 1);
+  assert.equal(state.equipmentSets[1]?.items[0]?.id, 'helmet_b');
+});
+
+test('removeEquipmentListInSet removes multiple slots from the active plan and current equipment together', () => {
+  const baseSet = [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('helmet_a', 'helmet', 20),
+    createEquipment('shoes_a', 'shoes', 30),
+  ];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSet),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSet),
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore.getState().removeEquipmentListInSet(0, [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('shoes_a', 'shoes', 30),
+  ]);
+
+  const state = useGameStore.getState();
+  assert.equal(state.equipment.length, 1);
+  assert.equal(state.equipment[0]?.id, 'helmet_a');
+  assert.equal(state.equipmentSets[0]?.items.length, 1);
+  assert.equal(state.equipmentSets[0]?.items[0]?.id, 'helmet_a');
+});
+
+test('laboratory sample plan index is clamped to available equipment sets', () => {
+  const baseSetA = [createEquipment('weapon_a', 'weapon', 100)];
+  const baseSetB = [createEquipment('weapon_b', 'weapon', 200)];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+    laboratorySampleSetIndex: 0,
+  }));
+
+  useGameStore.getState().setLaboratorySampleSetIndex(99);
+  assert.equal(useGameStore.getState().laboratorySampleSetIndex, 1);
+
+  useGameStore.getState().setLaboratorySampleSetIndex(-10);
+  assert.equal(useGameStore.getState().laboratorySampleSetIndex, 0);
+});
+
 test('laboratory compare seats are capped at one visible comparison seat', () => {
   useGameStore.setState((state) => ({
     ...state,
@@ -348,6 +597,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
       },
     ],
     activeSetIndex: 0,
+    laboratorySampleSetIndex: 0,
     skills: [],
     cultivation: {
       bodyStrength: 0,
@@ -432,6 +682,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
     ...state,
     syncedCloudState: cloudState,
     autoRecalculateDerivedStats: true,
+    laboratorySampleSetIndex: 1,
     combatStats: {
       ...cloudState.combatStats,
       magicDamage: 2630,
@@ -451,6 +702,7 @@ test('restoring status mode reapplies last synced cloud snapshot', () => {
   assert.equal(state.combatStats.magicDamage, 1460);
   assert.equal(state.combatStats.speed, 540);
   assert.equal(state.combatStats.magicDefense, 1180);
+  assert.equal(state.laboratorySampleSetIndex, 1);
 });
 
 test('restoring status mode can resume auto recalculation from synced cloud snapshot', () => {
@@ -496,6 +748,7 @@ test('restoring status mode can resume auto recalculation from synced cloud snap
       },
     ],
     activeSetIndex: 0,
+    laboratorySampleSetIndex: 0,
     skills: [],
     cultivation: {
       bodyStrength: 0,
@@ -603,13 +856,13 @@ test('restoring status mode can resume auto recalculation from synced cloud snap
   let state = useGameStore.getState();
   assert.equal(state.autoRecalculateDerivedStats, true);
   assert.equal(state.equipment[0]?.id, 'cloud_weapon');
-  assert.equal(state.combatStats.magicDamage, 190);
+  assert.equal(state.combatStats.magicDamage, 70);
   assert.equal(state.combatStats.magicDefense, 70);
 
   useGameStore.getState().updateMeridian('magic', 10);
 
   state = useGameStore.getState();
-  assert.equal(state.combatStats.magicDamage, 197);
+  assert.equal(state.combatStats.magicDamage, 77);
   assert.equal(state.combatStats.magicDefense, 77);
   assert.equal(state.combatStats.spiritualPower, 77);
 });
@@ -767,6 +1020,7 @@ test('setActiveRegularSetRules updates current combat panel stats immediately', 
   useGameStore.setState((state) => ({
     ...state,
     autoRecalculateDerivedStats: true,
+    syncedCloudState: null,
     activeRegularSetRules: [],
     baseAttributes: {
       ...state.baseAttributes,
@@ -823,7 +1077,6 @@ test('setActiveRegularSetRules updates current combat panel stats immediately', 
   }));
 
   useGameStore.getState().recalculateCombatStats();
-  const before = useGameStore.getState().combatStats;
 
   useGameStore.getState().setActiveRegularSetRules([
     {
@@ -840,7 +1093,7 @@ test('setActiveRegularSetRules updates current combat panel stats immediately', 
   ]);
 
   const after = useGameStore.getState().combatStats;
-  assert.equal(after.magic, (before.magic ?? 0) + 7);
+  assert.equal(after.magic, 392);
   assert.equal(after.magicDamage, 78);
   assert.equal(after.magicDefense, 78);
 });
@@ -943,6 +1196,7 @@ test('restoreCloudState keeps active regular set rules for later recalculation',
       },
     ],
     activeSetIndex: 0,
+    laboratorySampleSetIndex: 0,
     skills: [],
     cultivation: {
       bodyStrength: 0,
@@ -1085,9 +1339,9 @@ test('restoreCloudState keeps active regular set rules for later recalculation',
 
   const state = useGameStore.getState();
   assert.equal(state.activeRegularSetRules.length, 1);
-  assert.equal(state.combatStats.magic, 392);
-  assert.equal(state.combatStats.magicDamage, 78);
-  assert.equal(state.combatStats.magicDefense, 78);
+  assert.equal(state.combatStats.magic, 350);
+  assert.equal(state.combatStats.magicDamage, 70);
+  assert.equal(state.combatStats.magicDefense, 70);
 });
 
 test('recalculateCombatStats uses synced baseline equipment to avoid double counting jiulong panel spirit', () => {
@@ -1217,6 +1471,7 @@ test('recalculateCombatStats uses synced baseline equipment to avoid double coun
           specialMagicDamageReductionFactor: 1,
           targetFormation: '普通阵',
         },
+        laboratorySampleSetIndex: 0,
       }),
       baseAttributes: {
         ...state.baseAttributes,

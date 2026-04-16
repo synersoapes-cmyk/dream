@@ -1,11 +1,12 @@
 'use client';
 
-import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
+import { computeCombatStatsWithPanelBaseline } from '@/features/simulator/store/gameLogic';
 import type {
   BaseAttributes,
   Equipment,
   ExperimentSeat,
   MeridianConfig,
+  SyncedCloudState,
   Treasure,
 } from '@/features/simulator/store/gameTypes';
 import { getVisibleExperimentSeats } from '@/features/simulator/utils/simulatorExperimentSeats';
@@ -42,6 +43,7 @@ type Props = {
   labValuationError: string | null;
   isLoadingLabValuation: boolean;
   regularSetRules?: RegularSetRuntimeRule[];
+  syncedCloudState?: SyncedCloudState | null;
 };
 
 type TableSeatData = {
@@ -49,7 +51,7 @@ type TableSeatData = {
   seatEquip: Equipment[];
   totals: Record<string, number>;
   totalPrice: number;
-  seatCombatStats: ReturnType<typeof computeDerivedStats>;
+  seatCombatStats: ReturnType<typeof computeCombatStatsWithPanelBaseline>;
   seatLabValuation?: LabValuationSeatResult;
 };
 
@@ -64,21 +66,37 @@ export function LaboratoryComparisonTable({
   labValuationError,
   isLoadingLabValuation,
   regularSetRules,
+  syncedCloudState,
 }: Props) {
   const displaySeats = getVisibleExperimentSeats(experimentSeats);
   const allSeatsData: TableSeatData[] = displaySeats.map((seat) => {
     const seatEquip = resolveLaboratorySeatEquipment(seat, sampleEquipment);
     const { totals, totalPrice } = calculateEquipmentTotalStats(seatEquip);
-    const seatCombatStats = computeDerivedStats(
-      baseAttributes,
-      seatEquip,
-      treasure,
+    const seatCombatStats = computeCombatStatsWithPanelBaseline(
       {
+        baseAttributes,
+        equipment: seatEquip,
+        treasure,
         bodyStrength,
         meridian,
         regularSetRules,
         runeSkillBaselineEquipment: sampleEquipment,
-      }
+      },
+      syncedCloudState
+        ? {
+            panelStats: syncedCloudState.combatStats,
+            baseAttributes: syncedCloudState.baseAttributes,
+            equipment: syncedCloudState.equipment,
+            treasure: syncedCloudState.treasure,
+            bodyStrength: syncedCloudState.cultivation.bodyStrength,
+            formation:
+              syncedCloudState.playerSetup?.formation ??
+              syncedCloudState.formation,
+            meridian: syncedCloudState.meridian,
+            regularSetRules,
+            runeSkillBaselineEquipment: syncedCloudState.equipment,
+          }
+        : null
     );
     const seatLabValuation = labValuationBySeatId[seat.id];
 

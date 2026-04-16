@@ -12,6 +12,8 @@ import {
   user,
 } from '@/config/db/schema';
 import { getUuid } from '@/shared/lib/hash';
+import { readSimulatorInventoryMirrorMeta } from '@/shared/lib/simulator-inventory-mirror';
+import { readSimulatorEquipmentOcrImageHintMeta } from '@/shared/lib/simulator-ocr-image-hint';
 
 import { syncInventoryEntriesForCharacter } from './simulator-candidate';
 import {
@@ -27,14 +29,14 @@ import {
 import { mapCandidateEquipmentRow } from './simulator-mappers';
 import type {
   AdminSimulatorInventoryEntryItem,
-  AdminSimulatorOcrMetrics,
   AdminSimulatorOcrDictionaryItem,
   AdminSimulatorOcrJobItem,
+  AdminSimulatorOcrMetrics,
   SimulatorCandidateEquipment,
   SimulatorInventoryEntry,
   SimulatorInventoryEquipmentAsset,
-  SimulatorOcrJob,
   SimulatorOcrDraftItem,
+  SimulatorOcrJob,
 } from './simulator-types';
 
 export type SimulatorOcrTimelineLog = {
@@ -44,6 +46,8 @@ export type SimulatorOcrTimelineLog = {
   message: string;
   details?: string;
   imagePreview?: string;
+  hintLabel?: string;
+  hintRoutingMode?: 'automatic' | 'manual';
 };
 
 type SimulatorOcrCandidateStatusRow = {
@@ -135,14 +139,19 @@ function getOcrStructuredSource(params: {
 
   const raw = parseJsonObject(params.rawResultJson);
   const recognized =
-    raw.recognized && typeof raw.recognized === 'object' && !Array.isArray(raw.recognized)
+    raw.recognized &&
+    typeof raw.recognized === 'object' &&
+    !Array.isArray(raw.recognized)
       ? (raw.recognized as Record<string, unknown>)
       : null;
 
   return recognized && Object.keys(recognized).length > 0 ? recognized : raw;
 }
 
-function collectMissingFields(sceneType: string, source: Record<string, unknown>) {
+function collectMissingFields(
+  sceneType: string,
+  source: Record<string, unknown>
+) {
   const expectedFields = OCR_EXPECTED_FIELDS[sceneType] ?? ['name', 'type'];
 
   return expectedFields.filter((field) => {
@@ -195,6 +204,13 @@ function mapAdminSimulatorInventoryEntryRow(row: {
   const equipmentType =
     row.inventory_equipment_asset?.itemSubtype?.trim() ||
     String(payload.type || '');
+  const mirrorMeta = readSimulatorInventoryMirrorMeta(payload);
+  const inventorySourceKind =
+    mirrorMeta?.sourceKind ??
+    (row.inventory_equipment_asset?.sourceCandidateId ? 'candidate_library' : null);
+  const inventorySourceLabel =
+    mirrorMeta?.sourceLabel?.trim() ||
+    (row.inventory_equipment_asset?.sourceCandidateId ? '候选装备库' : null);
 
   return {
     id: row.inventory_entry.id,
@@ -222,6 +238,8 @@ function mapAdminSimulatorInventoryEntryRow(row: {
     equipmentName,
     equipmentType,
     candidateStatus: row.candidate_equipment?.status ?? null,
+    inventorySourceKind,
+    inventorySourceLabel,
   };
 }
 
@@ -273,6 +291,8 @@ function mapSimulatorOcrJobToTimelineLog(params: {
   drafts: SimulatorOcrDraftItem[];
   candidateStatusByDraftId: Map<string, string>;
 }): SimulatorOcrTimelineLog {
+  const rawResult = parseJsonObject(params.job.rawResultJson);
+  const ocrHintMeta = readSimulatorEquipmentOcrImageHintMeta(rawResult);
   const latestDraft = params.drafts[0] ?? null;
   const draftBody = latestDraft
     ? parseJsonObject(latestDraft.draftBodyJson)
@@ -282,12 +302,22 @@ function mapSimulatorOcrJobToTimelineLog(params: {
     return {
       id: params.job.id,
       timestamp:
-        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+        params.job.updatedAt?.getTime?.() ??
+        params.job.createdAt?.getTime?.() ??
+        0,
       type: 'error',
       message:
-        params.job.sceneType === 'profile' ? '人物属性识别失败' : '图片识别失败',
+        params.job.sceneType === 'profile'
+          ? '人物属性识别失败'
+          : '图片识别失败',
       details: params.job.errorMessage || '请重试或更换清晰图片',
       imagePreview: params.job.imageUrl || undefined,
+      hintLabel:
+        params.job.sceneType === 'equipment' ? ocrHintMeta?.label : undefined,
+      hintRoutingMode:
+        params.job.sceneType === 'equipment'
+          ? ocrHintMeta?.routingMode
+          : undefined,
     };
   }
 
@@ -295,7 +325,9 @@ function mapSimulatorOcrJobToTimelineLog(params: {
     return {
       id: params.job.id,
       timestamp:
-        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+        params.job.updatedAt?.getTime?.() ??
+        params.job.createdAt?.getTime?.() ??
+        0,
       type: 'info',
       message: '识别任务处理中',
       details:
@@ -303,6 +335,12 @@ function mapSimulatorOcrJobToTimelineLog(params: {
           ? '人物属性截图正在识别'
           : '装备截图正在识别',
       imagePreview: params.job.imageUrl || undefined,
+      hintLabel:
+        params.job.sceneType === 'equipment' ? ocrHintMeta?.label : undefined,
+      hintRoutingMode:
+        params.job.sceneType === 'equipment'
+          ? ocrHintMeta?.routingMode
+          : undefined,
     };
   }
 
@@ -311,7 +349,9 @@ function mapSimulatorOcrJobToTimelineLog(params: {
     return {
       id: params.job.id,
       timestamp:
-        params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+        params.job.updatedAt?.getTime?.() ??
+        params.job.createdAt?.getTime?.() ??
+        0,
       type: 'success',
       message: '人物属性识别完成',
       details:
@@ -333,13 +373,17 @@ function mapSimulatorOcrJobToTimelineLog(params: {
   return {
     id: params.job.id,
     timestamp:
-      params.job.updatedAt?.getTime?.() ?? params.job.createdAt?.getTime?.() ?? 0,
+      params.job.updatedAt?.getTime?.() ??
+      params.job.createdAt?.getTime?.() ??
+      0,
     type: 'success',
     message: `识别到新物品 ${equipmentName}`,
     details:
       latestDraft?.reviewNote?.trim() ||
       (candidateStatus ? `候选库状态：${candidateStatus}` : '已写入待确认列表'),
     imagePreview: params.job.imageUrl || undefined,
+    hintLabel: ocrHintMeta?.label,
+    hintRoutingMode: ocrHintMeta?.routingMode,
   };
 }
 
@@ -348,12 +392,13 @@ export async function createSimulatorOcrJob(
   params: {
     sceneType: 'profile' | 'equipment' | 'ornament' | 'jade';
     imageUrl?: string;
+    characterId?: string;
   }
 ) {
   await ensureSimulatorDbReady();
 
   return withTransientD1Retry('createSimulatorOcrJob', async () => {
-    const character = await findActiveCharacter(userId);
+    const character = await findActiveCharacter(userId, params.characterId);
     if (!character) {
       return null;
     }
@@ -537,7 +582,8 @@ export async function finalizeSimulatorProfileOcrJob(params: {
         confidenceScore: inferOcrDraftConfidence(params.rawResult),
         reviewStatus: 'approved',
         reviewNote:
-          params.reviewNote?.trim() || '人物属性 OCR 已识别完成，等待用户确认同步',
+          params.reviewNote?.trim() ||
+          '人物属性 OCR 已识别完成，等待用户确认同步',
       });
 
     return {
@@ -551,12 +597,13 @@ export async function listSimulatorRecentOcrLogs(
   params?: {
     sceneType?: 'profile' | 'equipment' | 'ornament' | 'jade';
     limit?: number;
+    characterId?: string;
   }
 ) {
   await ensureSimulatorDbReady();
 
   return withTransientD1Retry('listSimulatorRecentOcrLogs', async () => {
-    const character = await findActiveCharacter(userId);
+    const character = await findActiveCharacter(userId, params?.characterId);
     if (!character) {
       return [];
     }
@@ -616,10 +663,10 @@ export async function listSimulatorRecentOcrLogs(
             row.ocrDraftItemId.length > 0 &&
             typeof row.status === 'string'
         )
-        .map((row: { ocrDraftItemId: string; status: string }) => [
-          row.ocrDraftItemId,
-          row.status,
-        ] as const)
+        .map(
+          (row: { ocrDraftItemId: string; status: string }) =>
+            [row.ocrDraftItemId, row.status] as const
+        )
     );
 
     return rows.map((job: SimulatorOcrJob) =>
@@ -762,10 +809,10 @@ export async function getAdminSimulatorOcrMetrics(): Promise<AdminSimulatorOcrMe
             row.ocrDraftItemId.length > 0 &&
             typeof row.status === 'string'
         )
-        .map((row: { ocrDraftItemId: string; status: string }) => [
-          row.ocrDraftItemId,
-          row.status,
-        ] as const)
+        .map(
+          (row: { ocrDraftItemId: string; status: string }) =>
+            [row.ocrDraftItemId, row.status] as const
+        )
     );
 
     const totals = {

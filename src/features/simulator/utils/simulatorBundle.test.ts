@@ -57,6 +57,13 @@ function createBundle(): SimulatorCharacterBundle {
       rawBodyJson: JSON.stringify({
         magicPower: 610,
         dodge: 205,
+        artifactConfig: {
+          name: '阳玉',
+          statKey: 'magicCritLevel',
+          value: 38,
+          description: '法暴神器加成',
+          isActive: true,
+        },
         meridianConfig: {
           physique: 0,
           magic: 12,
@@ -180,6 +187,9 @@ test('applySimulatorBundleToStore hydrates persisted battle context into store',
   assert.equal(state.meridian.magic, 12);
   assert.equal(state.meridian.magicPower, 8);
   assert.equal(state.playerSetup.meridian.magic, 12);
+  assert.equal(state.treasure?.name, '阳玉');
+  assert.equal(state.treasure?.stats.magicCritLevel, 38);
+  assert.equal(state.syncedCloudState?.treasure?.stats.magicCritLevel, 38);
 });
 
 test('buildSimulatorBundleStorePreview matches the hydrated profile values', () => {

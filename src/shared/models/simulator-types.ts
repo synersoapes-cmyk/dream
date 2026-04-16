@@ -278,6 +278,22 @@ export type AdminSimulatorInventoryEntryItem = {
   equipmentName: string;
   equipmentType: string;
   candidateStatus: string | null;
+  inventorySourceKind: string | null;
+  inventorySourceLabel: string | null;
+};
+
+export type SimulatorInventoryLibraryItem = {
+  id: string;
+  characterId: string;
+  entryId: string;
+  assetId: string;
+  folderKey: string;
+  price: number | null;
+  status: string;
+  timestamp: number;
+  inventorySourceKind: string | null;
+  inventorySourceLabel: string | null;
+  equipment: Record<string, unknown>;
 };
 
 export type AdminSimulatorLabSessionItem = {

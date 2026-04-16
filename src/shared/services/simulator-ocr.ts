@@ -1,16 +1,22 @@
-import { getUuid } from '@/shared/lib/hash';
 import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
+
+import { getUuid } from '@/shared/lib/hash';
 import {
   normalizeSimulatorOcrEquipmentType,
   type SimulatorOcrEquipmentType,
 } from '@/shared/lib/simulator-equipment';
+import {
+  getSimulatorEquipmentOcrImageHintPrompt,
+  normalizeSimulatorEquipmentOcrImageHint,
+  type SimulatorEquipmentOcrImageHint,
+} from '@/shared/lib/simulator-ocr-image-hint';
 import { getAllConfigs } from '@/shared/models/config';
-import { listEnabledSimulatorOcrDictionaryEntries } from '@/shared/models/simulator-user';
 import type {
   SimulatorCharacterBundle,
   SimulatorEquipment,
   SimulatorOcrDictionary,
 } from '@/shared/models/simulator-types';
+import { listEnabledSimulatorOcrDictionaryEntries } from '@/shared/models/simulator-user';
 import { getStorageService } from '@/shared/services/storage';
 
 type SimulatorEquipmentLike = {
@@ -525,7 +531,10 @@ export function mergeRecognizedProfileWithBundle(
       toFiniteNumber(currentProfile?.magic, rawProfile.magic),
     potentialPoints:
       recognizedProfile.potentialPoints ??
-      toFiniteNumber(currentProfile?.potentialPoints, rawProfile.potentialPoints),
+      toFiniteNumber(
+        currentProfile?.potentialPoints,
+        rawProfile.potentialPoints
+      ),
     strength:
       recognizedProfile.strength ??
       toFiniteNumber(currentProfile?.strength, rawProfile.strength),
@@ -567,7 +576,11 @@ export function normalizeRecognizedEquipment(
   _imageUrl?: string
 ): SimulatorEquipmentLike {
   const type = normalizeEquipmentType(value.type);
-  const stats = enrichEquipmentStatsFromText(normalizeStats(value.stats), value);
+  const name = String(value.name || '未命名装备');
+  const stats = enrichEquipmentStatsFromText(
+    normalizeStats(value.stats),
+    value
+  );
   let slot: number | undefined;
 
   if (type === 'trinket') {
@@ -578,7 +591,7 @@ export function normalizeRecognizedEquipment(
 
   return {
     id: String(value.id || getUuid()),
-    name: String(value.name || '未命名装备'),
+    name,
     type,
     slot,
     mainStat: String(value.mainStat || '待补充属性'),
@@ -595,7 +608,7 @@ export function normalizeRecognizedEquipment(
       value.crossServerFee !== undefined
         ? toFiniteNumber(value.crossServerFee)
         : undefined,
-    imageUrl: getEquipmentDefaultImage(type),
+    imageUrl: getEquipmentDefaultImage(type, name),
     level: value.level !== undefined ? toFiniteNumber(value.level) : undefined,
     element: value.element ? String(value.element) : undefined,
     durability:
@@ -674,9 +687,12 @@ export function applySimulatorOcrDictionaryToEquipment<
 
   return {
     ...equipment,
-    name: applyDictionaryToText(equipment.name, equipmentNameEntries) || equipment.name,
+    name:
+      applyDictionaryToText(equipment.name, equipmentNameEntries) ||
+      equipment.name,
     mainStat:
-      applyDictionaryToText(equipment.mainStat, attrEntries) || equipment.mainStat,
+      applyDictionaryToText(equipment.mainStat, attrEntries) ||
+      equipment.mainStat,
     extraStat: applyDictionaryToText(equipment.extraStat, attrEntries),
     specialEffect: applyDictionaryToText(equipment.specialEffect, attrEntries),
     refinementEffect: applyDictionaryToText(
@@ -830,10 +846,13 @@ async function callGeminiEquipmentOcr(params: {
   apiKey: string;
   mimeType: string;
   imageBytes: Uint8Array;
+  imageHint?: SimulatorEquipmentOcrImageHint;
 }) {
+  const imageHint = normalizeSimulatorEquipmentOcrImageHint(params.imageHint);
   const prompt = [
     '你正在识别中文游戏《梦幻西游》的装备截图。',
     '请只返回一个 JSON 对象，不要输出 markdown，不要解释。',
+    getSimulatorEquipmentOcrImageHintPrompt(imageHint),
     '字段要求：',
     'type: weapon|helmet|necklace|armor|belt|shoes|trinket|jade',
     'slot: 灵饰或玉魄槽位数字，普通装备不要填',
@@ -940,7 +959,12 @@ async function callGeminiProfileOcr(params: {
   });
 }
 
-export async function recognizeSimulatorEquipmentFromImage(file: File) {
+export async function recognizeSimulatorEquipmentFromImage(
+  file: File,
+  options?: {
+    imageHint?: SimulatorEquipmentOcrImageHint;
+  }
+) {
   const configs = await getAllConfigs();
   const configStatus = await getSimulatorOcrConfigStatus(configs);
   if (!configStatus.ready) {
@@ -952,6 +976,7 @@ export async function recognizeSimulatorEquipmentFromImage(file: File) {
     apiKey: configs.gemini_api_key,
     mimeType: file.type,
     imageBytes: uploaded.buffer,
+    imageHint: options?.imageHint,
   });
   if (!hasRecognizedEquipmentFields(recognized)) {
     throw new Error('未检测到游戏组件');

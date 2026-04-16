@@ -6,25 +6,26 @@ import type {
   ExperimentSeat,
   RuneStone,
 } from '@/features/simulator/store/gameTypes';
-import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { getVisibleCompareExperimentSeats } from '@/features/simulator/utils/simulatorExperimentSeats';
 import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
 import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
-import { analyzeRuneComboConflict } from '@/shared/lib/simulator-rune-combo';
+import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
+import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
+import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
+import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
+import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
 import {
   formatSimulatorEquipmentStatValue,
   getSimulatorEquipmentInitialValueEntries,
 } from '@/shared/lib/simulator-equipment-editor';
-import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
-import { isSimulatorPrimaryEquipment } from '@/shared/lib/simulator-rune-editor';
-import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
-import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
-import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
-import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
+import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
-import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
+import { isSimulatorPrimaryEquipment } from '@/shared/lib/simulator-rune-editor';
+import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+import type { SimulatorEquipmentLibrarySourceKind } from '@/shared/lib/simulator-equipment-library';
 
 import {
   AVAILABLE_RUNE_SETS,
@@ -37,6 +38,17 @@ type Props = {
   equipment: Equipment;
   experimentSeats: ExperimentSeat[];
   formatPrice: (price: number | undefined) => string;
+  sourceLabels?: string[];
+  sourceKinds?: SimulatorEquipmentLibrarySourceKind[];
+  onRemoveCandidateSource?: (() => void) | null;
+  inventoryStatusActions?: {
+    activeCount: number;
+    inactiveCount: number;
+    isUpdating: boolean;
+    onRestoreActive: () => void;
+    onMarkSold: () => void;
+    onMarkDiscarded: () => void;
+  } | null;
   onClose: () => void;
   onReplaceCurrent: (equipment: Equipment) => Promise<void> | void;
   onApplyToSeat: (seatId: string, equipment: Equipment) => Promise<void> | void;
@@ -46,6 +58,10 @@ export function LaboratoryEquipmentDetailModal({
   equipment,
   experimentSeats,
   formatPrice,
+  sourceLabels = [],
+  sourceKinds = [],
+  onRemoveCandidateSource = null,
+  inventoryStatusActions = null,
   onClose,
   onReplaceCurrent,
   onApplyToSeat,
@@ -54,12 +70,7 @@ export function LaboratoryEquipmentDetailModal({
     cloneEquipmentForEditor(equipment)
   );
   const [runePopover, setRunePopover] = useState<{
-    type:
-      | 'rune'
-      | 'starPosition'
-      | 'starAlignment'
-      | 'luckyHoles'
-      | 'runeSet';
+    type: 'rune' | 'starPosition' | 'starAlignment' | 'luckyHoles' | 'runeSet';
     index?: number;
   } | null>(null);
   const [referenceElement, setReferenceElement] = useState<HTMLElement | null>(
@@ -76,8 +87,18 @@ export function LaboratoryEquipmentDetailModal({
       : undefined
   );
   const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
+    'regular_set_rules',
     'jade_attribute_pool',
   ]);
+  const regularSetRules = useMemo(
+    () =>
+      parseRegularSetRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'regular_set_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
   const jadeAttributePool = useMemo(
     () =>
       draftEquipment.type === 'jade'
@@ -118,13 +139,27 @@ export function LaboratoryEquipmentDetailModal({
     () => getSimulatorEquipmentInitialValueEntries(draftEquipment),
     [draftEquipment]
   );
-  const runeComboConflict = useMemo(
+  const ruleInsights = useMemo(
     () =>
-      isSimulatorPrimaryEquipment(draftEquipment.type)
-        ? analyzeRuneComboConflict(draftEquipment)
-        : null,
-    [draftEquipment]
+      buildEquipmentRuleInsights(draftEquipment, {
+        regularSetRules,
+      }),
+    [draftEquipment, regularSetRules]
   );
+  const sourceKindLabels = useMemo(() => {
+    return sourceKinds.map((sourceKind) => {
+      if (sourceKind === 'inventory_asset') {
+        return '正式库存来源';
+      }
+      if (sourceKind === 'current_plan') {
+        return '当前方案来源';
+      }
+      if (sourceKind === 'equipment_plan') {
+        return '其他方案来源';
+      }
+      return '候选装备库来源';
+    });
+  }, [sourceKinds]);
 
   return (
     <div className="absolute inset-0 z-10 flex flex-col bg-slate-950/95 p-5">
@@ -144,10 +179,7 @@ export function LaboratoryEquipmentDetailModal({
             <div className="flex gap-6">
               <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                 <img
-                  src={
-                    getSimulatorDisplayImageUrl(draftEquipment.imageUrl) ||
-                    getEquipmentDefaultImage(draftEquipment.type)
-                  }
+                  src={getSimulatorEquipmentDisplayImageUrl(draftEquipment)}
                   alt={draftEquipment.name}
                   className="h-full w-full object-cover"
                 />
@@ -277,7 +309,9 @@ export function LaboratoryEquipmentDetailModal({
                   {draftEquipment.type !== 'jade' && (
                     <div className="mt-1 text-sm text-slate-300">
                       <span className="text-slate-300">镶嵌宝石 </span>
-                      <span className="text-red-400">{draftEquipment.gemstone}</span>
+                      <span className="text-red-400">
+                        {draftEquipment.gemstone}
+                      </span>
                     </div>
                   )}
                 </>
@@ -288,16 +322,193 @@ export function LaboratoryEquipmentDetailModal({
                 {draftEquipment.extraStat}
               </div>
             )}
-
           </div>
 
-          {draftEquipment.type !== 'trinket' && draftEquipment.type !== 'jade' && (
-            <GemstoneEditor
-              equipment={draftEquipment}
-              onChange={setDraftEquipment}
-              title="宝石编辑"
-            />
+          {(sourceLabels.length > 0 || sourceKindLabels.length > 0) && (
+            <div className="rounded-xl border border-sky-800/40 bg-slate-900 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-sky-100">来源归属</div>
+                  <div className="mt-1 text-xs text-slate-400">
+                    这件装备当前在哪些方案或库存上下文中被引用，会直接影响总库筛选与后续操作语义。
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {inventoryStatusActions ? (
+                    <>
+                      {inventoryStatusActions.inactiveCount > 0 ? (
+                        <button
+                          type="button"
+                          disabled={inventoryStatusActions.isUpdating}
+                          onClick={inventoryStatusActions.onRestoreActive}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            inventoryStatusActions.isUpdating
+                              ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/60 text-slate-500'
+                              : 'border-sky-500/40 bg-sky-950/40 text-sky-100 hover:bg-sky-900/40'
+                          }`}
+                        >
+                          恢复待用
+                        </button>
+                      ) : null}
+                      {inventoryStatusActions.activeCount > 0 ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={inventoryStatusActions.isUpdating}
+                            onClick={inventoryStatusActions.onMarkSold}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              inventoryStatusActions.isUpdating
+                                ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/60 text-slate-500'
+                                : 'border-emerald-500/40 bg-emerald-950/40 text-emerald-100 hover:bg-emerald-900/40'
+                            }`}
+                          >
+                            标记已售出
+                          </button>
+                          <button
+                            type="button"
+                            disabled={inventoryStatusActions.isUpdating}
+                            onClick={inventoryStatusActions.onMarkDiscarded}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                              inventoryStatusActions.isUpdating
+                                ? 'cursor-not-allowed border-slate-700/60 bg-slate-900/60 text-slate-500'
+                                : 'border-rose-500/40 bg-rose-950/30 text-rose-100 hover:bg-rose-900/40'
+                            }`}
+                          >
+                            标记作废
+                          </button>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {onRemoveCandidateSource ? (
+                    <button
+                      type="button"
+                      onClick={onRemoveCandidateSource}
+                      className="rounded-lg border border-rose-500/40 bg-rose-950/30 px-3 py-1.5 text-xs font-medium text-rose-100 transition-colors hover:bg-rose-900/40"
+                    >
+                      移出候选库
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {sourceLabels.length > 0 && (
+                <div className="mb-3">
+                  <div className="mb-2 text-xs font-medium text-sky-300">
+                    具体来源
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {sourceLabels.map((sourceLabel) => (
+                      <span
+                        key={`${draftEquipment.id}-source-${sourceLabel}`}
+                        className="rounded border border-sky-700/40 bg-sky-950/30 px-2 py-1 text-xs text-sky-100"
+                      >
+                        {sourceLabel}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sourceKindLabels.length > 0 && (
+                <div>
+                  <div className="mb-2 text-xs font-medium text-sky-300">
+                    来源类型
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {sourceKindLabels.map((label) => (
+                      <span
+                        key={`${draftEquipment.id}-source-kind-${label}`}
+                        className="rounded border border-violet-700/40 bg-violet-950/30 px-2 py-1 text-xs text-violet-100"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {inventoryStatusActions ? (
+                <div className="mt-3 rounded-lg border border-emerald-800/30 bg-emerald-950/10 p-3">
+                  <div className="text-xs font-medium text-emerald-300">
+                    正式库存状态动作
+                  </div>
+                  <div className="mt-1 text-xs leading-relaxed text-slate-300">
+                    当前有 {inventoryStatusActions.activeCount}{' '}
+                    条候选入库生成的正式库存记录可直接标记售出/作废，另有{' '}
+                    {inventoryStatusActions.inactiveCount}{' '}
+                    条失效记录可恢复为库存待用。“已售出 / 已作废”的正式库存不会进入换装弹窗或实验室席位选择器；恢复待用后会重新进入这两条链路。所有动作都会同步回写关联候选来源，但不会删除方案内或实验席位里的其他引用。
+                  </div>
+                </div>
+              ) : null}
+            </div>
           )}
+
+          {ruleInsights.length > 0 && (
+            <div className="rounded-xl border border-cyan-800/40 bg-slate-900 p-4">
+              <div className="mb-3 text-sm font-bold text-cyan-100">
+                规则解释
+              </div>
+              <div className="space-y-2">
+                {ruleInsights.map((insight) => (
+                  <div
+                    key={insight.id}
+                    className={`rounded-lg border px-3 py-3 ${
+                      insight.tone === 'success'
+                        ? 'border-emerald-700/40 bg-emerald-950/20'
+                        : insight.tone === 'warning'
+                          ? 'border-amber-700/40 bg-amber-950/20'
+                          : 'border-slate-700/60 bg-slate-950/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div
+                        className={`text-sm font-semibold ${
+                          insight.tone === 'success'
+                            ? 'text-emerald-300'
+                            : insight.tone === 'warning'
+                              ? 'text-amber-300'
+                              : 'text-cyan-100'
+                        }`}
+                      >
+                        {insight.title}
+                      </div>
+                      <div className="text-[10px] text-slate-500">
+                        {insight.tone === 'success'
+                          ? '已命中'
+                          : insight.tone === 'warning'
+                            ? '需注意'
+                            : '已记录'}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-sm text-slate-200">
+                      {insight.summary}
+                    </div>
+                    {insight.details.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {insight.details.map((detail) => (
+                          <div
+                            key={`${insight.id}-${detail}`}
+                            className="text-[11px] text-slate-400"
+                          >
+                            {detail}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {draftEquipment.type !== 'trinket' &&
+            draftEquipment.type !== 'jade' && (
+              <GemstoneEditor
+                equipment={draftEquipment}
+                onChange={setDraftEquipment}
+                title="宝石编辑"
+              />
+            )}
 
           {draftEquipment.type === 'trinket' &&
             draftEquipment.specialEffect && (
@@ -328,12 +539,6 @@ export function LaboratoryEquipmentDetailModal({
             draftEquipment.runeStoneSets &&
             draftEquipment.runeStoneSets.length > 0 && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                {runeComboConflict && (
-                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-3 text-sm text-amber-200">
-                    {runeComboConflict.message}
-                  </div>
-                )}
-
                 <div className="relative">
                   <div
                     ref={
@@ -528,7 +733,9 @@ export function LaboratoryEquipmentDetailModal({
                                 ...draftEquipment,
                                 starPosition: option.label,
                                 starPositionConfig:
-                                  option.id === 'none' ? undefined : { ...option },
+                                  option.id === 'none'
+                                    ? undefined
+                                    : { ...option },
                               });
                               setRunePopover(null);
                             }}
@@ -564,59 +771,60 @@ export function LaboratoryEquipmentDetailModal({
                     </div>
                   )}
 
-                  {runePopover?.type === 'starAlignment' && canSelectStarAlignment && (
-                    <div
-                      ref={setPopperElement}
-                      style={{ ...styles.popper, zIndex: 9999 }}
-                      {...attributes.popper}
-                      className="w-72 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
-                    >
-                      <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
-                        <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
-                          选择星相互合规则
+                  {runePopover?.type === 'starAlignment' &&
+                    canSelectStarAlignment && (
+                      <div
+                        ref={setPopperElement}
+                        style={{ ...styles.popper, zIndex: 9999 }}
+                        {...attributes.popper}
+                        className="w-72 overflow-hidden rounded-lg border border-yellow-700/50 bg-slate-800 shadow-xl"
+                      >
+                        <div className="custom-scrollbar max-h-60 overflow-y-auto p-1">
+                          <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
+                            选择星相互合规则
+                          </div>
+                          {isLoadingStarRules && (
+                            <div className="px-3 py-2 text-xs text-slate-400">
+                              读取规则中...
+                            </div>
+                          )}
+                          {starAlignmentOptions.map((option) => (
+                            <div
+                              key={option.id}
+                              className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
+                              onClick={() => {
+                                setDraftEquipment({
+                                  ...draftEquipment,
+                                  starAlignment: option.value,
+                                  starAlignmentConfig:
+                                    option.id === 'none'
+                                      ? undefined
+                                      : {
+                                          id: option.id,
+                                          label: option.value,
+                                          attrType: option.attrType,
+                                          attrValue: option.attrValue,
+                                          comboName: option.title,
+                                          colors: option.colors,
+                                        },
+                                });
+                                setRunePopover(null);
+                              }}
+                            >
+                              <div className="text-sm text-green-400">
+                                {option.title}
+                                <span className="ml-2 text-xs text-slate-400">
+                                  {option.value}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-400">
+                                {option.description}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        {isLoadingStarRules && (
-                          <div className="px-3 py-2 text-xs text-slate-400">
-                            读取规则中...
-                          </div>
-                        )}
-                        {starAlignmentOptions.map((option) => (
-                          <div
-                            key={option.id}
-                            className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
-                            onClick={() => {
-                              setDraftEquipment({
-                                ...draftEquipment,
-                                starAlignment: option.value,
-                                starAlignmentConfig:
-                                  option.id === 'none'
-                                    ? undefined
-                                    : {
-                                        id: option.id,
-                                        label: option.value,
-                                        attrType: option.attrType,
-                                        attrValue: option.attrValue,
-                                        comboName: option.title,
-                                        colors: option.colors,
-                                      },
-                              });
-                              setRunePopover(null);
-                            }}
-                          >
-                            <div className="text-sm text-green-400">
-                              {option.title}
-                              <span className="ml-2 text-xs text-slate-400">
-                                {option.value}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-[11px] text-slate-400">
-                              {option.description}
-                            </div>
-                          </div>
-                        ))}
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
 
                 {draftEquipment.runeStoneSetsNames &&
@@ -694,19 +902,19 @@ export function LaboratoryEquipmentDetailModal({
           </button>
 
           {visibleCompareSeats.map((seat) => (
-              <button
-                key={seat.id}
-                onClick={async () => {
-                  await onApplyToSeat(seat.id, draftEquipment);
-                  onClose();
-                }}
-                className="flex w-[calc(100%/6)] min-w-[140px] flex-shrink-0 flex-col items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center transition-colors hover:bg-slate-800/80"
-              >
-                <span className="text-sm text-slate-200">
-                  挂载到【{getSeatDisplayName(seat, visibleCompareSeats)}】
-                </span>
-              </button>
-            ))}
+            <button
+              key={seat.id}
+              onClick={async () => {
+                await onApplyToSeat(seat.id, draftEquipment);
+                onClose();
+              }}
+              className="flex w-[calc(100%/6)] min-w-[140px] flex-shrink-0 flex-col items-center justify-center rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-center transition-colors hover:bg-slate-800/80"
+            >
+              <span className="text-sm text-slate-200">
+                挂载到【{getSeatDisplayName(seat, visibleCompareSeats)}】
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

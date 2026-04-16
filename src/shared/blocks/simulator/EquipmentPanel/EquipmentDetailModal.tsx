@@ -6,12 +6,11 @@ import type {
   Equipment,
   RuneStone,
 } from '@/features/simulator/store/gameTypes';
-import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
 import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
-import { analyzeRuneComboConflict } from '@/shared/lib/simulator-rune-combo';
+import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
 import {
   applySimulatorRuneSetSelection,
   createEmptyRuneStone,
@@ -28,12 +27,14 @@ import {
   SIMULATOR_EDITABLE_STAT_KEYS,
   SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
 } from '@/shared/lib/simulator-equipment-editor';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
+import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
+import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
 import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
-import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
 
 const AVAILABLE_RUNES = [
   { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
@@ -84,6 +85,7 @@ export function EquipmentDetailModal({
   equipment,
   onClose,
 }: EquipmentDetailModalProps) {
+  const allEquipment = useGameStore((state) => state.equipment);
   const updateEquipment = useGameStore((state) => state.updateEquipment);
   const removeEquipment = useGameStore((state) => state.removeEquipment);
   const [simulatedLibEquip, setSimulatedLibEquip] = useState<Equipment>(() =>
@@ -151,16 +153,21 @@ export function EquipmentDetailModal({
   const activeRuneSet =
     simulatedLibEquip.runeStoneSets?.[activeRuneSetIndex] ?? [];
   const runeSetOptions = getSimulatorRuneSetOptions(simulatedLibEquip);
-  const runeComboConflict = useMemo(
-    () =>
-      isPrimaryEquipment ? analyzeRuneComboConflict(simulatedLibEquip) : null,
-    [isPrimaryEquipment, simulatedLibEquip]
-  );
   const isAccessory = isAccessoryEquipment(simulatedLibEquip.type);
   const accessoryType = getAccessoryType(simulatedLibEquip.type);
   const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
     'jade_attribute_pool',
+    'regular_set_rules',
   ]);
+  const regularSetRules = useMemo(
+    () =>
+      parseRegularSetRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'regular_set_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
   const jadeAttributePool = useMemo(
     () =>
       simulatedLibEquip.type === 'jade'
@@ -190,6 +197,18 @@ export function EquipmentDetailModal({
             )
         : [],
     [accessoryType, jadeAttributePool]
+  );
+  const spotlightTags = useMemo(
+    () => getEquipmentSpotlightTags(simulatedLibEquip),
+    [simulatedLibEquip]
+  );
+  const ruleInsights = useMemo(
+    () =>
+      buildEquipmentRuleInsights(simulatedLibEquip, {
+        allEquipment,
+        regularSetRules,
+      }),
+    [allEquipment, regularSetRules, simulatedLibEquip]
   );
   const initialValueEntries = useMemo(
     () => getSimulatorEquipmentInitialValueEntries(simulatedLibEquip),
@@ -262,16 +281,7 @@ export function EquipmentDetailModal({
             <div className="rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
               <div className="flex gap-6">
                 {/* 装备图片 */}
-                <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-                  <img
-                    src={
-                      getSimulatorDisplayImageUrl(simulatedLibEquip.imageUrl) ||
-                      getEquipmentDefaultImage(simulatedLibEquip.type)
-                    }
-                    alt={simulatedLibEquip.name}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
+                <EquipmentImage equipment={simulatedLibEquip} size="xl" />
 
                 {/* 左列：装备信息 */}
                 <div className="min-w-0 flex-1">
@@ -285,10 +295,9 @@ export function EquipmentDetailModal({
                   </div>
 
                   {/* 亮点标签 */}
-                  {simulatedLibEquip.highlights &&
-                    simulatedLibEquip.highlights.length > 0 && (
+                  {spotlightTags.length > 0 && (
                       <div className="mb-3 flex flex-wrap gap-1.5">
-                        {simulatedLibEquip.highlights.map((hl, j) => (
+                        {spotlightTags.map((hl, j) => (
                           <span
                             key={j}
                             className="rounded border border-red-500/50 px-2 py-0.5 text-xs font-medium text-red-400"
@@ -429,6 +438,64 @@ export function EquipmentDetailModal({
                 </div>
               )}
             </div>
+
+            {ruleInsights.length > 0 && (
+              <div className="rounded-xl border border-cyan-800/40 bg-slate-900 p-4">
+                <div className="mb-3 text-sm font-bold text-cyan-100">
+                  规则解释
+                </div>
+                <div className="space-y-2">
+                  {ruleInsights.map((insight) => (
+                    <div
+                      key={insight.id}
+                      className={`rounded-lg border px-3 py-3 ${
+                        insight.tone === 'success'
+                          ? 'border-emerald-700/40 bg-emerald-950/20'
+                          : insight.tone === 'warning'
+                            ? 'border-amber-700/40 bg-amber-950/20'
+                            : 'border-slate-700/60 bg-slate-950/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div
+                          className={`text-sm font-semibold ${
+                            insight.tone === 'success'
+                              ? 'text-emerald-300'
+                              : insight.tone === 'warning'
+                                ? 'text-amber-300'
+                                : 'text-cyan-100'
+                          }`}
+                        >
+                          {insight.title}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {insight.tone === 'success'
+                            ? '已命中'
+                            : insight.tone === 'warning'
+                              ? '需注意'
+                              : '已记录'}
+                        </div>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-200">
+                        {insight.summary}
+                      </div>
+                      {insight.details.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {insight.details.map((detail) => (
+                            <div
+                              key={`${insight.id}-${detail}`}
+                              className="text-[11px] text-slate-400"
+                            >
+                              {detail}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 符石信息 / 特效 */}
             {simulatedLibEquip.type === 'trinket' &&
@@ -623,12 +690,6 @@ export function EquipmentDetailModal({
 
             {isPrimaryEquipment && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
-                {runeComboConflict && (
-                  <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-3 text-sm text-amber-200">
-                    {runeComboConflict.message}
-                  </div>
-                )}
-
                 <GemstoneEditor
                   equipment={simulatedLibEquip}
                   onChange={setSimulatedLibEquip}

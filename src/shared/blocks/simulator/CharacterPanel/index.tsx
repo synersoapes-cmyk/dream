@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type {
   MeridianConfig,
@@ -9,7 +9,20 @@ import type {
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import { getSimulatorNetworkErrorMessage, isNavigatorOffline } from '@/shared/lib/simulator-network';
 import {
+  buildSimulatorArtifactConfigFromTreasure,
+  buildSimulatorArtifactSpotlightTags,
+  buildSimulatorArtifactSummary,
+} from '@/shared/lib/simulator-artifact';
+import {
+  buildPanelSourceBreakdownSummary,
+  formatPanelSourceSignedValue,
+  buildSimulatorPanelSourceBreakdowns,
+  sortPanelSourceValueItems,
+} from '@/shared/lib/simulator-panel-source-breakdown';
+import {
   BookOpen,
+  ChevronDown,
+  ChevronUp,
   Gem,
   ScrollText,
   Shield,
@@ -66,6 +79,7 @@ function formatSkillLevel(skill: {
 
 export function CharacterPanel() {
   const currentCharacter = useGameStore((state) => state.currentCharacter);
+  const syncedCloudState = useGameStore((state) => state.syncedCloudState);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
   const updateBaseAttribute = useGameStore(
@@ -79,6 +93,11 @@ export function CharacterPanel() {
   const updateCultivation = useGameStore((state) => state.updateCultivation);
   const meridian = useGameStore((state) => state.meridian);
   const updateMeridian = useGameStore((state) => state.updateMeridian);
+  const equipment = useGameStore((state) => state.equipment);
+  const playerSetup = useGameStore((state) => state.playerSetup);
+  const activeRegularSetRules = useGameStore(
+    (state) => state.activeRegularSetRules
+  );
   const skills = useGameStore((state) => state.skills);
   const treasure = useGameStore((state) => state.treasure);
   const [activeTab, setActiveTab] = useState<'attributes' | 'cultivation'>(
@@ -99,6 +118,9 @@ export function CharacterPanel() {
   const [allocationTarget, setAllocationTarget] =
     useState<PotentialAllocationTarget>('magic');
   const [allocationAmount, setAllocationAmount] = useState(0);
+  const [expandedSourceKey, setExpandedSourceKey] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     setAllocationAmount((current) =>
@@ -146,6 +168,7 @@ export function CharacterPanel() {
           ...(combatStats.sealHit !== undefined
             ? { sealHit: combatStats.sealHit }
             : {}),
+          treasure,
         }),
       });
 
@@ -247,6 +270,37 @@ export function CharacterPanel() {
     setAllocationAmount(0);
   };
 
+  const artifactSummary = buildSimulatorArtifactSummary(
+    buildSimulatorArtifactConfigFromTreasure(treasure)
+  );
+  const artifactTags = buildSimulatorArtifactSpotlightTags(
+    buildSimulatorArtifactConfigFromTreasure(treasure)
+  );
+  const hasPanelBaseline = Boolean(syncedCloudState);
+  const panelSourceBreakdowns = useMemo(
+    () =>
+      buildSimulatorPanelSourceBreakdowns({
+        baseAttributes,
+        equipment,
+        treasure,
+        bodyStrength: cultivation.bodyStrength || 0,
+        formation: playerSetup.formation,
+        meridian,
+        regularSetRules: activeRegularSetRules,
+        syncedCloudState,
+      }),
+    [
+      activeRegularSetRules,
+      baseAttributes,
+      cultivation.bodyStrength,
+      equipment,
+      meridian,
+      playerSetup.formation,
+      syncedCloudState,
+      treasure,
+    ]
+  );
+
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
       {/* 标题栏 */}
@@ -345,13 +399,259 @@ export function CharacterPanel() {
       {/* 滚动区域 - 展示所有属性 */}
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
         {activeTab === 'attributes' ? (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-cyan-100">
+                      基线层
+                    </div>
+                    <div className="mt-1 text-xs leading-6 text-slate-300">
+                      当前角色的 OCR 面板真值与手动校准值。这里主要维护人物基础档案，不直接代表换装推演结果。
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-cyan-700/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-200">
+                    {hasPanelBaseline ? '已接入 OCR 基线' : '暂用当前档案值'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-yellow-800/30 bg-yellow-950/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-yellow-100">
+                      增量层
+                    </div>
+                    <div className="mt-1 text-xs leading-6 text-slate-300">
+                      经脉、装备、修炼、神器等变化会在基线之上联动到当前面板。右侧攻击/防御区看到的是“基线 + 增量”的结果。
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-yellow-700/40 bg-yellow-500/10 px-2 py-1 text-[11px] text-yellow-200">
+                    当前结果联动区
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-cyan-800/30 bg-slate-900/40 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3 border-b border-cyan-800/20 pb-2">
+                <div>
+                  <div className="text-sm font-bold text-cyan-100">
+                    主要来源拆解
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    先看关键面板项的主要增量来自哪里。这里展示的是“当前结果”相对 OCR 基线的来源拆解。
+                  </div>
+                </div>
+                <span className="rounded-full border border-cyan-700/40 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-200">
+                  法伤 / 灵力 / 速度 / 法防 / 气血 / 法爆 / 固伤 / 穿刺 / 命中
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+                {panelSourceBreakdowns.map((item) => (
+                  <div
+                    key={item.key}
+                    className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-slate-100">
+                        {item.label}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-yellow-200">
+                          {item.total}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedSourceKey((current) =>
+                              current === item.key ? null : item.key
+                            )
+                          }
+                          className="rounded-md border border-cyan-700/30 bg-cyan-500/10 px-2 py-1 text-[10px] text-cyan-100 transition-colors hover:border-cyan-500/50 hover:bg-cyan-500/15"
+                        >
+                          <span className="flex items-center gap-1">
+                            {expandedSourceKey === item.key ? '收起明细' : '查看明细'}
+                            {expandedSourceKey === item.key ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      基线 {item.baseline}
+                      {item.hasBaseline ? (
+                        <span className="ml-1">
+                          {item.delta > 0 ? `· +${item.delta}` : item.delta < 0 ? `· ${item.delta}` : '· 无变化'}
+                        </span>
+                      ) : (
+                        <span className="ml-1">· 暂无 OCR 基线</span>
+                      )}
+                    </div>
+                    <div className="mt-2 text-[11px] leading-5 text-cyan-100/80">
+                      {buildPanelSourceBreakdownSummary(item, 2)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {item.sources.length > 0 ? (
+                        item.sources.map((source) => (
+                          <span
+                            key={`${item.key}-${source.label}`}
+                            className={`rounded border px-2 py-1 text-[11px] ${
+                              source.value > 0
+                                ? 'border-emerald-600/30 bg-emerald-500/10 text-emerald-200'
+                                : 'border-red-600/30 bg-red-500/10 text-red-200'
+                            }`}
+                          >
+                            {source.label}
+                            {source.value > 0 ? ' +' : ' '}
+                            {source.value}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-slate-500">
+                          当前没有可拆解的增量来源
+                        </span>
+                      )}
+                    </div>
+                    {expandedSourceKey === item.key && (
+                      <div className="mt-3 rounded-lg border border-cyan-900/30 bg-cyan-950/10 p-3">
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                            <div className="text-slate-500">当前结果</div>
+                            <div className="mt-1 font-semibold text-cyan-100">
+                              {item.total}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                            <div className="text-slate-500">OCR 基线</div>
+                            <div className="mt-1 font-semibold text-slate-100">
+                              {item.baseline}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                            <div className="text-slate-500">总增量</div>
+                            <div
+                              className={`mt-1 font-semibold ${
+                                item.delta > 0
+                                  ? 'text-emerald-300'
+                                  : item.delta < 0
+                                    ? 'text-red-300'
+                                    : 'text-slate-100'
+                              }`}
+                            >
+                              {formatPanelSourceSignedValue(item.delta)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 space-y-1.5">
+                          {item.sourceDetails.length > 0 ? (
+                            item.sourceDetails.map((group, groupIndex) => (
+                              <div
+                                key={`${item.key}-group-${group.label}`}
+                                className="rounded-md border border-slate-800/80 bg-slate-950/50 p-2"
+                              >
+                                <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                  <span className="text-cyan-100/85">
+                                    {groupIndex === 0
+                                      ? `主因来源 · ${group.label}`
+                                      : groupIndex === 1
+                                        ? `次因来源 · ${group.label}`
+                                        : group.label}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    {group.items.length} 项
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {sortPanelSourceValueItems(group.items).map(
+                                    (source) => (
+                                      <div
+                                        key={`${item.key}-detail-${group.label}-${source.label}`}
+                                        className="rounded-md border border-slate-800/70 bg-slate-950/70 px-2 py-1.5 text-[11px]"
+                                      >
+                                        <div className="flex items-center justify-between gap-3">
+                                          <span className="text-slate-300">
+                                            {source.label}
+                                          </span>
+                                          <span
+                                            className={
+                                              source.value > 0
+                                                ? 'font-medium text-emerald-300'
+                                                : 'font-medium text-red-300'
+                                            }
+                                          >
+                                            {formatPanelSourceSignedValue(source.value)}
+                                          </span>
+                                        </div>
+                                        {source.note ? (
+                                          <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                                            {source.note}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          ) : item.sources.length > 0 ? (
+                            sortPanelSourceValueItems(item.sources).map(
+                              (source, index) => (
+                                <div
+                                  key={`${item.key}-detail-${source.label}`}
+                                  className="flex items-center justify-between rounded-md border border-slate-800/80 bg-slate-950/60 px-2 py-1.5 text-[11px]"
+                                >
+                                  <span className="text-slate-300">
+                                    {index === 0
+                                      ? `主因 · ${source.label}`
+                                      : index === 1
+                                        ? `次因 · ${source.label}`
+                                        : source.label}
+                                  </span>
+                                  <span
+                                    className={
+                                      source.value > 0
+                                        ? 'font-medium text-emerald-300'
+                                        : 'font-medium text-red-300'
+                                    }
+                                  >
+                                    {formatPanelSourceSignedValue(source.value)}
+                                  </span>
+                                </div>
+                              )
+                            )
+                          ) : (
+                            <div className="rounded-md border border-dashed border-slate-700 px-2 py-2 text-[11px] text-slate-500">
+                              {item.hasBaseline
+                                ? '当前字段没有可继续展开的增量来源。'
+                                : '当前字段还没有 OCR 基线，所以暂时只能展示当前值。'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
             {/* 五围属性 */}
             <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
-              <h3 className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2 text-sm font-bold text-yellow-400">
-                <ScrollText className="h-4 w-4" />
-                五围属性
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3 border-b border-yellow-800/30 pb-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-yellow-400">
+                  <ScrollText className="h-4 w-4" />
+                  五围属性
+                </h3>
+                <span className="rounded-full border border-cyan-700/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-200">
+                  基线维护
+                </span>
+              </div>
               <div className="space-y-1">
                 <AttributeDisplay
                   label="体质"
@@ -494,10 +794,18 @@ export function CharacterPanel() {
 
             {/* 攻击属性 */}
             <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
-              <h3 className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2 text-sm font-bold text-yellow-400">
-                <Swords className="h-4 w-4" />
-                攻击属性
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3 border-b border-yellow-800/30 pb-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-yellow-400">
+                  <Swords className="h-4 w-4" />
+                  攻击属性
+                </h3>
+                <span className="rounded-full border border-yellow-700/40 bg-yellow-500/10 px-2 py-0.5 text-[10px] text-yellow-200">
+                  基线 + 增量结果
+                </span>
+              </div>
+              <p className="mb-3 text-[11px] leading-5 text-slate-400">
+                这里展示的是最终面板，不是 OCR 原图直接抄值。经脉、装备、修炼等增量会在基线之上实时联动。
+              </p>
               <div className="space-y-1">
                 <AttributeDisplay
                   label="法术伤害"
@@ -552,10 +860,15 @@ export function CharacterPanel() {
 
             {/* 防御属性 */}
             <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
-              <h3 className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2 text-sm font-bold text-yellow-400">
-                <Shield className="h-4 w-4" />
-                防御属性
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3 border-b border-yellow-800/30 pb-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-yellow-400">
+                  <Shield className="h-4 w-4" />
+                  防御属性
+                </h3>
+                <span className="rounded-full border border-yellow-700/40 bg-yellow-500/10 px-2 py-0.5 text-[10px] text-yellow-200">
+                  基线 + 增量结果
+                </span>
+              </div>
               <div className="space-y-1">
                 <AttributeDisplay
                   label="气血"
@@ -610,6 +923,7 @@ export function CharacterPanel() {
               </div>
             </div>
           </div>
+          </div>
         ) : (
           <div className="space-y-6">
             {/* 技能 & 法宝 */}
@@ -656,11 +970,11 @@ export function CharacterPanel() {
                 </div>
               </div>
 
-              {/* 法宝 */}
+              {/* 神器加成 */}
               <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-4">
                 <h3 className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2 text-sm font-bold text-yellow-400">
                   <Gem className="h-4 w-4" />
-                  法宝装备
+                  神器加成
                 </h3>
                 {treasure ? (
                   <div className="rounded-lg border border-yellow-800/40 bg-gradient-to-br from-slate-900/80 to-slate-950/80 p-4 transition-colors hover:border-yellow-600/60">
@@ -668,12 +982,24 @@ export function CharacterPanel() {
                       {treasure.name}
                     </div>
                     <div className="text-sm text-yellow-400/80">
-                      {treasure.description}
+                      {artifactSummary}
                     </div>
+                    {artifactTags.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {artifactTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full border border-yellow-700/40 bg-yellow-950/30 px-2 py-0.5 text-[11px] text-yellow-100/90"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="flex h-20 items-center justify-center text-sm text-slate-500 italic">
-                    未装备法宝
+                    未配置神器加成
                   </div>
                 )}
               </div>

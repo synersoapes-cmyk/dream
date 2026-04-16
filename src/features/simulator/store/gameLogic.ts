@@ -93,6 +93,21 @@ const sumWeaponDamageMagicDamageBonus = (equipment: Equipment[]) =>
     return sum + Number(itemTotals.damage ?? 0) / 4;
   }, 0);
 
+type DerivedStatsInput = {
+  baseAttributes: BaseAttributes;
+  equipment: Equipment[];
+  treasure: Treasure | null;
+  bodyStrength?: number;
+  formation?: string;
+  meridian?: MeridianConfig;
+  regularSetRules?: RegularSetRuntimeRule[];
+  runeSkillBaselineEquipment?: Equipment[];
+};
+
+type PanelBaselineInput = DerivedStatsInput & {
+  panelStats: CombatStats;
+};
+
 export const computeDerivedStats = (
   baseAttributes: BaseAttributes,
   equipment: Equipment[],
@@ -218,4 +233,62 @@ export const computeDerivedStats = (
   result.spiritualPower = derivedSpirit;
 
   return result;
+};
+
+export const computeCombatStatsWithPanelBaseline = (
+  current: DerivedStatsInput,
+  baseline?: PanelBaselineInput | null
+): CombatStats & Record<string, number> => {
+  const currentDerived = computeDerivedStats(
+    current.baseAttributes,
+    current.equipment,
+    current.treasure,
+    {
+      bodyStrength: current.bodyStrength,
+      formation: current.formation,
+      meridian: current.meridian,
+      regularSetRules: current.regularSetRules,
+      runeSkillBaselineEquipment: current.runeSkillBaselineEquipment,
+    }
+  );
+
+  if (!baseline) {
+    return currentDerived;
+  }
+
+  const baselineDerived = computeDerivedStats(
+    baseline.baseAttributes,
+    baseline.equipment,
+    baseline.treasure,
+    {
+      bodyStrength: baseline.bodyStrength,
+      formation: baseline.formation,
+      meridian: baseline.meridian,
+      regularSetRules: baseline.regularSetRules,
+      runeSkillBaselineEquipment:
+        baseline.runeSkillBaselineEquipment ?? baseline.equipment,
+    }
+  );
+
+  const keys = new Set<string>([
+    ...Object.keys(baseline.panelStats ?? {}),
+    ...Object.keys(currentDerived),
+    ...Object.keys(baselineDerived),
+  ]);
+  const merged: CombatStats & Record<string, number> = {
+    ...currentDerived,
+  };
+  const baselinePanelStats = baseline.panelStats as unknown as Record<
+    string,
+    number | undefined
+  >;
+
+  for (const key of keys) {
+    merged[key] =
+      Number(baselinePanelStats[key] ?? 0) +
+      Number(currentDerived[key] ?? 0) -
+      Number(baselineDerived[key] ?? 0);
+  }
+
+  return merged;
 };

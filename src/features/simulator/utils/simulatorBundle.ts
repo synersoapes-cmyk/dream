@@ -23,6 +23,10 @@ import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentIm
 
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
 import {
+  buildSimulatorArtifactTreasure,
+  sanitizeSimulatorArtifactConfig,
+} from '@/shared/lib/simulator-artifact';
+import {
   normalizeEquipmentRuneStoneSetNames,
   normalizeEquipmentRuneStoneSets,
   parseEquipmentGemstones,
@@ -265,6 +269,13 @@ function mapMeridian(bundle: SimulatorCharacterBundle): MeridianConfig {
     agility: toNumber(meridianConfig.agility),
     magicPower: toNumber(meridianConfig.magicPower),
   };
+}
+
+function mapTreasure(bundle: SimulatorCharacterBundle) {
+  const rawBody = parseJsonRecord(bundle.profile?.rawBodyJson);
+  return buildSimulatorArtifactTreasure(
+    sanitizeSimulatorArtifactConfig(rawBody.artifactConfig)
+  );
 }
 
 function toStarPositionConfig(value: unknown): Equipment['starPositionConfig'] {
@@ -571,7 +582,7 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       baseStats: attrMap,
       stats: attrMap,
       price: item.price,
-      imageUrl: getEquipmentDefaultImage(type),
+      imageUrl: getEquipmentDefaultImage(type, item.name),
       level: item.level,
       quality: item.quality,
       setName:
@@ -707,7 +718,7 @@ function toPersistedEquipment(
     imageUrl:
       typeof value.imageUrl === 'string'
         ? value.imageUrl
-        : getEquipmentDefaultImage(type),
+        : getEquipmentDefaultImage(type, value.name),
     runeStoneSets: toRuneStoneSets(value.runeStoneSets),
     runeStoneSetsNames: normalizeEquipmentRuneStoneSetNames(
       value.runeStoneSetsNames
@@ -880,6 +891,7 @@ function buildSyncedCloudState(params: {
   skills: Skill[];
   cultivation: Cultivation;
   meridian: MeridianConfig;
+  treasure: GameState['treasure'];
   combatTarget: GameState['combatTarget'];
   selfFormation: string;
   selfElement: GameState['playerSetup']['element'];
@@ -898,7 +910,7 @@ function buildSyncedCloudState(params: {
     skills: params.skills,
     cultivation: params.cultivation,
     meridian: params.meridian,
-    treasure: null,
+    treasure: params.treasure,
     combatTarget: params.combatTarget,
     formation: params.selfFormation,
     playerSetup: {
@@ -964,6 +976,7 @@ export function applySimulatorBundleToStore(
   const skills = mapSkills(bundle);
   const cultivation = mapCultivation(bundle);
   const meridian = mapMeridian(bundle);
+  const treasure = mapTreasure(bundle);
   const combatTarget = mapCombatTarget(bundle);
   const selfFormation = bundle.battleContext?.selfFormation || '天覆阵';
   const selfElement = (bundle.battleContext?.selfElement || '水') as any;
@@ -986,6 +999,7 @@ export function applySimulatorBundleToStore(
     skills,
     cultivation,
     meridian,
+    treasure,
     combatTarget,
     selfFormation,
     selfElement,

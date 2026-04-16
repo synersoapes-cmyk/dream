@@ -12,6 +12,11 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const sceneType = searchParams.get('sceneType');
     const limit = Number(searchParams.get('limit') || 20);
+    const rawCharacterId = searchParams.get('characterId');
+    const characterId =
+      typeof rawCharacterId === 'string' && rawCharacterId.trim().length > 0
+        ? rawCharacterId.trim()
+        : undefined;
 
     return respData(
       await listSimulatorRecentOcrLogs(user.id, {
@@ -23,6 +28,7 @@ export async function GET(req: Request) {
             ? sceneType
             : undefined,
         limit,
+        characterId,
       })
     );
   } catch (error) {

@@ -46,6 +46,42 @@ export const cloneEquipmentItem = (equipment: Equipment): Equipment => ({
 export const cloneEquipmentList = (equipment: Equipment[]): Equipment[] =>
   equipment.map(cloneEquipmentItem);
 
+export const replaceEquipmentInList = (
+  equipmentList: Equipment[],
+  equipment: Equipment
+): Equipment[] => {
+  const existingIndex = equipmentList.findIndex(
+    (item) =>
+      item.type === equipment.type &&
+      (equipment.slot === undefined || item.slot === equipment.slot)
+  );
+
+  const nextEquipment = cloneEquipmentList(equipmentList);
+  if (existingIndex !== -1) {
+    nextEquipment[existingIndex] = cloneEquipmentItem(equipment);
+    return nextEquipment;
+  }
+
+  return [...nextEquipment, cloneEquipmentItem(equipment)];
+};
+
+export const removeEquipmentFromList = (
+  equipmentList: Equipment[],
+  equipment: Equipment
+): Equipment[] => {
+  return cloneEquipmentList(equipmentList).filter((item) => {
+    if (item.type !== equipment.type) {
+      return true;
+    }
+
+    if (equipment.slot !== undefined) {
+      return item.slot !== equipment.slot;
+    }
+
+    return false;
+  });
+};
+
 export const getDefaultEquipmentSetName = (index: number) => `配置${index + 1}`;
 
 export const createEquipmentSet = (

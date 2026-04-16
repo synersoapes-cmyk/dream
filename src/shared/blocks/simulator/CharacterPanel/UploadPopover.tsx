@@ -8,13 +8,19 @@ import {
   type ReactNode,
 } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
-import type { OcrLog } from '@/features/simulator/store/gameTypes';
+import type {
+  OcrLog,
+  PendingEquipment,
+} from '@/features/simulator/store/gameTypes';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import {
   applySimulatorBundleToStore,
   buildSimulatorBundleStorePreview,
 } from '@/features/simulator/utils/simulatorBundle';
-import { applySimulatorCandidateEquipmentToStore } from '@/features/simulator/utils/simulatorCandidateEquipment';
+import {
+  applySimulatorCandidateEquipmentToStore,
+  mapSimulatorCandidateEquipmentItemToPendingEquipment,
+} from '@/features/simulator/utils/simulatorCandidateEquipment';
 import * as Popover from '@radix-ui/react-popover';
 import {
   AlertCircle,
@@ -27,6 +33,7 @@ import {
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
+import { OcrEquipmentReviewDialog } from '@/shared/blocks/simulator/OcrEquipmentReviewDialog';
 import {
   Dialog,
   DialogContent,
@@ -35,6 +42,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/components/ui/dialog';
+import {
+  SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
+  type SimulatorEquipmentOcrImageHint,
+} from '@/shared/lib/simulator-ocr-image-hint';
+import { requestSimulatorOpenPendingReview } from '@/shared/lib/simulator-pending-review-request';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 interface UploadPopoverProps {
@@ -187,7 +199,9 @@ function formatReviewValue(value: number | string) {
 }
 
 function buildProfileReviewChanges(params: {
-  currentBaseAttributes: ReturnType<typeof useGameStore.getState>['baseAttributes'];
+  currentBaseAttributes: ReturnType<
+    typeof useGameStore.getState
+  >['baseAttributes'];
   currentCombatStats: ReturnType<typeof useGameStore.getState>['combatStats'];
   bundle: SimulatorCharacterBundle;
 }): PendingProfileReview {
@@ -229,13 +243,19 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [equipmentImageHint, setEquipmentImageHint] =
+    useState<SimulatorEquipmentOcrImageHint>('auto');
   const [pendingProfileReview, setPendingProfileReview] =
     useState<PendingProfileReview | null>(null);
+  const [pendingEquipmentReview, setPendingEquipmentReview] =
+    useState<PendingEquipment | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
+  const pendingEquipments = useGameStore((state) => state.pendingEquipments);
   const [ocrLogs, setOcrLogs] = useState<OcrLog[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [ocrHistoryError, setOcrHistoryError] = useState<string | null>(null);
@@ -246,15 +266,22 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
     try {
       const sceneType = type === 'attributes' ? 'profile' : 'equipment';
+      const characterId = currentCharacter?.id;
       const response = await fetch(
-        `/api/simulator/current/ocr-history?sceneType=${sceneType}&limit=20`,
+        `/api/simulator/current/ocr-history?sceneType=${sceneType}&limit=20${
+          characterId ? `&characterId=${encodeURIComponent(characterId)}` : ''
+        }`,
         {
           method: 'GET',
           cache: 'no-store',
         }
       );
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取 OCR 历史失败');
       }
 
@@ -292,7 +319,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
     window.addEventListener('paste', handleGlobalPaste);
     return () => window.removeEventListener('paste', handleGlobalPaste);
-  }, [isOpen, type]);
+  }, [currentCharacter?.id, equipmentImageHint, isOpen, type]);
 
   const processFile = async (file: File): Promise<void> => {
     const validation = validateImageFile(file);
@@ -322,6 +349,12 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
 
       const formData = new FormData();
       formData.append('file', file);
+      if (currentCharacter?.id) {
+        formData.append('characterId', currentCharacter.id);
+      }
+      if (type === 'equipment') {
+        formData.append('imageHint', equipmentImageHint);
+      }
 
       const response = await fetch(
         type === 'attributes'
@@ -359,13 +392,14 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
       }
 
       applySimulatorCandidateEquipmentToStore(payload.data.items);
-
-      const recognizedName = payload?.data?.item?.equipment?.name || '新装备';
-
+      if (payload?.data?.item) {
+        setPendingEquipmentReview(
+          mapSimulatorCandidateEquipmentItemToPendingEquipment(
+            payload.data.item
+          )
+        );
+      }
       await loadOcrHistory();
-      toast.success('识别到新物品', {
-        description: recognizedName,
-      });
     } catch (error) {
       const description =
         error instanceof Error ? error.message : '请重试或更换清晰图片';
@@ -399,8 +433,7 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
       preserveWorkbenchState: true,
     });
     toast.success('人物属性已更新', {
-      description:
-        pendingProfileReview.summary || '未识别出的字段已保留原值',
+      description: pendingProfileReview.summary || '未识别出的字段已保留原值',
     });
     setPendingProfileReview(null);
     setIsOpen(false);
@@ -412,6 +445,14 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
     }
     setPendingProfileReview(null);
   };
+
+  const handleCloseEquipmentReview = () => {
+    setPendingEquipmentReview(null);
+  };
+
+  const pendingQueueCount = pendingEquipments.filter(
+    (item) => item.status === 'pending'
+  ).length;
 
   return (
     <>
@@ -503,7 +544,36 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="shrink-0 rounded-lg border border-sky-700/30 bg-sky-950/20 p-3">
+                  <div className="mb-2 text-xs font-bold text-sky-100">
+                    截图类型提示
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS.map(
+                      (option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setEquipmentImageHint(option.value)}
+                          className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                            equipmentImageHint === option.value
+                              ? 'border-sky-500/60 bg-sky-900/30'
+                              : 'border-slate-700/60 bg-slate-950/40 hover:border-sky-700/50'
+                          }`}
+                        >
+                          <div className="text-xs font-medium text-sky-100">
+                            {option.label}
+                          </div>
+                          <div className="mt-1 text-[10px] leading-5 text-slate-400">
+                            {option.description}
+                          </div>
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="flex min-h-[120px] flex-1 flex-col overflow-hidden">
                 <div className="mb-2 flex items-center gap-2">
@@ -539,6 +609,18 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
                           <div className="leading-relaxed break-words text-slate-300">
                             {log.message}
                           </div>
+                          {log.hintLabel ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <span className="rounded-full border border-sky-700/40 bg-sky-950/40 px-2 py-0.5 text-[9px] text-sky-200">
+                                {log.hintLabel}
+                              </span>
+                              <span className="rounded-full border border-slate-700/60 bg-slate-900/70 px-2 py-0.5 text-[9px] text-slate-400">
+                                {log.hintRoutingMode === 'manual'
+                                  ? '手动指定'
+                                  : '自动识别'}
+                              </span>
+                            </div>
+                          ) : null}
                           {log.details ? (
                             <div className="mt-1 text-[10px] leading-relaxed break-words text-slate-500">
                               {log.details}
@@ -574,13 +656,14 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
               确认人物属性变更
             </DialogTitle>
             <DialogDescription className="text-slate-300">
-              {pendingProfileReview?.summary || '请确认 OCR 识别结果后再应用到当前档案'}
+              {pendingProfileReview?.summary ||
+                '请确认 OCR 识别结果后再应用到当前档案基线'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 px-6 py-5">
-            <div className="rounded-xl border border-yellow-800/40 bg-yellow-950/20 p-4 text-sm text-slate-200">
-              系统已根据识别结果生成档案差异。绿色表示提升，红色表示下降；关闭弹窗不会改动当前属性。
+            <div className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 p-4 text-sm text-slate-200">
+              这次确认后会把识别结果写入“当前角色面板基线”。绿色表示提升，红色表示下降；关闭弹窗不会改动当前档案。
             </div>
 
             <div className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60">
@@ -659,6 +742,25 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OcrEquipmentReviewDialog
+        open={Boolean(pendingEquipmentReview)}
+        item={pendingEquipmentReview}
+        title="确认装备 OCR 结果"
+        description="这次识别出的字段已经写入候选装备待确认区，下面只展示本次 OCR 实际识别到的有效字段。"
+        destinationTitle="写入位置：候选装备待确认区"
+        destinationDescription={`这件装备已经进入当前角色的候选装备队列。当前待确认还有 ${pendingQueueCount} 件，你可以现在直接去实验室继续连审。`}
+        primaryActionLabel="去实验室继续审核"
+        secondaryActionLabel="关闭"
+        onClose={handleCloseEquipmentReview}
+        onPrimaryAction={() => {
+          if (pendingEquipmentReview) {
+            requestSimulatorOpenPendingReview(pendingEquipmentReview.id);
+          }
+          setPendingEquipmentReview(null);
+          setIsOpen(false);
+        }}
+      />
     </>
   );
 }

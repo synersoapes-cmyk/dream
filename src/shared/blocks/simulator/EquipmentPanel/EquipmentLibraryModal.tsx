@@ -2,19 +2,20 @@
 
 import { useState } from 'react';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
-import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { Package, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
+import type { SimulatorEquipmentLibraryItem } from '@/shared/lib/simulator-equipment-library';
+import { buildSimulatorInventorySelectorStatusLabels } from '@/shared/lib/simulator-inventory-status';
 
 interface EquipmentLibraryModalProps {
   slotType: Equipment['type'];
   slotName: string;
   slotSlot?: number;
-  onSelect: (equipment: Equipment) => void;
+  onSelect: (item: SimulatorEquipmentLibraryItem) => void;
   onClose: () => void;
-  availableEquipments: Equipment[];
+  availableItems: SimulatorEquipmentLibraryItem[];
 }
 
 export function EquipmentLibraryModal({
@@ -23,14 +24,20 @@ export function EquipmentLibraryModal({
   slotSlot,
   onSelect,
   onClose,
-  availableEquipments,
+  availableItems,
 }: EquipmentLibraryModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // 筛选匹配的装备
-  const filteredEquipments = availableEquipments.filter((eq) => {
-    if (eq.type !== slotType) return false;
-    if (slotSlot !== undefined && eq.slot !== slotSlot) return false;
+  const filteredItems = availableItems.filter((item) => {
+    if (item.equipment.type !== slotType) return false;
+    if (
+      slotSlot !== undefined &&
+      item.equipment.slot !== undefined &&
+      item.equipment.slot !== slotSlot
+    ) {
+      return false;
+    }
     return true;
   });
 
@@ -75,9 +82,9 @@ export function EquipmentLibraryModal({
   const theme = getThemeConfig();
 
   const handleSelect = () => {
-    const equipment = filteredEquipments.find((eq) => eq.id === selectedId);
-    if (equipment) {
-      onSelect(equipment);
+    const item = filteredItems.find((entry) => entry.id === selectedId);
+    if (item) {
+      onSelect(item);
       onClose();
     }
   };
@@ -116,7 +123,7 @@ export function EquipmentLibraryModal({
                   选择{slotName}
                 </h2>
                 <p className={`text-xs ${theme.accentColor}/80`}>
-                  可从当前方案、其他方案或候选装备库中选择
+                  当前默认只展示可直接换装的待用装备来源
                 </p>
               </div>
             </div>
@@ -130,7 +137,11 @@ export function EquipmentLibraryModal({
 
           {/* 装备列表 */}
           <div className="flex-1 overflow-y-auto p-6">
-            {filteredEquipments.length === 0 ? (
+            <div className="mb-4 rounded-xl border border-sky-800/30 bg-sky-950/10 px-3 py-2 text-[11px] leading-5 text-sky-100/85">
+              当前会合并展示当前方案、其他方案、候选装备库，以及状态为 `库存待用` 的正式库存。
+              `已售出 / 已作废` 的正式库存不会进入换装选择器；如需继续使用，请先到装备总库里执行“恢复待用”。
+            </div>
+            {filteredItems.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center py-12">
                 <Package className={`h-16 w-16 ${theme.accentColor}/30 mb-4`} />
                 <p className="text-sm text-slate-400">暂无{slotName}装备</p>
@@ -140,92 +151,137 @@ export function EquipmentLibraryModal({
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {filteredEquipments.map((equipment) => (
-                  <motion.div
-                    key={equipment.id}
-                    whileHover={{ scale: 1.02 }}
-                    onClick={() => setSelectedId(equipment.id)}
-                    className={`cursor-pointer rounded-xl border-2 bg-slate-900/40 p-3 transition-all ${
-                      selectedId === equipment.id
-                        ? `${theme.selectedBorder} ${theme.selectedBg}`
-                        : theme.cardBorder
-                    }`}
-                  >
-                    <div className="flex gap-3">
-                      {/* 装备图片 */}
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-                        <img
-                          src={
-                            getSimulatorDisplayImageUrl(equipment.imageUrl) ||
-                            getEquipmentDefaultImage(equipment.type)
-                          }
-                          alt={equipment.name}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
+                {filteredItems.map((item) => {
+                  const equipment = item.equipment;
+                  const inventoryStatusLabels =
+                    buildSimulatorInventorySelectorStatusLabels(item);
 
-                      {/* 装备信息 */}
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className={`text-sm font-bold ${theme.titleText} mb-1 truncate`}
-                        >
-                          {equipment.name}
+                  return (
+                    <motion.div
+                      key={item.id}
+                      whileHover={{ scale: 1.02 }}
+                      onClick={() => setSelectedId(item.id)}
+                      className={`cursor-pointer rounded-xl border-2 bg-slate-900/40 p-3 transition-all ${
+                        selectedId === item.id
+                          ? `${theme.selectedBorder} ${theme.selectedBg}`
+                          : theme.cardBorder
+                      }`}
+                    >
+                      <div className="flex gap-3">
+                        {/* 装备图片 */}
+                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
+                          <img
+                            src={getSimulatorEquipmentDisplayImageUrl(equipment)}
+                            alt={equipment.name}
+                            className="h-full w-full object-cover"
+                          />
                         </div>
 
-                        {/* 基础信息 */}
-                        <div className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-yellow-500/70">
-                          {equipment.level && (
-                            <span className="rounded bg-slate-800/60 px-1">
-                              Lv.{equipment.level}
-                            </span>
-                          )}
-                          {equipment.forgeLevel !== undefined && (
-                            <span className="rounded bg-slate-800/60 px-1">
-                              {equipment.type === 'trinket'
-                                ? '星辉'
-                                : equipment.type === 'jade'
-                                  ? '阶数'
-                                  : '锻'}{' '}
-                              {equipment.forgeLevel}
-                            </span>
-                          )}
-                          {equipment.durability && (
-                            <span className="rounded bg-slate-800/60 px-1">
-                              耐久 {equipment.durability}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* 主属性 */}
-                        <div className="mb-1 text-xs text-slate-300">
-                          {equipment.mainStat}
-                        </div>
-
-                        {/* 价格 */}
-                        {equipment.price && (
-                          <div className="text-xs text-green-400">
-                            ¥{equipment.price}
+                        {/* 装备信息 */}
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className={`text-sm font-bold ${theme.titleText} mb-1 truncate`}
+                          >
+                            {equipment.name}
                           </div>
-                        )}
 
-                        {/* 亮点信息 */}
-                        {equipment.highlights &&
-                          equipment.highlights.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {equipment.highlights.map((hl, idx) => (
-                                <span
-                                  key={idx}
-                                  className="rounded border border-red-500/50 bg-red-900/10 px-1 py-0.5 text-[10px] whitespace-nowrap text-red-400"
-                                >
-                                  {hl}
-                                </span>
-                              ))}
+                          {inventoryStatusLabels.length > 0 && (
+                            <div className="mb-1.5 flex flex-wrap gap-1">
+                              {inventoryStatusLabels.map((statusLabel) => {
+                                const toneClassName =
+                                  statusLabel.tone === 'amber'
+                                    ? 'border-amber-500/40 bg-amber-950/30 text-amber-100'
+                                    : statusLabel.tone === 'violet'
+                                      ? 'border-violet-500/40 bg-violet-950/30 text-violet-100'
+                                      : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-100';
+
+                                return (
+                                  <span
+                                    key={`${item.id}-${statusLabel.label}`}
+                                    className={`rounded border px-1.5 py-0.5 text-[10px] ${toneClassName}`}
+                                  >
+                                    {statusLabel.label}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
+
+                          {item.sourceLabels.length > 0 && (
+                            <div className="mb-1.5 flex flex-wrap gap-1">
+                              {item.sourceLabels
+                                .slice(0, 3)
+                                .map((sourceLabel) => (
+                                  <span
+                                    key={`${item.id}-${sourceLabel}`}
+                                    className="rounded border border-sky-700/40 bg-sky-950/30 px-1.5 py-0.5 text-[10px] text-sky-200"
+                                  >
+                                    {sourceLabel}
+                                  </span>
+                                ))}
+                              {item.sourceLabels.length > 3 && (
+                                <span className="rounded border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-300">
+                                  +{item.sourceLabels.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 基础信息 */}
+                          <div className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-yellow-500/70">
+                            {equipment.level && (
+                              <span className="rounded bg-slate-800/60 px-1">
+                                Lv.{equipment.level}
+                              </span>
+                            )}
+                            {equipment.forgeLevel !== undefined && (
+                              <span className="rounded bg-slate-800/60 px-1">
+                                {equipment.type === 'trinket'
+                                  ? '星辉'
+                                  : equipment.type === 'jade'
+                                    ? '阶数'
+                                    : '锻'}{' '}
+                                {equipment.forgeLevel}
+                              </span>
+                            )}
+                            {equipment.durability && (
+                              <span className="rounded bg-slate-800/60 px-1">
+                                耐久 {equipment.durability}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 主属性 */}
+                          <div className="mb-1 text-xs text-slate-300">
+                            {equipment.mainStat}
+                          </div>
+
+                          {/* 价格 */}
+                          {equipment.price && (
+                            <div className="text-xs text-green-400">
+                              ¥{equipment.price}
+                            </div>
+                          )}
+
+                          {/* 亮点信息 */}
+                          {equipment.highlights &&
+                            equipment.highlights.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {equipment.highlights.map((hl, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="rounded border border-red-500/50 bg-red-900/10 px-1 py-0.5 text-[10px] whitespace-nowrap text-red-400"
+                                  >
+                                    {hl}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>

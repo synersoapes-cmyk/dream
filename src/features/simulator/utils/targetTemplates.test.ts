@@ -162,3 +162,31 @@ test('mergeDungeonDatabases appends missing builtin dungeons such as 通天河',
   assert.ok(tongtianhe);
   assert.equal(tongtianhe?.targets.some((target) => target.name === '灵感大王'), true);
 });
+
+test('builtin fallback dungeons cover expanded high-level presets', () => {
+  const fallbackNames = DUNGEON_DATABASE.map((dungeon) => dungeon.name);
+
+  assert.deepEqual(fallbackNames, [
+    '乌鸡国',
+    '水陆大会',
+    '车迟国',
+    '大雁塔',
+    '通天河',
+    '平顶山',
+    '红孩儿',
+    '齐天大圣',
+    '石猴授徒',
+  ]);
+
+  for (const dungeon of DUNGEON_DATABASE) {
+    assert.ok(
+      dungeon.targets.some((target) => target.isBoss),
+      `${dungeon.name} should include at least one boss target`
+    );
+
+    for (const target of dungeon.targets) {
+      assert.ok(target.element, `${dungeon.name}/${target.name} should include element`);
+      assert.ok(target.formation, `${dungeon.name}/${target.name} should include formation`);
+    }
+  }
+});

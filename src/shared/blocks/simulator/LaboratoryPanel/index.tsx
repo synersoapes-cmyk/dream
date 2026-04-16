@@ -7,12 +7,12 @@ import type {
   Equipment,
   PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
-import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
 import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import {
   applySimulatorCandidateEquipmentToStore,
   buildSimulatorCandidateEquipmentPayload,
+  mapSimulatorCandidateEquipmentItemToPendingEquipment,
 } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import {
   getVisibleCompareExperimentSeats,
@@ -34,16 +34,49 @@ import {
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
+import { OcrEquipmentReviewDialog } from '@/shared/blocks/simulator/OcrEquipmentReviewDialog';
 import { formatDateTimeValue } from '@/shared/lib/date';
-import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+import {
+  filterCandidateEquipmentItems,
+  sortCandidateEquipmentItems,
+  type SimulatorCandidateEquipmentSortKey,
+} from '@/shared/lib/simulator-candidate-equipment-view';
+import type {
+  SimulatorEquipmentLibraryItem,
+  SimulatorEquipmentLibrarySourceKind,
+} from '@/shared/lib/simulator-equipment-library';
+import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
+import { mapSimulatorInventoryLibraryItemToPendingEquipment } from '@/shared/lib/simulator-inventory-library';
+import {
+  buildSimulatorInventoryEmptyStateCopy,
+  buildSimulatorInventoryStatusLabels,
+  buildSimulatorInventoryStatusUpdateDraft,
+  getCandidateBackedInventoryRefs,
+  getSimulatorInventoryLifecycleLabel,
+  getSimulatorInventoryUpdateToastTitle,
+  summarizeSimulatorInventoryRefs,
+} from '@/shared/lib/simulator-inventory-status';
+import {
+  SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
+  type SimulatorEquipmentOcrImageHint,
+} from '@/shared/lib/simulator-ocr-image-hint';
+import {
+  clearSimulatorPendingReviewRequest,
+  readSimulatorPendingReviewRequest,
+  SIMULATOR_OPEN_LAB_EVENT,
+} from '@/shared/lib/simulator-pending-review-request';
 import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
+import { buildLaboratoryRuneGuardSummary } from '@/shared/lib/simulator-rune-guard';
 import {
   getSkillTargetCountOptions,
   resolveLaboratorySkillLevels,
 } from '@/shared/lib/simulator-rune-skill';
-import { buildLaboratoryRuneGuardSummary } from '@/shared/lib/simulator-rune-guard';
 import {
-  getDefaultSimulatorSecondaryCategory,
+  buildEquipmentSlotKey,
+  buildEquipmentPlanUsageSummary,
+  resolveLaboratoryCompareSeatCardState,
+} from '@/shared/lib/simulator-equipment-plan-assignment';
+import {
   getSimulatorSlotDefinitions,
   getSimulatorSlotLabel,
   matchesSimulatorSlotDefinition,
@@ -59,6 +92,7 @@ import {
   AVAILABLE_RUNES,
   AVAILABLE_STAR_ALIGNMENTS,
   AVAILABLE_STAR_POSITIONS,
+  buildLaboratoryLibrarySourceItems,
   calculateEquipmentTotalStats,
   getSeatDisplayName,
   resolveLaboratorySeatEquipment,
@@ -72,6 +106,7 @@ import { LaboratoryEquipmentDetailModal } from './LaboratoryEquipmentDetailModal
 import { LaboratorySeatCard } from './LaboratorySeatCard';
 import { LaboratorySlotSelectorModal } from './LaboratorySlotSelectorModal';
 import { LaboratoryTargetSelectorModal } from './LaboratoryTargetSelectorModal';
+import { LibraryEquipmentCard } from './LibraryEquipmentCard';
 import { PendingEquipmentDetailModal } from './PendingEquipmentDetailModal';
 
 type EquipmentRollbackSnapshot = {
@@ -80,6 +115,21 @@ type EquipmentRollbackSnapshot = {
   source: string;
   notes: string;
   createdAt: number | string | null;
+};
+
+type LaboratoryInventoryActionSummary = {
+  id: string;
+  title: string;
+  description: string;
+  tone: 'cyan' | 'amber' | 'violet';
+  affectedSlotLabels: string[];
+  affectedSlotKeys: string[];
+  targetLabel: string;
+  viewHint: string;
+  targetView: {
+    sourceFilter: 'all' | SimulatorEquipmentLibrarySourceKind;
+    inventoryLifecycleFilter: 'all' | 'active' | 'sold' | 'discarded';
+  };
 };
 
 const PENDING_EQUIPMENT_WARNING_THRESHOLD = 50;
@@ -103,11 +153,12 @@ function isEquipmentRollbackSnapshot(
 
 export function LaboratoryPanel() {
   const [libTab, setLibTab] = useState<'pending' | 'library'>('pending');
-  const [selectedLibEquip, setSelectedLibEquip] = useState<Equipment | null>(
-    null
-  );
+  const [selectedLibEquip, setSelectedLibEquip] =
+    useState<SimulatorEquipmentLibraryItem | null>(null);
   const [showTargetSelector, setShowTargetSelector] = useState(false);
   const [selectedPendingItem, setSelectedPendingItem] =
+    useState<PendingEquipment | null>(null);
+  const [pendingOcrReviewItem, setPendingOcrReviewItem] =
     useState<PendingEquipment | null>(null);
 
   // 席位栏位选择器状态
@@ -123,15 +174,37 @@ export function LaboratoryPanel() {
   } | null>(null);
 
   // 新装备库分类状态
+  const [librarySourceFilter, setLibrarySourceFilter] = useState<
+    'all' | SimulatorEquipmentLibrarySourceKind
+  >('all');
+  const [inventoryLifecycleFilter, setInventoryLifecycleFilter] = useState<
+    'all' | 'active' | 'sold' | 'discarded'
+  >('active');
   const [primaryCategory, setPrimaryCategory] = useState<
     'equipment' | 'trinket' | 'jade'
   >('equipment');
-  const [secondaryCategory, setSecondaryCategory] = useState<string>('weapon');
+  const [secondaryCategory, setSecondaryCategory] = useState<string>('all');
+  const [candidateSort, setCandidateSort] =
+    useState<SimulatorCandidateEquipmentSortKey>('newest');
 
   // 批量选择和删除状态
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLibraryCandidateRemovalConfirm, setShowLibraryCandidateRemovalConfirm] =
+    useState(false);
+  const [libraryCandidateRemovalIds, setLibraryCandidateRemovalIds] = useState<
+    string[]
+  >([]);
+  const [inventoryStatusUpdate, setInventoryStatusUpdate] = useState<{
+    items: SimulatorEquipmentLibraryItem[];
+    primaryItem: SimulatorEquipmentLibraryItem;
+    nextStatus: 'active' | 'sold' | 'discarded';
+    entryIds: string[];
+  } | null>(null);
+  const [libraryActionSummary, setLibraryActionSummary] =
+    useState<LaboratoryInventoryActionSummary | null>(null);
+  const [libraryActionFocusOnly, setLibraryActionFocusOnly] = useState(false);
   const [isSavingLab, setIsSavingLab] = useState(false);
   const [isLoadingLab, setIsLoadingLab] = useState(false);
   const [isSavingCurrentEquipment, setIsSavingCurrentEquipment] =
@@ -142,16 +215,36 @@ export function LaboratoryPanel() {
     useState(false);
   const [isLoadingCandidateEquipment, setIsLoadingCandidateEquipment] =
     useState(false);
+  const [managedInventoryItems, setManagedInventoryItems] = useState<
+    ReturnType<typeof mapSimulatorInventoryLibraryItemToPendingEquipment>[]
+  >([]);
+  const activeManagedInventoryItems = useMemo(
+    () =>
+      managedInventoryItems.filter((item) =>
+        (item.inventoryRefs ?? []).some((ref) => ref.status === 'active')
+      ),
+    [managedInventoryItems]
+  );
+  const [updatingInventoryEntryIds, setUpdatingInventoryEntryIds] = useState<
+    string[]
+  >([]);
   const [latestRollbackSnapshot, setLatestRollbackSnapshot] =
     useState<EquipmentRollbackSnapshot | null>(null);
   const [isLoadingRollbackSnapshot, setIsLoadingRollbackSnapshot] =
     useState(false);
 
+  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const pendingEquipments = useGameStore((state) => state.pendingEquipments);
   const experimentSeats = useGameStore((state) => state.experimentSeats);
   const currentEquipment = useGameStore((state) => state.equipment);
   const equipmentSets = useGameStore((state) => state.equipmentSets);
   const activeSetIndex = useGameStore((state) => state.activeSetIndex);
+  const selectedSampleSetIndex = useGameStore(
+    (state) => state.laboratorySampleSetIndex
+  );
+  const setSelectedSampleSetIndex = useGameStore(
+    (state) => state.setLaboratorySampleSetIndex
+  );
   const addExperimentSeat = useGameStore((state) => state.addExperimentSeat);
   const removeExperimentSeat = useGameStore(
     (state) => state.removeExperimentSeat
@@ -179,10 +272,6 @@ export function LaboratoryPanel() {
   const updateCombatTarget = useGameStore((state) => state.updateCombatTarget);
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
-
-  // 样本席位默认跟随当前状态页正在查看的装备方案，避免两个视图默认落到不同方案。
-  const [selectedSampleSetIndex, setSelectedSampleSetIndex] =
-    useState(activeSetIndex);
 
   // 战队目标选择器中的技能和秒几选项
   const [selectedSkillName, setSelectedSkillName] = useState<string>('');
@@ -266,14 +355,243 @@ export function LaboratoryPanel() {
       equipmentSets.length - 1
     );
 
-    setSelectedSampleSetIndex((current) =>
-      current === nextIndex ? current : nextIndex
-    );
-  }, [activeSetIndex, equipmentSets.length]);
+    if (selectedSampleSetIndex !== nextIndex) {
+      setSelectedSampleSetIndex(nextIndex);
+    }
+  }, [
+    activeSetIndex,
+    equipmentSets.length,
+    selectedSampleSetIndex,
+    setSelectedSampleSetIndex,
+  ]);
+
+  useEffect(() => {
+    if (!currentCharacter?.id) {
+      return;
+    }
+
+    void handleLoadManagedInventory(true);
+  }, [currentCharacter?.id, libTab, syncedCloudState?.equipment?.length]);
 
   const pendingList = pendingEquipments.filter((e) => e.status === 'pending');
-  const libraryList = pendingEquipments.filter((e) => e.status === 'confirmed');
-  const libraryEquipments = libraryList.map((item) => item.equipment);
+  const confirmedCandidateList = pendingEquipments.filter(
+    (e) => e.status === 'confirmed'
+  );
+  const libraryList = useMemo(
+    () =>
+      buildLaboratoryLibrarySourceItems({
+        currentEquipment,
+        equipmentSets,
+        activeSetIndex,
+        inventoryLibraryItems: managedInventoryItems,
+        candidateLibraryItems: confirmedCandidateList,
+      }),
+    [
+      activeSetIndex,
+      confirmedCandidateList,
+      currentEquipment,
+      equipmentSets,
+      managedInventoryItems,
+    ]
+  );
+  const slotSelectorLibraryList = useMemo(
+    () =>
+      buildLaboratoryLibrarySourceItems({
+        currentEquipment,
+        equipmentSets,
+        activeSetIndex,
+        inventoryLibraryItems: activeManagedInventoryItems,
+        candidateLibraryItems: confirmedCandidateList,
+      }),
+    [
+      activeManagedInventoryItems,
+      activeSetIndex,
+      confirmedCandidateList,
+      currentEquipment,
+      equipmentSets,
+    ]
+  );
+  const activeCandidateSourceList =
+    libTab === 'pending' ? pendingList : libraryList;
+  const secondaryCategories = useMemo(
+    () => getSimulatorSlotDefinitions(primaryCategory),
+    [primaryCategory]
+  );
+  const selectedSecondaryDefinition = useMemo(
+    () =>
+      secondaryCategory === 'all'
+        ? null
+        : (secondaryCategories.find(
+            (category) => category.id === secondaryCategory
+          ) ?? null),
+    [secondaryCategories, secondaryCategory]
+  );
+  const filteredPendingList = useMemo(
+    () =>
+      sortCandidateEquipmentItems(
+        filterCandidateEquipmentItems(pendingList, {
+          category: primaryCategory,
+          slotDefinition: selectedSecondaryDefinition,
+        }),
+        candidateSort
+      ),
+    [candidateSort, pendingList, primaryCategory, selectedSecondaryDefinition]
+  );
+  const categoryFilteredLibraryList = useMemo(
+    () =>
+      filterCandidateEquipmentItems(
+        librarySourceFilter === 'all'
+          ? libraryList
+          : libraryList.filter((item) =>
+              item.sourceKinds.includes(librarySourceFilter)
+            ),
+        {
+          category: primaryCategory,
+          slotDefinition: selectedSecondaryDefinition,
+        }
+      ),
+    [
+      libraryList,
+      librarySourceFilter,
+      primaryCategory,
+      selectedSecondaryDefinition,
+    ]
+  );
+  const inventoryLifecycleSummaryItems = useMemo(() => {
+    const counts = {
+      all: categoryFilteredLibraryList.filter((item) =>
+        item.sourceKinds.includes('inventory_asset')
+      ).length,
+      active: 0,
+      sold: 0,
+      discarded: 0,
+    };
+
+    categoryFilteredLibraryList.forEach((item) => {
+      if (!item.sourceKinds.includes('inventory_asset')) {
+        return;
+      }
+
+      const summary = summarizeSimulatorInventoryRefs(item);
+      if (summary.active > 0) {
+        counts.active += 1;
+      }
+      if (summary.sold > 0) {
+        counts.sold += 1;
+      }
+      if (summary.discarded > 0) {
+        counts.discarded += 1;
+      }
+    });
+
+    return [
+      { key: 'all' as const, label: '全部状态', count: counts.all },
+      { key: 'active' as const, label: '库存待用', count: counts.active },
+      { key: 'sold' as const, label: '已售出', count: counts.sold },
+      { key: 'discarded' as const, label: '已作废', count: counts.discarded },
+    ];
+  }, [categoryFilteredLibraryList]);
+  const scopedInventoryLibraryItems = useMemo(
+    () =>
+      categoryFilteredLibraryList.filter((item) =>
+        item.sourceKinds.includes('inventory_asset')
+      ),
+    [categoryFilteredLibraryList]
+  );
+  const lifecycleMatchedInventoryLibraryItems = useMemo(() => {
+    if (inventoryLifecycleFilter === 'all') {
+      return scopedInventoryLibraryItems;
+    }
+
+    return scopedInventoryLibraryItems.filter(
+      (item) =>
+        summarizeSimulatorInventoryRefs(item)[inventoryLifecycleFilter] > 0
+    );
+  }, [inventoryLifecycleFilter, scopedInventoryLibraryItems]);
+  const lifecycleFilteredLibraryList = useMemo(
+    () =>
+      sortCandidateEquipmentItems(
+        librarySourceFilter === 'inventory_asset' &&
+          inventoryLifecycleFilter !== 'all'
+          ? categoryFilteredLibraryList.filter(
+              (item) =>
+                summarizeSimulatorInventoryRefs(item)[inventoryLifecycleFilter] >
+                0
+            )
+          : categoryFilteredLibraryList,
+        candidateSort
+      ),
+    [
+      candidateSort,
+      categoryFilteredLibraryList,
+      inventoryLifecycleFilter,
+      librarySourceFilter,
+    ]
+  );
+  const filteredLibraryList = useMemo(() => {
+    if (!libraryActionSummary || !libraryActionFocusOnly) {
+      return lifecycleFilteredLibraryList;
+    }
+
+    return lifecycleFilteredLibraryList.filter((item) =>
+      libraryActionSummary.affectedSlotKeys.includes(
+        buildEquipmentSlotKey(item.equipment)
+      )
+    );
+  }, [
+    libraryActionFocusOnly,
+    libraryActionSummary,
+    lifecycleFilteredLibraryList,
+  ]);
+  const activeVisibleCandidateList =
+    libTab === 'pending' ? filteredPendingList : filteredLibraryList;
+  const getLibraryEquipmentSlotLabel = (equipment: Equipment) => {
+    const slotCategory =
+      equipment.type === 'trinket'
+        ? 'trinket'
+        : equipment.type === 'jade'
+          ? 'jade'
+          : 'equipment';
+    const slotDefinition = getSimulatorSlotDefinitions(slotCategory).find(
+      (slot) => slot.type === equipment.type && slot.slot === equipment.slot
+    );
+
+    return slotDefinition
+      ? getSimulatorSlotLabel(slotDefinition, 'laboratory')
+      : equipment.type;
+  };
+  const removableLibraryCandidateItems = useMemo(
+    () =>
+      filteredLibraryList.filter(
+        (item) => item.selectable && item.sourceKinds.includes('candidate_library')
+      ),
+    [filteredLibraryList]
+  );
+  const manageableLibraryInventoryItems = useMemo(
+    () =>
+      librarySourceFilter === 'inventory_asset'
+        ? filteredLibraryList.filter(
+            (item) => getCandidateBackedInventoryRefs(item).length > 0
+          )
+        : [],
+    [filteredLibraryList, librarySourceFilter]
+  );
+  const restorableLibraryInventoryItems = useMemo(
+    () =>
+      librarySourceFilter === 'inventory_asset'
+        ? filteredLibraryList.filter(
+            (item) =>
+              getCandidateBackedInventoryRefs(item, ['sold', 'discarded'])
+                .length > 0
+          )
+        : [],
+    [filteredLibraryList, librarySourceFilter]
+  );
+  const selectedPendingIndex = selectedPendingItem
+    ? filteredPendingList.findIndex(
+        (item) => item.id === selectedPendingItem.id
+      )
+    : -1;
   const visibleExperimentSeats = useMemo(
     () => getVisibleExperimentSeats(experimentSeats),
     [experimentSeats]
@@ -282,6 +600,63 @@ export function LaboratoryPanel() {
     () => getVisibleCompareExperimentSeats(experimentSeats),
     [experimentSeats]
   );
+  const ensureCompareSeat = () => {
+    let compareSeat = experimentSeats.find((seat) => !seat.isSample) ?? null;
+
+    if (!compareSeat) {
+      addExperimentSeat();
+      compareSeat =
+        useGameStore
+          .getState()
+          .experimentSeats.find((seat) => !seat.isSample) ?? null;
+    }
+
+    return compareSeat;
+  };
+  const handleSendLibraryEquipmentToCompareSeat = (
+    item: SimulatorEquipmentLibraryItem
+  ) => {
+    const compareSeat = ensureCompareSeat();
+
+    if (!compareSeat) {
+      toast.error('实验室席位创建失败');
+      return;
+    }
+
+    updateExperimentSeatEquipment(
+      compareSeat.id,
+      {
+        ...item.equipment,
+      },
+      {
+        inheritGemstones: false,
+        inheritRuneStones: false,
+      }
+    );
+
+    toast.success('已挂到实验室对比席位', {
+      description: `${item.equipment.name} 已挂载到 ${compareSeat.name}`,
+    });
+  };
+  const handleRemoveLibraryEquipmentFromCompareSeat = (
+    item: SimulatorEquipmentLibraryItem
+  ) => {
+    const compareSeat = visibleCompareSeats[0] ?? null;
+
+    if (!compareSeat) {
+      return;
+    }
+
+    removeExperimentSeatEquipment(
+      compareSeat.id,
+      item.equipment.type,
+      item.equipment.slot
+    );
+
+    toast.success('已从实验室对比席位移出', {
+      description: `${item.equipment.name} 已从 ${compareSeat.name} 移出`,
+    });
+  };
 
   const { baseAttributes, cultivation, meridian, treasure } = useGameStore();
   const [labValuationBySeatId, setLabValuationBySeatId] = useState<
@@ -319,6 +694,45 @@ export function LaboratoryPanel() {
     const hasDecimal = price % 1 !== 0;
     return hasDecimal ? price.toFixed(2) : price.toString();
   };
+
+  const laboratorySourceFilterOptions: Array<{
+    key: 'all' | SimulatorEquipmentLibrarySourceKind;
+    label: string;
+    count: number;
+  }> = useMemo(
+    () => [
+      { key: 'all', label: '全部来源', count: libraryList.length },
+      {
+        key: 'inventory_asset',
+        label: '正式库存',
+        count: libraryList.filter((item) =>
+          item.sourceKinds.includes('inventory_asset')
+        ).length,
+      },
+      {
+        key: 'current_plan',
+        label: '当前方案',
+        count: libraryList.filter((item) =>
+          item.sourceKinds.includes('current_plan')
+        ).length,
+      },
+      {
+        key: 'equipment_plan',
+        label: '其他方案',
+        count: libraryList.filter((item) =>
+          item.sourceKinds.includes('equipment_plan')
+        ).length,
+      },
+      {
+        key: 'candidate_library',
+        label: '候选装备库',
+        count: libraryList.filter((item) =>
+          item.sourceKinds.includes('candidate_library')
+        ).length,
+      },
+    ],
+    [libraryList]
+  );
 
   const handleLoadLabSession = async (silent = false) => {
     try {
@@ -400,6 +814,91 @@ export function LaboratoryPanel() {
     }));
   };
 
+  const removeLibraryCandidateSourceItems = async (ids: string[]) => {
+    if (ids.length === 0) {
+      toast.error('当前筛选下没有可移出的候选装备');
+      return;
+    }
+
+    const removableIds = new Set(
+      removableLibraryCandidateItems
+        .filter((item) => ids.includes(item.id))
+        .map((item) => item.id)
+    );
+
+    if (removableIds.size === 0) {
+      toast.error('选中的装备里没有候选来源可移出');
+      return;
+    }
+
+    removeCandidateEquipmentItems(Array.from(removableIds));
+    const saved = await handleSaveCandidateEquipment(true);
+
+    if (!saved) {
+      return;
+    }
+
+    setSelectedLibEquip((current) =>
+      current && removableIds.has(current.id) ? null : current
+    );
+
+    toast.success(
+      removableIds.size === 1
+        ? '已从实验室总库移出候选来源'
+        : `已从实验室总库移出 ${removableIds.size} 件候选装备`
+    );
+  };
+
+  const confirmCandidateEquipmentItems = (ids: string[]) => {
+    useGameStore.setState((state) => ({
+      ...state,
+      pendingEquipments: state.pendingEquipments.map((item) =>
+        ids.includes(item.id) ? { ...item, status: 'confirmed' } : item
+      ),
+    }));
+  };
+
+  const resolveEquipmentCategory = (equipment: Equipment) => {
+    if (equipment.type === 'trinket') {
+      return 'trinket' as const;
+    }
+
+    if (equipment.type === 'jade') {
+      return 'jade' as const;
+    }
+
+    return 'equipment' as const;
+  };
+
+  const handlePendingReviewRequest = () => {
+    const requestedId = readSimulatorPendingReviewRequest();
+    if (!requestedId) {
+      return;
+    }
+
+    const requestedItem = pendingEquipments.find(
+      (item) => item.id === requestedId && item.status === 'pending'
+    );
+
+    if (!requestedItem) {
+      const stillExists = pendingEquipments.some(
+        (item) => item.id === requestedId
+      );
+      if (!stillExists) {
+        clearSimulatorPendingReviewRequest();
+      }
+      return;
+    }
+
+    setLibTab('pending');
+    setPrimaryCategory(resolveEquipmentCategory(requestedItem.equipment));
+    setSecondaryCategory('all');
+    setSelectedPendingItem(requestedItem);
+    setSelectedLibEquip(null);
+    setPendingOcrReviewItem(null);
+    clearSimulatorPendingReviewRequest();
+  };
+
   const handleLoadCandidateEquipment = async (silent = false) => {
     try {
       setIsLoadingCandidateEquipment(true);
@@ -429,6 +928,33 @@ export function LaboratoryPanel() {
       }
     } finally {
       setIsLoadingCandidateEquipment(false);
+    }
+  };
+
+  const handleLoadManagedInventory = async (silent = false) => {
+    try {
+      const response = await fetch('/api/simulator/current/inventory?status=all', {
+        method: 'GET',
+        cache: 'no-store',
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+        throw new Error(payload?.message || '读取正式库存失败');
+      }
+
+      setManagedInventoryItems(
+        payload.data.map(mapSimulatorInventoryLibraryItemToPendingEquipment)
+      );
+
+      if (!silent) {
+        toast.success('已从云端读取正式库存');
+      }
+    } catch (error) {
+      console.error('Failed to load simulator managed inventory:', error);
+      if (!silent) {
+        toast.error('读取正式库存失败');
+      }
     }
   };
 
@@ -537,6 +1063,50 @@ export function LaboratoryPanel() {
     toast.success('识别结果已更新');
   };
 
+  const openPendingItemByIndex = (index: number) => {
+    const nextItem = filteredPendingList[index];
+    if (!nextItem) {
+      return;
+    }
+
+    setSelectedPendingItem(nextItem);
+    setSelectedLibEquip(null);
+  };
+
+  const handleConfirmPendingItem = async (
+    item: PendingEquipment,
+    options?: {
+      moveToNext?: boolean;
+    }
+  ) => {
+    const currentIndex = filteredPendingList.findIndex(
+      (candidate) => candidate.id === item.id
+    );
+
+    confirmPendingEquipment(item.id);
+    await handleSaveCandidateEquipment(true);
+
+    if (options?.moveToNext) {
+      const fallbackNextItem =
+        filteredPendingList[currentIndex + 1] ??
+        filteredPendingList[currentIndex - 1] ??
+        null;
+
+      setSelectedPendingItem(fallbackNextItem);
+      if (fallbackNextItem) {
+        toast.success(
+          `已确认 ${item.equipment.name}，继续查看 ${fallbackNextItem.equipment.name}`
+        );
+      } else {
+        toast.success('已确认入库，当前筛选下没有更多待确认装备');
+      }
+      return;
+    }
+
+    setSelectedPendingItem(null);
+    toast.success('已确认入库');
+  };
+
   const buildNextCurrentEquipment = (equipment: Equipment) => {
     const existingIndex = currentEquipment.findIndex(
       (item) =>
@@ -641,13 +1211,155 @@ export function LaboratoryPanel() {
     }
   };
 
+  const handleConfirmInventoryStatusUpdate = async () => {
+    if (!inventoryStatusUpdate) {
+      return;
+    }
+
+    try {
+      setUpdatingInventoryEntryIds(inventoryStatusUpdate.entryIds);
+      await Promise.all(
+        inventoryStatusUpdate.entryIds.map(async (entryId) => {
+          const response = await fetch(
+            `/api/simulator/current/inventory/${entryId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                status: inventoryStatusUpdate.nextStatus,
+              }),
+            }
+          );
+          const payload = await response.json();
+
+          if (!response.ok || payload?.code !== 0) {
+            throw new Error(payload?.message || '更新正式库存失败');
+          }
+        })
+      );
+
+      await Promise.all([
+        handleLoadManagedInventory(true),
+        handleLoadCandidateEquipment(true),
+      ]);
+
+      const nextStatusLabel = getSimulatorInventoryLifecycleLabel(
+        inventoryStatusUpdate.nextStatus
+      );
+      const nextToastTitle = getSimulatorInventoryUpdateToastTitle(
+        inventoryStatusUpdate.nextStatus
+      );
+
+      toast.success(nextToastTitle, {
+        description:
+          inventoryStatusUpdate.items.length === 1
+            ? `${inventoryStatusUpdate.primaryItem.equipment.name} 已从正式库存转为${nextStatusLabel}`
+            : `已将 ${inventoryStatusUpdate.items.length} 件实验室总库正式库存装备批量更新为${nextStatusLabel}`,
+      });
+
+      setLibraryActionSummary({
+        id: `laboratory-inventory-status-${Date.now()}`,
+        title: nextToastTitle,
+        description: `已处理 ${inventoryStatusUpdate.items.length} 件正式库存装备，目标状态为“${nextStatusLabel}”。`,
+        tone: inventoryStatusUpdate.nextStatus === 'active' ? 'cyan' : 'amber',
+        affectedSlotLabels: inventoryStatusUpdate.items.map((item) =>
+          getLibraryEquipmentSlotLabel(item.equipment)
+        ),
+        affectedSlotKeys: inventoryStatusUpdate.items.map((item) =>
+          buildEquipmentSlotKey(item.equipment)
+        ),
+        targetLabel:
+          inventoryStatusUpdate.nextStatus === 'active'
+            ? '正式库存 · 库存待用'
+            : `正式库存 · ${nextStatusLabel}`,
+        viewHint:
+          inventoryStatusUpdate.nextStatus === 'active'
+            ? '已推荐回到正式库存“库存待用”视图，恢复后的装备会重新进入换装与实验室席位选择。'
+            : '已推荐回到对应正式库存状态视图，方便继续恢复或核对本次部位。',
+        targetView: {
+          sourceFilter: 'inventory_asset',
+          inventoryLifecycleFilter: inventoryStatusUpdate.nextStatus,
+        },
+      });
+      setLibraryActionFocusOnly(true);
+
+      if (
+        selectedLibEquip &&
+        inventoryStatusUpdate.items.some((item) => item.id === selectedLibEquip.id)
+      ) {
+        setSelectedLibEquip(null);
+      }
+
+      setInventoryStatusUpdate(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '更新正式库存失败');
+    } finally {
+      setUpdatingInventoryEntryIds([]);
+    }
+  };
+  const applyLibraryActionTargetView = () => {
+    if (!libraryActionSummary) {
+      return;
+    }
+
+    setLibTab('library');
+    setLibrarySourceFilter(libraryActionSummary.targetView.sourceFilter);
+    setInventoryLifecycleFilter(
+      libraryActionSummary.targetView.inventoryLifecycleFilter
+    );
+  };
+  const handleContinueLibraryActionSummary = () => {
+    if (!libraryActionSummary) {
+      return;
+    }
+
+    applyLibraryActionTargetView();
+    setLibraryActionFocusOnly(true);
+  };
+  const handleCompleteLibraryActionSummary = () => {
+    setLibraryActionSummary(null);
+    setLibraryActionFocusOnly(false);
+  };
+
   const sampleEquipment = useMemo(
     () => equipmentSets[selectedSampleSetIndex]?.items || currentEquipment,
     [equipmentSets, selectedSampleSetIndex, currentEquipment]
   );
+  const getLaboratoryCompareSeatState = (equipment: Equipment) => {
+    const compareSeat = visibleCompareSeats[0] ?? null;
+    const compareSeatLabel = compareSeat
+      ? getSeatDisplayName(compareSeat, visibleExperimentSeats)
+      : '对比席位';
+    const state = resolveLaboratoryCompareSeatCardState({
+      equipment,
+      sampleEquipment,
+      compareEquipment: compareSeat?.equipment,
+      compareSeatLabel,
+    });
+
+    return {
+      compareSeat,
+      compareSeatLabel: state.compareSeatLabel,
+      isExplicitCompareMatch: state.isExplicitCompareMatch,
+      isInheritedFromSample: state.isInheritedFromSample,
+    };
+  };
   const compareSeatCount = useMemo(
     () => visibleCompareSeats.length,
     [visibleCompareSeats]
+  );
+  const selectedLibEquipInventoryRefs = useMemo(
+    () => (selectedLibEquip ? getCandidateBackedInventoryRefs(selectedLibEquip) : []),
+    [selectedLibEquip]
+  );
+  const selectedLibEquipRestorableInventoryRefs = useMemo(
+    () =>
+      selectedLibEquip
+        ? getCandidateBackedInventoryRefs(selectedLibEquip, ['sold', 'discarded'])
+        : [],
+    [selectedLibEquip]
   );
   const laboratorySkills = useMemo(
     () =>
@@ -796,7 +1508,13 @@ export function LaboratoryPanel() {
 
   // 固定上传区域逻辑
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadQueueProgress, setUploadQueueProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [equipmentImageHint, setEquipmentImageHint] =
+    useState<SimulatorEquipmentOcrImageHint>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingWarningCountRef = useRef<number | null>(null);
 
@@ -804,10 +1522,8 @@ export function LaboratoryPanel() {
     const validation = validateImageFile(file);
     if (!validation.valid) {
       toast.error(validation.error || '文件验证失败');
-      return;
+      return false;
     }
-
-    setIsProcessing(true);
 
     try {
       const configResponse = await fetch('/api/simulator/current/ocr/config', {
@@ -828,6 +1544,7 @@ export function LaboratoryPanel() {
 
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('imageHint', equipmentImageHint);
 
       const response = await fetch(
         '/api/simulator/current/candidate-equipment/ocr',
@@ -851,13 +1568,20 @@ export function LaboratoryPanel() {
       const now = new Date();
       const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
       const recognizedName = payload?.data?.item?.equipment?.name || '新装备';
-      toast.success(`${timeStr} 识别到新物品：${recognizedName}`);
+      if (payload?.data?.item) {
+        setPendingOcrReviewItem(
+          mapSimulatorCandidateEquipmentItemToPendingEquipment(
+            payload.data.item
+          )
+        );
+      }
 
       // 如果需要记录到全局日志，可以在这里添加，不过不再在当前组件内展示
       useGameStore.getState().addOcrLog({
         type: 'success',
         message: `${timeStr}，识别到新物品${recognizedName}`,
       });
+      return true;
     } catch (error) {
       const description =
         error instanceof Error ? error.message : '请重试或更换清晰图片';
@@ -867,14 +1591,43 @@ export function LaboratoryPanel() {
         message: '图片识别失败',
         details: description,
       });
+      return false;
+    }
+  };
+
+  const processFileQueue = async (files: File[]) => {
+    if (files.length === 0) {
+      return;
+    }
+
+    setIsProcessing(true);
+    setUploadQueueProgress({ current: 0, total: files.length });
+
+    try {
+      let successCount = 0;
+
+      for (const [index, file] of files.entries()) {
+        setUploadQueueProgress({ current: index + 1, total: files.length });
+        const success = await processFile(file);
+        if (success) {
+          successCount += 1;
+        }
+      }
+
+      if (files.length > 1) {
+        toast.success(`批量上传完成`, {
+          description: `共 ${files.length} 张，成功 ${successCount} 张。`,
+        });
+      }
     } finally {
       setIsProcessing(false);
+      setUploadQueueProgress(null);
     }
   };
 
   const handleFileUpload = (files: FileList | null) => {
     if (files && files.length > 0) {
-      processFile(files[0]);
+      void processFileQueue(Array.from(files));
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -885,7 +1638,7 @@ export function LaboratoryPanel() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
+      void processFileQueue(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -903,7 +1656,7 @@ export function LaboratoryPanel() {
             const file = new File([blob], 'pasted-image.png', {
               type: blob.type,
             });
-            processFile(file);
+            void processFileQueue([file]);
           }
         }
       }
@@ -917,7 +1670,7 @@ export function LaboratoryPanel() {
   useEffect(() => {
     if (libTab === 'library') {
       setPrimaryCategory('equipment');
-      setSecondaryCategory(getDefaultSimulatorSecondaryCategory('equipment'));
+      setSecondaryCategory('all');
     }
   }, [libTab]);
 
@@ -939,10 +1692,28 @@ export function LaboratoryPanel() {
 
   // 切换一级分类时，自动选中第一个二级分类
   useEffect(() => {
-    const firstSecondary =
-      getDefaultSimulatorSecondaryCategory(primaryCategory);
-    setSecondaryCategory(firstSecondary);
+    setSecondaryCategory('all');
   }, [primaryCategory]);
+
+  useEffect(() => {
+    setIsSelectionMode(false);
+    setSelectedItemIds([]);
+  }, [libTab, primaryCategory, secondaryCategory]);
+
+  useEffect(() => {
+    handlePendingReviewRequest();
+  }, [pendingEquipments]);
+
+  useEffect(() => {
+    const handleOpenLab = () => {
+      handlePendingReviewRequest();
+    };
+
+    window.addEventListener(SIMULATOR_OPEN_LAB_EVENT, handleOpenLab);
+    return () => {
+      window.removeEventListener(SIMULATOR_OPEN_LAB_EVENT, handleOpenLab);
+    };
+  }, [pendingEquipments]);
 
   useEffect(() => {
     void handleLoadLabSession(true);
@@ -996,12 +1767,93 @@ export function LaboratoryPanel() {
                 <p className="text-xs text-yellow-400/80">Equipment Library</p>
               </div>
             </div>
+
+            {libTab === 'library' && libraryActionSummary ? (
+              <div
+                className={`rounded-lg border px-3 py-3 text-xs ${
+                  libraryActionSummary.tone === 'cyan'
+                    ? 'border-cyan-900/40 bg-cyan-950/10 text-cyan-100'
+                    : libraryActionSummary.tone === 'violet'
+                      ? 'border-violet-900/40 bg-violet-950/10 text-violet-100'
+                      : 'border-amber-900/40 bg-amber-950/10 text-amber-100'
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-white/95">
+                      {libraryActionSummary.title}
+                    </div>
+                    <div className="mt-1 text-slate-300">
+                      {libraryActionSummary.description}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-400">
+                      目标去向：{libraryActionSummary.targetLabel}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-400">
+                      {libraryActionSummary.viewHint}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLibraryActionFocusOnly((current) => !current)
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                        libraryActionFocusOnly
+                          ? 'border-white/25 bg-white/10 text-white'
+                          : 'border-slate-700/70 bg-slate-900/70 text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      {libraryActionFocusOnly ? '显示全部结果' : '只看本次部位'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyLibraryActionTargetView}
+                      className="rounded-full border border-slate-700/70 bg-slate-900/70 px-2.5 py-1 text-[11px] text-slate-200 transition-colors hover:bg-slate-800"
+                    >
+                      回到目标视图
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleContinueLibraryActionSummary}
+                      className="rounded-full border border-slate-700/70 bg-slate-900/70 px-2.5 py-1 text-[11px] text-slate-200 transition-colors hover:bg-slate-800"
+                    >
+                      继续处理本次部位
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCompleteLibraryActionSummary}
+                      className="rounded-full border border-emerald-400/50 bg-emerald-500/15 px-2.5 py-1 text-[11px] text-emerald-50 transition-colors hover:bg-emerald-500/25"
+                    >
+                      完成本轮
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {libraryActionSummary.affectedSlotLabels.slice(0, 6).map((label) => (
+                    <span
+                      key={`${libraryActionSummary.id}-${label}`}
+                      className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/85"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                  {libraryActionSummary.affectedSlotLabels.length > 6 ? (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                      +{libraryActionSummary.affectedSlotLabels.length - 6}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <button
                 className="inline-flex items-center gap-1 rounded-lg border border-yellow-700/40 bg-slate-900/60 px-2.5 py-1.5 text-xs text-yellow-100 transition hover:border-yellow-500/70 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isLoadingLab || isLoadingCandidateEquipment}
                 onClick={async () => {
                   await handleLoadLabSession();
+                  await handleLoadManagedInventory(true);
                   await handleLoadCandidateEquipment(true);
                 }}
               >
@@ -1066,110 +1918,469 @@ export function LaboratoryPanel() {
               className={`flex-1 rounded-md py-1.5 text-xs transition-colors ${libTab === 'library' ? 'bg-yellow-600 font-bold text-slate-900' : 'text-yellow-100/60 hover:text-yellow-100'}`}
               onClick={() => setLibTab('library')}
             >
-              新品装备库 ({libraryList.length})
+              装备总库 ({libraryList.length})
             </button>
           </div>
+          {libTab === 'library' && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {laboratorySourceFilterOptions.map((option) => (
+                <button
+                  key={option.key}
+                  onClick={() => setLibrarySourceFilter(option.key)}
+                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                    librarySourceFilter === option.key
+                      ? 'border-sky-500/60 bg-sky-900/30 font-bold text-sky-100'
+                      : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                  }`}
+                >
+                  {option.label} ({option.count})
+                </button>
+              ))}
+            </div>
+          )}
+          {libTab === 'library' && librarySourceFilter === 'inventory_asset' && (
+            <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-sky-900/30 bg-sky-950/10 p-2">
+              <span className="self-center px-1 text-xs font-medium text-sky-100">
+                正式库存状态
+              </span>
+              {inventoryLifecycleSummaryItems.map((option) => (
+                <button
+                  key={option.key}
+                  onClick={() => setInventoryLifecycleFilter(option.key)}
+                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                    inventoryLifecycleFilter === option.key
+                      ? 'border-sky-400/60 bg-sky-500/20 font-bold text-sky-50'
+                      : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                  }`}
+                >
+                  {option.label} ({option.count})
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-3 space-y-3">
+            <div className="flex rounded-lg border border-yellow-800/30 bg-slate-900/60 p-1">
+              {SIMULATOR_CATEGORY_CONFIG.map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setPrimaryCategory(cat.key)}
+                  className={`flex-1 rounded-md py-1.5 text-xs transition-colors ${
+                    primaryCategory === cat.key
+                      ? 'bg-yellow-600 font-bold text-slate-900'
+                      : 'text-yellow-100/60 hover:text-yellow-100'
+                  }`}
+                >
+                  {cat.name} (
+                  {
+                    filterCandidateEquipmentItems(activeCandidateSourceList, {
+                      category: cat.key,
+                      slotDefinition: null,
+                    }).length
+                  }
+                  )
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setSecondaryCategory('all')}
+                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  secondaryCategory === 'all'
+                    ? 'border-yellow-600/60 bg-yellow-600/20 font-bold text-yellow-400'
+                    : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                }`}
+              >
+                全部 (
+                {
+                  filterCandidateEquipmentItems(activeCandidateSourceList, {
+                    category: primaryCategory,
+                    slotDefinition: null,
+                  }).length
+                }
+                )
+              </button>
+              {secondaryCategories.map((cat) => {
+                const count = activeCandidateSourceList.filter((item) =>
+                  matchesSimulatorSlotDefinition(cat, item.equipment)
+                ).length;
+
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSecondaryCategory(cat.id)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                      secondaryCategory === cat.id
+                        ? 'border-yellow-600/60 bg-yellow-600/20 font-bold text-yellow-400'
+                        : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                    }`}
+                  >
+                    {getSimulatorSlotLabel(cat, 'laboratory')} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-yellow-800/30 bg-slate-950/40 px-3 py-2">
+              <div className="text-xs text-slate-300">
+                当前按
+                <span className="mx-1 font-semibold text-yellow-300">
+                  {SIMULATOR_CATEGORY_CONFIG.find(
+                    (cat) => cat.key === primaryCategory
+                  )?.name || '装备'}
+                </span>
+                /
+                <span className="mx-1 font-semibold text-yellow-300">
+                  {selectedSecondaryDefinition
+                    ? getSimulatorSlotLabel(
+                        selectedSecondaryDefinition,
+                        'laboratory'
+                      )
+                    : '全部'}
+                </span>
+                显示，共 {activeVisibleCandidateList.length} 件
+                {libTab === 'library' && (
+                  <>
+                    {' '}
+                    · 来源
+                    <span className="mx-1 font-semibold text-sky-300">
+                      {laboratorySourceFilterOptions.find(
+                        (option) => option.key === librarySourceFilter
+                      )?.label || '全部来源'}
+                    </span>
+                    {librarySourceFilter === 'inventory_asset' ? (
+                      <>
+                        {' '}
+                        · 状态
+                        <span className="mx-1 font-semibold text-cyan-300">
+                          {inventoryLifecycleSummaryItems.find(
+                            (option) => option.key === inventoryLifecycleFilter
+                          )?.label || '库存待用'}
+                        </span>
+                      </>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={candidateSort}
+                  onChange={(event) =>
+                    setCandidateSort(
+                      event.target.value as SimulatorCandidateEquipmentSortKey
+                    )
+                  }
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 transition-colors outline-none hover:border-slate-600"
+                >
+                  <option value="newest">最新上传</option>
+                  <option value="oldest">最早上传</option>
+                  <option value="totalPriceDesc">总价最高</option>
+                  <option value="totalPriceAsc">总价最低</option>
+                </select>
+
+                {libTab === 'pending' && !isSelectionMode ? (
+                  <button
+                    onClick={() => setIsSelectionMode(true)}
+                    className="rounded-lg border border-blue-600/40 bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-600/30"
+                  >
+                    选择
+                  </button>
+                ) : libTab === 'pending' ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsSelectionMode(false);
+                        setSelectedItemIds([]);
+                      }}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700"
+                    >
+                      取消
+                    </button>
+                    {libTab === 'pending' && (
+                      <button
+                        onClick={async () => {
+                          if (selectedItemIds.length === 0) {
+                            toast.error('请先选择要确认的装备');
+                            return;
+                          }
+
+                          confirmCandidateEquipmentItems(selectedItemIds);
+                          await handleSaveCandidateEquipment(true);
+                          toast.success(
+                            `已确认 ${selectedItemIds.length} 件装备入库`
+                          );
+                          setSelectedItemIds([]);
+                          setIsSelectionMode(false);
+                        }}
+                        disabled={selectedItemIds.length === 0}
+                        className="rounded-lg border border-emerald-600/40 bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        批量确认
+                        {selectedItemIds.length > 0 &&
+                          ` (${selectedItemIds.length})`}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (selectedItemIds.length > 0) {
+                          setShowDeleteConfirm(true);
+                        } else {
+                          toast.error('请先选择要删除的装备');
+                        }
+                      }}
+                      disabled={selectedItemIds.length === 0}
+                      className="flex items-center gap-1 rounded-lg border border-red-600/40 bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      删除
+                      {selectedItemIds.length > 0 &&
+                        ` (${selectedItemIds.length})`}
+                    </button>
+                  </>
+                ) : manageableLibraryInventoryItems.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        const draft = buildSimulatorInventoryStatusUpdateDraft({
+                          items: manageableLibraryInventoryItems,
+                          nextStatus: 'sold',
+                        });
+                        if (draft) {
+                          setInventoryStatusUpdate(draft);
+                        }
+                      }}
+                      disabled={updatingInventoryEntryIds.length > 0}
+                      className="rounded-lg border border-emerald-600/40 bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      批量标记已售出 ({manageableLibraryInventoryItems.length})
+                    </button>
+                    <button
+                      onClick={() => {
+                        const draft = buildSimulatorInventoryStatusUpdateDraft({
+                          items: manageableLibraryInventoryItems,
+                          nextStatus: 'discarded',
+                        });
+                        if (draft) {
+                          setInventoryStatusUpdate(draft);
+                        }
+                      }}
+                      disabled={updatingInventoryEntryIds.length > 0}
+                      className="rounded-lg border border-red-600/40 bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      批量标记作废 ({manageableLibraryInventoryItems.length})
+                    </button>
+                    <div className="text-[11px] text-slate-400">
+                      只会处理候选入库生成的正式库存记录，不会删除方案或实验席位引用
+                    </div>
+                  </>
+                ) : restorableLibraryInventoryItems.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        const draft = buildSimulatorInventoryStatusUpdateDraft({
+                          items: restorableLibraryInventoryItems,
+                          nextStatus: 'active',
+                        });
+                        if (draft) {
+                          setInventoryStatusUpdate(draft);
+                        }
+                      }}
+                      disabled={updatingInventoryEntryIds.length > 0}
+                      className="rounded-lg border border-sky-600/40 bg-sky-600/20 px-3 py-1.5 text-xs font-medium text-sky-200 transition-colors hover:bg-sky-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      批量恢复待用 ({restorableLibraryInventoryItems.length})
+                    </button>
+                    <div className="text-[11px] text-slate-400">
+                      会把已售出或作废的正式库存恢复为库存待用，恢复后才重新进入换装弹窗与实验室席位选择器
+                    </div>
+                  </>
+                ) : removableLibraryCandidateItems.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setLibraryCandidateRemovalIds(
+                          removableLibraryCandidateItems.map((item) => item.id)
+                        );
+                        setShowLibraryCandidateRemovalConfirm(true);
+                      }}
+                      className="flex items-center gap-1 rounded-lg border border-red-600/40 bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-300 transition-colors hover:bg-red-600/30"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      批量移出候选库 ({removableLibraryCandidateItems.length})
+                    </button>
+                    <div className="text-[11px] text-slate-400">
+                      总库已合并当前方案、其他方案与已确认候选装备
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-slate-400">
+                    总库已合并当前方案、其他方案与已确认候选装备
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {libTab === 'pending' ? (
             <div className="relative flex h-full flex-col">
               <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto pr-2 pb-[72px]">
                 {pendingList.length >= PENDING_EQUIPMENT_WARNING_THRESHOLD && (
                   <div className="rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
-                    待确认装备已堆积到 {pendingList.length} 件，请先确认入库或删除一部分，再继续上传。
+                    待确认装备已堆积到 {pendingList.length}{' '}
+                    件，请先确认入库或删除一部分，再继续上传。
                   </div>
                 )}
-                {pendingList.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedPendingItem(item);
-                      // 关闭新装备库弹窗
-                      setSelectedLibEquip(null);
-                    }}
-                    className="cursor-pointer rounded-xl border border-yellow-800/40 bg-slate-900/60 p-2.5 transition-all hover:border-yellow-600/60 hover:bg-slate-900/80"
-                  >
-                    <div className="flex gap-3">
-                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-                        <img
-                          src={
-                            getSimulatorDisplayImageUrl(
-                              item.equipment.imageUrl
-                            ) ||
-                            getEquipmentDefaultImage(item.equipment.type)
-                          }
-                          alt={item.equipment.name}
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-                      {/* 左列：装备信息 */}
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-bold text-yellow-100">
-                            {item.equipment.name}
-                          </div>
-                          <span className="rounded border border-orange-600/50 bg-orange-900/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
-                            待确认
-                          </span>
-                        </div>
+                {filteredPendingList.map((item) => {
+                  const isSelected = selectedItemIds.includes(item.id);
 
-                        <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-slate-300">
-                          {item.equipment.mainStat}
-                        </div>
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        if (isSelectionMode) {
+                          setSelectedItemIds((current) =>
+                            current.includes(item.id)
+                              ? current.filter((id) => id !== item.id)
+                              : [...current, item.id]
+                          );
+                          return;
+                        }
 
-                        {item.equipment.extraStat && (
-                          <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-red-400">
-                            {item.equipment.extraStat}
+                        setSelectedPendingItem(item);
+                        setSelectedLibEquip(null);
+                      }}
+                      className={`cursor-pointer rounded-xl border p-2.5 transition-all ${
+                        isSelected
+                          ? 'border-yellow-600 bg-yellow-900/20'
+                          : 'border-yellow-800/40 bg-slate-900/60 hover:border-yellow-600/60 hover:bg-slate-900/80'
+                      }`}
+                    >
+                      <div className="flex gap-3">
+                        {isSelectionMode && (
+                          <div
+                            className={`mt-4 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all ${
+                              isSelected
+                                ? 'border-yellow-600 bg-yellow-600'
+                                : 'border-slate-600 bg-slate-800/50'
+                            }`}
+                          >
+                            {isSelected && (
+                              <svg
+                                className="h-3 w-3 text-slate-900"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={3}
+                                  d="M5 13l4 4L19 7"
+                                />
+                              </svg>
+                            )}
                           </div>
                         )}
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
+                          <img
+                            src={getSimulatorEquipmentDisplayImageUrl(
+                              item.equipment
+                            )}
+                            alt={item.equipment.name}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        {/* 左列：装备信息 */}
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-bold text-yellow-100">
+                              {item.equipment.name}
+                            </div>
+                            <span className="rounded border border-orange-600/50 bg-orange-900/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
+                              待确认
+                            </span>
+                          </div>
 
-                        {item.equipment.highlights &&
-                          item.equipment.highlights.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {item.equipment.highlights.map((hl, idx) => (
-                                <span
-                                  key={idx}
-                                  className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
-                                >
-                                  {hl}
-                                </span>
-                              ))}
+                          <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-slate-300">
+                            {item.equipment.mainStat}
+                          </div>
+
+                          {item.equipment.extraStat && (
+                            <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-red-400">
+                              {item.equipment.extraStat}
                             </div>
                           )}
-                      </div>
 
-                      {/* 右列：价格信息 - 固定宽度容纳8位数 */}
-                      <div className="flex w-28 shrink-0 flex-col gap-1.5 border-l border-slate-700/50 pl-3">
-                        <div className="text-right">
-                          <div className="mb-0.5 text-[9px] text-slate-500">
-                            售价
-                          </div>
-                          <div className="text-sm font-bold whitespace-nowrap text-[#fff064]">
-                            ¥ {formatPrice(item.equipment.price)}
-                          </div>
+                          {item.equipment.highlights &&
+                            item.equipment.highlights.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {item.equipment.highlights.map((hl, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
+                                  >
+                                    {hl}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                         </div>
-                        <div className="text-right">
-                          <div className="mb-0.5 text-[9px] text-slate-500">
-                            跨服
+
+                        {/* 右列：价格信息 - 固定宽度容纳8位数 */}
+                        <div className="flex w-28 shrink-0 flex-col gap-1.5 border-l border-slate-700/50 pl-3">
+                          <div className="text-right">
+                            <div className="mb-0.5 text-[9px] text-slate-500">
+                              售价
+                            </div>
+                            <div className="text-sm font-bold whitespace-nowrap text-[#fff064]">
+                              ¥ {formatPrice(item.equipment.price)}
+                            </div>
                           </div>
-                          <div className="text-sm font-bold whitespace-nowrap text-[#fff064]">
-                            ¥ {formatPrice(item.equipment.crossServerFee)}
+                          <div className="text-right">
+                            <div className="mb-0.5 text-[9px] text-slate-500">
+                              跨服
+                            </div>
+                            <div className="text-sm font-bold whitespace-nowrap text-[#fff064]">
+                              ¥ {formatPrice(item.equipment.crossServerFee)}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-                {pendingList.length === 0 && (
+                  );
+                })}
+                {filteredPendingList.length === 0 && (
                   <div className="py-10 text-center text-sm text-slate-500">
-                    暂无待确认装备
+                    当前筛选下暂无待确认装备
                   </div>
                 )}
               </div>
 
               {/* 吸底上传区域 */}
               <div className="absolute right-0 bottom-0 left-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-3 pb-1">
+                <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+                  {SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEquipmentImageHint(option.value);
+                      }}
+                      className={`rounded-full border px-2 py-1 text-[10px] transition-colors ${
+                        equipmentImageHint === option.value
+                          ? 'border-sky-500/60 bg-sky-900/30 text-sky-100'
+                          : 'border-slate-700/70 bg-slate-900/80 text-slate-400 hover:border-sky-700/50 hover:text-sky-100'
+                      }`}
+                      title={option.description}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
                 <div
                   onDrop={handleDrop}
                   onDragOver={(e) => {
@@ -1190,6 +2401,7 @@ export function LaboratoryPanel() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={(e) => handleFileUpload(e.target.files)}
                     className="hidden"
                   />
@@ -1207,7 +2419,9 @@ export function LaboratoryPanel() {
                         className="h-4 w-4 rounded-full border-2 border-yellow-600/30 border-t-yellow-600"
                       />
                       <span className="text-sm font-bold text-yellow-400">
-                        正在识别...
+                        {uploadQueueProgress
+                          ? `正在识别 ${uploadQueueProgress.current}/${uploadQueueProgress.total}...`
+                          : '正在识别...'}
                       </span>
                     </div>
                   ) : (
@@ -1219,7 +2433,16 @@ export function LaboratoryPanel() {
                         <span className="text-sm font-bold">上传装备截图</span>
                       </div>
                       <span className="mt-0.5 text-[10px] text-slate-400">
-                        点击/拖拽上传，支持直接粘贴
+                        点击/拖拽批量上传，支持直接粘贴
+                      </span>
+                      <span className="mt-0.5 text-[10px] text-sky-300/80">
+                        当前按“
+                        {
+                          SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS.find(
+                            (item) => item.value === equipmentImageHint
+                          )?.label
+                        }
+                        ”优化识别
                       </span>
                     </div>
                   )}
@@ -1228,238 +2451,230 @@ export function LaboratoryPanel() {
             </div>
           ) : (
             <div className="flex h-full flex-col">
-              {/* 一��分类页签 */}
-              <div className="mb-3 flex rounded-lg border border-yellow-800/30 bg-slate-900/60 p-1">
-                {SIMULATOR_CATEGORY_CONFIG.map((cat) => (
-                  <button
-                    key={cat.key}
-                    onClick={() => setPrimaryCategory(cat.key)}
-                    className={`flex-1 rounded-md py-1.5 text-xs transition-colors ${
-                      primaryCategory === cat.key
-                        ? 'bg-yellow-600 font-bold text-slate-900'
-                        : 'text-yellow-100/60 hover:text-yellow-100'
-                    }`}
-                  >
-                    {cat.name} (
-                    {
-                      libraryList.filter((item) =>
-                        getSimulatorSlotDefinitions(cat.key).some((slot) =>
-                          matchesSimulatorSlotDefinition(slot, item.equipment)
-                        )
-                      ).length
-                    }
-                    )
-                  </button>
-                ))}
-              </div>
-
-              {/* 二级分类页签 */}
-              <div className="mb-3 flex flex-wrap gap-1.5">
-                {(() => {
-                  const secondaryCategories =
-                    getSimulatorSlotDefinitions(primaryCategory);
-
-                  return secondaryCategories.map((cat) => {
-                    const count = libraryList.filter((item) =>
-                      matchesSimulatorSlotDefinition(cat, item.equipment)
-                    ).length;
-
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setSecondaryCategory(cat.id)}
-                        className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                          secondaryCategory === cat.id
-                            ? 'border-yellow-600/60 bg-yellow-600/20 font-bold text-yellow-400'
-                            : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-                        }`}
-                      >
-                        {getSimulatorSlotLabel(cat, 'laboratory')} ({count})
-                      </button>
-                    );
-                  });
-                })()}
-              </div>
-
-              {/* 选择和删除按钮 */}
-              <div className="mb-3 flex gap-2">
-                {!isSelectionMode ? (
-                  <button
-                    onClick={() => setIsSelectionMode(true)}
-                    className="rounded-lg border border-blue-600/40 bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-600/30"
-                  >
-                    选择
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => {
-                        setIsSelectionMode(false);
-                        setSelectedItemIds([]);
-                      }}
-                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700"
-                    >
-                      取消
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (selectedItemIds.length > 0) {
-                          setShowDeleteConfirm(true);
-                        } else {
-                          toast.error('请先选择要删除的装备');
-                        }
-                      }}
-                      disabled={selectedItemIds.length === 0}
-                      className="flex items-center gap-1 rounded-lg border border-red-600/40 bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      删除{' '}
-                      {selectedItemIds.length > 0 &&
-                        `(${selectedItemIds.length})`}
-                    </button>
-                  </>
-                )}
-              </div>
-
               {/* 装备列表 */}
               <div className="flex-1 overflow-y-auto">
                 <div className="grid grid-cols-2 gap-3">
-                  {(() => {
-                    const currentSecondary = getSimulatorSlotDefinitions(
-                      primaryCategory
-                    ).find((category) => category.id === secondaryCategory);
-
-                    if (!currentSecondary) return null;
-
-                    const filtered = libraryList.filter((item) =>
-                      matchesSimulatorSlotDefinition(
-                        currentSecondary,
-                        item.equipment
-                      )
+                  {filteredLibraryList.map((item) => {
+                    const compareSeatState = getLaboratoryCompareSeatState(
+                      item.equipment
                     );
-
-                    return filtered.map((item) => {
-                      const equipment = item.equipment;
-                      const totalPrice =
-                        (equipment.price || 0) +
-                        (equipment.crossServerFee || 0);
-                      const isSelected = selectedItemIds.includes(item.id);
-
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => {
-                            if (isSelectionMode) {
-                              // 选择模式：切换选中状态
-                              setSelectedItemIds((prev) =>
-                                prev.includes(item.id)
-                                  ? prev.filter((id) => id !== item.id)
-                                  : [...prev, item.id]
-                              );
-                            } else {
-                              // 正常模式：显示详情
-                              setSelectedLibEquip(equipment);
-                              setSelectedPendingItem(null);
-                            }
-                          }}
-                          className={`group relative flex cursor-pointer flex-col gap-1.5 overflow-hidden rounded-xl border bg-slate-900/60 p-3 shadow-sm transition-colors ${
-                            isSelected
-                              ? 'border-yellow-600 bg-yellow-900/20'
-                              : 'border-yellow-800/40 hover:border-yellow-600/60'
-                          }`}
-                        >
-                          {/* 选中状态指示器 */}
-                          {isSelectionMode && (
-                            <div
-                              className={`absolute top-2 left-2 flex h-5 w-5 items-center justify-center rounded border-2 transition-all ${
-                                isSelected
-                                  ? 'border-yellow-600 bg-yellow-600'
-                                  : 'border-slate-600 bg-slate-800/50'
-                              }`}
-                            >
-                              {isSelected && (
-                                <svg
-                                  className="h-3 w-3 text-slate-900"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={3}
-                                    d="M5 13l4 4L19 7"
-                                  />
-                                </svg>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 右上角总价标签 */}
-                          <div className="absolute top-0 right-0 rounded-bl-lg border-b border-l border-yellow-700/50 bg-yellow-900/60 px-2 py-0.5">
-                            <div className="mb-0.5 text-[10px] leading-none font-medium text-yellow-500/80">
-                              总价
-                            </div>
-                            <div className="text-xs font-bold text-[#fff064]">
-                              ¥ {formatPrice(totalPrice)}
-                            </div>
-                          </div>
-
-                          <div
-                            className={`${isSelectionMode ? 'ml-7' : ''} mb-2`}
-                          >
-                            <div className="h-14 w-14 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-                              <img
-                                src={
-                                  getSimulatorDisplayImageUrl(
-                                    equipment.imageUrl
-                                  ) ||
-                                  getEquipmentDefaultImage(equipment.type)
-                                }
-                                alt={equipment.name}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                          </div>
-
-                          <div
-                            className={`truncate text-sm font-bold text-yellow-100 ${isSelectionMode ? 'pl-7' : ''} pr-16`}
-                          >
-                            {equipment.name}
-                          </div>
-                          <div
-                            className={`mt-1 truncate text-xs text-slate-300 ${isSelectionMode ? 'pl-7' : ''}`}
-                          >
-                            {equipment.mainStat.split('\n')[0]}
-                          </div>
-                          {equipment.extraStat && (
-                            <div
-                              className={`truncate text-xs text-red-400 ${isSelectionMode ? 'pl-7' : ''}`}
-                            >
-                              {equipment.extraStat.split('\n')[0]}
-                            </div>
-                          )}
-                          {equipment.highlights &&
-                            equipment.highlights.length > 0 && (
-                            <div
-                              className={`mt-auto flex flex-wrap gap-1 ${isSelectionMode ? 'pl-7' : ''}`}
-                            >
-                              {equipment.highlights
-                                .slice(0, 2)
-                                .map((hl, idx) => (
-                                <span
-                                  key={idx}
-                                  className="rounded border border-red-500/50 px-1 text-[10px] text-red-400"
-                                >
-                                  {hl}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                    const inventorySummary =
+                      summarizeSimulatorInventoryRefs(item);
+                    const candidateBackedInventoryRefs =
+                      getCandidateBackedInventoryRefs(item);
+                    const restorableInventoryRefs = getCandidateBackedInventoryRefs(
+                      item,
+                      ['sold', 'discarded']
+                    );
+                    const inventoryOnlyInactive =
+                      item.sourceKinds.includes('inventory_asset') &&
+                      inventorySummary.active === 0 &&
+                      (inventorySummary.sold > 0 ||
+                        inventorySummary.discarded > 0) &&
+                      item.sourceKinds.every(
+                        (sourceKind) => sourceKind === 'inventory_asset'
                       );
-                    });
-                  })()}
+                    const canManageInventory =
+                      librarySourceFilter === 'inventory_asset' &&
+                      candidateBackedInventoryRefs.length > 0;
+                    const canRestoreInventory =
+                      librarySourceFilter === 'inventory_asset' &&
+                      restorableInventoryRefs.length > 0;
+                    const inventoryLifecycleStatusLabels =
+                      buildSimulatorInventoryStatusLabels(inventorySummary, {
+                        formal: true,
+                      });
+
+                    return (
+                      <LibraryEquipmentCard
+                        key={item.id}
+                        equipment={item.equipment}
+                        formatPrice={formatPrice}
+                        selectable={false}
+                        sourceLabels={item.sourceLabels}
+                        helperText={buildEquipmentPlanUsageSummary(
+                          item.sourceLabels
+                        )}
+                        statusLabels={
+                          [
+                            ...(compareSeatState.isExplicitCompareMatch
+                              ? [
+                                  {
+                                    label: `实验室:${compareSeatState.compareSeatLabel}`,
+                                    tone: 'violet' as const,
+                                  },
+                                ]
+                              : []),
+                            ...inventoryLifecycleStatusLabels,
+                          ]
+                        }
+                        onClick={() => {
+                          setSelectedLibEquip(item);
+                          setSelectedPendingItem(null);
+                        }}
+                        actionLabel={
+                          inventoryOnlyInactive
+                            ? '库存已失效'
+                            : compareSeatState.isExplicitCompareMatch
+                            ? `已在${compareSeatState.compareSeatLabel}`
+                            : compareSeatState.isInheritedFromSample
+                              ? '样本已继承'
+                              : `挂到${compareSeatState.compareSeatLabel}`
+                        }
+                        actionDisabled={
+                          inventoryOnlyInactive ||
+                          compareSeatState.isExplicitCompareMatch ||
+                          compareSeatState.isInheritedFromSample
+                        }
+                        onActionClick={() => {
+                          if (
+                            compareSeatState.isExplicitCompareMatch ||
+                            compareSeatState.isInheritedFromSample ||
+                            inventoryOnlyInactive
+                          ) {
+                            return;
+                          }
+
+                          handleSendLibraryEquipmentToCompareSeat(item);
+                        }}
+                        secondaryActionLabel={
+                          compareSeatState.isExplicitCompareMatch
+                            ? '移出对比位'
+                            : '查看详情'
+                        }
+                        onSecondaryActionClick={() => {
+                          if (compareSeatState.isExplicitCompareMatch) {
+                            handleRemoveLibraryEquipmentFromCompareSeat(item);
+                            return;
+                          }
+
+                          setSelectedLibEquip(item);
+                          setSelectedPendingItem(null);
+                        }}
+                        tertiaryActionLabel={
+                          canRestoreInventory
+                            ? '恢复待用'
+                            : canManageInventory
+                              ? '标记已售出'
+                              : undefined
+                        }
+                        tertiaryActionDisabled={
+                          canRestoreInventory
+                            ? restorableInventoryRefs.some((ref) =>
+                                updatingInventoryEntryIds.includes(ref.entryId)
+                              )
+                            : candidateBackedInventoryRefs.some((ref) =>
+                                updatingInventoryEntryIds.includes(ref.entryId)
+                              )
+                        }
+                        onTertiaryActionClick={
+                          canRestoreInventory
+                            ? () => {
+                                const draft = buildSimulatorInventoryStatusUpdateDraft(
+                                  {
+                                    items: [item],
+                                    nextStatus: 'active',
+                                  }
+                                );
+                                if (draft) {
+                                  setInventoryStatusUpdate(draft);
+                                }
+                              }
+                            : canManageInventory
+                            ? () => {
+                                const draft = buildSimulatorInventoryStatusUpdateDraft(
+                                  {
+                                    items: [item],
+                                    nextStatus: 'sold',
+                                  }
+                                );
+                                if (draft) {
+                                  setInventoryStatusUpdate(draft);
+                                }
+                              }
+                            : undefined
+                        }
+                        dangerActionLabel={
+                          canManageInventory
+                            ? '标记作废'
+                            : item.selectable &&
+                                item.sourceKinds.includes('candidate_library')
+                              ? '移出候选库'
+                              : undefined
+                        }
+                        dangerActionDisabled={candidateBackedInventoryRefs.some(
+                          (ref) => updatingInventoryEntryIds.includes(ref.entryId)
+                        )}
+                        onDangerActionClick={
+                          canManageInventory
+                            ? () => {
+                                const draft = buildSimulatorInventoryStatusUpdateDraft(
+                                  {
+                                    items: [item],
+                                    nextStatus: 'discarded',
+                                  }
+                                );
+                                if (draft) {
+                                  setInventoryStatusUpdate(draft);
+                                }
+                              }
+                            : item.selectable &&
+                                item.sourceKinds.includes('candidate_library')
+                              ? () => {
+                                  setLibraryCandidateRemovalIds([item.id]);
+                                  setShowLibraryCandidateRemovalConfirm(true);
+                                }
+                              : undefined
+                        }
+                      />
+                    );
+                  })}
+                  {filteredLibraryList.length === 0 && (
+                    <div className="col-span-2 flex flex-col items-center gap-2 py-10 text-center">
+                      {(() => {
+                        const emptyStateCopy =
+                          librarySourceFilter === 'inventory_asset'
+                            ? buildSimulatorInventoryEmptyStateCopy({
+                                lifecycleFilter: inventoryLifecycleFilter,
+                                hasScopedInventoryItems:
+                                  scopedInventoryLibraryItems.length > 0,
+                                hasLifecycleMatches:
+                                  lifecycleMatchedInventoryLibraryItems.length > 0,
+                                hasAdditionalFilters:
+                                  lifecycleFilteredLibraryList.length > 0,
+                                fallbackTitle:
+                                  lifecycleFilteredLibraryList.length === 0
+                                    ? '当前来源 / 主类 / 部位筛选下还没有装备'
+                                    : '当前筛选下暂无可用装备',
+                                fallbackDescription:
+                                  lifecycleFilteredLibraryList.length === 0
+                                    ? '可以切换来源、分类或部位继续查看总库'
+                                    : '可以清除本次部位聚焦或调整顶部筛选后继续处理',
+                              })
+                            : {
+                                title:
+                                  lifecycleFilteredLibraryList.length === 0
+                                    ? '当前来源 / 主类 / 部位筛选下还没有装备'
+                                    : '当前筛选下暂无可用装备',
+                                description:
+                                  lifecycleFilteredLibraryList.length === 0
+                                    ? '可以切换来源、分类或部位继续查看总库'
+                                    : '可以清除本次部位聚焦或调整顶部筛选后继续处理',
+                              };
+
+                        return (
+                          <>
+                            <div className="text-sm text-slate-300">
+                              {emptyStateCopy.title}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {emptyStateCopy.description}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1556,6 +2771,7 @@ export function LaboratoryPanel() {
               labValuationError={labValuationError}
               isLoadingLabValuation={isLoadingLabValuation}
               regularSetRules={regularSetRules}
+              syncedCloudState={syncedCloudState}
             />
           ))}
 
@@ -1570,14 +2786,67 @@ export function LaboratoryPanel() {
             labValuationError={labValuationError}
             isLoadingLabValuation={isLoadingLabValuation}
             regularSetRules={regularSetRules}
+            syncedCloudState={syncedCloudState}
           />
         </div>
 
         {selectedLibEquip && (
           <LaboratoryEquipmentDetailModal
-            equipment={selectedLibEquip}
+            equipment={selectedLibEquip.equipment}
             experimentSeats={visibleExperimentSeats}
             formatPrice={formatPrice}
+            sourceLabels={selectedLibEquip.sourceLabels}
+            sourceKinds={selectedLibEquip.sourceKinds}
+            onRemoveCandidateSource={
+              selectedLibEquip.sourceKinds.includes('candidate_library')
+                ? () => {
+                    setLibraryCandidateRemovalIds([selectedLibEquip.id]);
+                    setShowLibraryCandidateRemovalConfirm(true);
+                  }
+                : null
+            }
+            inventoryStatusActions={
+              selectedLibEquipInventoryRefs.length > 0 ||
+              selectedLibEquipRestorableInventoryRefs.length > 0
+                ? {
+                    activeCount: selectedLibEquipInventoryRefs.length,
+                    inactiveCount: selectedLibEquipRestorableInventoryRefs.length,
+                    isUpdating: selectedLibEquipInventoryRefs.some((ref) =>
+                      updatingInventoryEntryIds.includes(ref.entryId)
+                    ) ||
+                    selectedLibEquipRestorableInventoryRefs.some((ref) =>
+                      updatingInventoryEntryIds.includes(ref.entryId)
+                    ),
+                    onMarkSold: () => {
+                      const draft = buildSimulatorInventoryStatusUpdateDraft({
+                        items: [selectedLibEquip],
+                        nextStatus: 'sold',
+                      });
+                      if (draft) {
+                        setInventoryStatusUpdate(draft);
+                      }
+                    },
+                    onRestoreActive: () => {
+                      const draft = buildSimulatorInventoryStatusUpdateDraft({
+                        items: [selectedLibEquip],
+                        nextStatus: 'active',
+                      });
+                      if (draft) {
+                        setInventoryStatusUpdate(draft);
+                      }
+                    },
+                    onMarkDiscarded: () => {
+                      const draft = buildSimulatorInventoryStatusUpdateDraft({
+                        items: [selectedLibEquip],
+                        nextStatus: 'discarded',
+                      });
+                      if (draft) {
+                        setInventoryStatusUpdate(draft);
+                      }
+                    },
+                  }
+                : null
+            }
             onClose={() => setSelectedLibEquip(null)}
             onReplaceCurrent={handleReplaceCurrent}
             onApplyToSeat={handleApplyToSeat}
@@ -1591,26 +2860,70 @@ export function LaboratoryPanel() {
             onSave={(equipment) =>
               handleSavePendingItemEdit(selectedPendingItem.id, equipment)
             }
+            reviewProgressLabel={
+              selectedPendingIndex >= 0
+                ? `当前筛选结果第 ${selectedPendingIndex + 1} / ${filteredPendingList.length} 件`
+                : undefined
+            }
+            canViewPrevious={selectedPendingIndex > 0}
+            canViewNext={
+              selectedPendingIndex >= 0 &&
+              selectedPendingIndex < filteredPendingList.length - 1
+            }
+            onViewPrevious={() =>
+              openPendingItemByIndex(selectedPendingIndex - 1)
+            }
+            onViewNext={() => openPendingItemByIndex(selectedPendingIndex + 1)}
             onDelete={() => {
               removePendingEquipment(selectedPendingItem.id);
               void handleSaveCandidateEquipment(true);
-              setSelectedPendingItem(null);
-              toast.success('已删除装备');
+              const nextItem =
+                filteredPendingList[selectedPendingIndex + 1] ??
+                filteredPendingList[selectedPendingIndex - 1] ??
+                null;
+              setSelectedPendingItem(nextItem);
+              if (nextItem) {
+                toast.success(
+                  `已删除 ${selectedPendingItem.equipment.name}，继续查看 ${nextItem.equipment.name}`
+                );
+              } else {
+                toast.success('已删除装备');
+              }
             }}
             onConfirm={() => {
-              confirmPendingEquipment(selectedPendingItem.id);
-              void handleSaveCandidateEquipment(true);
-              setSelectedPendingItem(null);
-              toast.success('已确认入库');
+              void handleConfirmPendingItem(selectedPendingItem);
+            }}
+            onConfirmAndNext={() => {
+              void handleConfirmPendingItem(selectedPendingItem, {
+                moveToNext: true,
+              });
             }}
             onReplaceToCurrentState={async () => {
               await handleReplaceCurrent(selectedPendingItem.equipment);
-              confirmPendingEquipment(selectedPendingItem.id);
-              void handleSaveCandidateEquipment(true);
-              setSelectedPendingItem(null);
+              await handleConfirmPendingItem(selectedPendingItem, {
+                moveToNext: true,
+              });
             }}
           />
         )}
+
+        <OcrEquipmentReviewDialog
+          open={Boolean(pendingOcrReviewItem)}
+          item={pendingOcrReviewItem}
+          title="确认装备 OCR 结果"
+          description="这次识别出的字段已经写入候选装备待确认区，下面只展示本次 OCR 真正识别到的有效字段。"
+          destinationTitle="写入位置：实验室待确认新品"
+          destinationDescription={`装备已经进入当前角色的候选装备队列。当前待确认共有 ${pendingList.length} 件，你可以直接进入待确认详情并继续连审。`}
+          primaryActionLabel="打开并继续审核"
+          secondaryActionLabel="稍后再看"
+          onClose={() => setPendingOcrReviewItem(null)}
+          onPrimaryAction={() => {
+            if (pendingOcrReviewItem) {
+              setSelectedPendingItem(pendingOcrReviewItem);
+            }
+            setPendingOcrReviewItem(null);
+          }}
+        />
 
         {showTargetSelector && (
           <LaboratoryTargetSelectorModal
@@ -1630,7 +2943,7 @@ export function LaboratoryPanel() {
 
         {selectedSlot && (
           <LaboratorySlotSelectorModal
-            libraryEquipments={libraryEquipments}
+            libraryItems={slotSelectorLibraryList}
             selectedSlot={selectedSlot}
             formatPrice={formatPrice}
             onClose={() => setSelectedSlot(null)}
@@ -1651,6 +2964,104 @@ export function LaboratoryPanel() {
           setSelectedItemIds([]);
           setIsSelectionMode(false);
           setShowDeleteConfirm(false);
+        }}
+      />
+
+      <LaboratoryBulkDeleteDialog
+        open={showLibraryCandidateRemovalConfirm}
+        selectedCount={libraryCandidateRemovalIds.length}
+        title="确认移出候选来源"
+        description={
+          <>
+            确定要把当前选中的{' '}
+            <span className="font-bold text-red-400">
+              {libraryCandidateRemovalIds.length}
+            </span>{' '}
+            件装备从实验室总库里的“候选装备库”来源移出吗？
+            <br />
+            <span className="text-xs text-slate-400">
+              若这件装备同时属于当前方案或其他方案，只会移除候选来源，不会影响方案里的装备。
+            </span>
+          </>
+        }
+        confirmLabel="确认移出候选库"
+        onClose={() => {
+          setShowLibraryCandidateRemovalConfirm(false);
+          setLibraryCandidateRemovalIds([]);
+        }}
+        onConfirm={() => {
+          void removeLibraryCandidateSourceItems(libraryCandidateRemovalIds);
+          setShowLibraryCandidateRemovalConfirm(false);
+          setLibraryCandidateRemovalIds([]);
+        }}
+      />
+
+      <LaboratoryBulkDeleteDialog
+        open={Boolean(inventoryStatusUpdate)}
+        selectedCount={inventoryStatusUpdate?.entryIds.length ?? 0}
+        title={
+          inventoryStatusUpdate?.nextStatus === 'sold'
+            ? '确认标记为已售出'
+            : inventoryStatusUpdate?.nextStatus === 'discarded'
+              ? '确认标记为作废'
+              : '确认恢复为库存待用'
+        }
+        description={
+          inventoryStatusUpdate ? (
+            <>
+              {inventoryStatusUpdate.items.length === 1 ? (
+                <>
+                  确定要将
+                  <span className="font-bold text-red-400">
+                    {' '}
+                    {inventoryStatusUpdate.primaryItem.equipment.name}{' '}
+                  </span>
+                  的正式库存状态更新为
+                    <span className="font-bold text-red-400">
+                      {inventoryStatusUpdate.nextStatus === 'sold'
+                        ? '已售出'
+                        : inventoryStatusUpdate.nextStatus === 'discarded'
+                          ? '已作废'
+                          : '库存待用'}
+                    </span>
+                    吗？
+                  </>
+              ) : (
+                <>
+                  确定要将当前实验室总库筛选结果里的
+                  <span className="font-bold text-red-400">
+                    {' '}
+                    {inventoryStatusUpdate.items.length}{' '}
+                  </span>
+                  件正式库存装备批量更新为
+                    <span className="font-bold text-red-400">
+                      {inventoryStatusUpdate.nextStatus === 'sold'
+                        ? '已售出'
+                        : inventoryStatusUpdate.nextStatus === 'discarded'
+                          ? '已作废'
+                          : '库存待用'}
+                    </span>
+                    吗？
+                  </>
+              )}
+              该操作会同步更新关联候选装备的状态，不会删除当前方案、其他方案或实验席位里的引用。
+            </>
+          ) : undefined
+        }
+        confirmLabel={
+          inventoryStatusUpdate?.nextStatus === 'sold'
+            ? '确认标记售出'
+            : inventoryStatusUpdate?.nextStatus === 'discarded'
+              ? '确认标记作废'
+              : '确认恢复待用'
+        }
+        onClose={() => {
+          if (updatingInventoryEntryIds.length === 0) {
+            setInventoryStatusUpdate(null);
+          }
+        }}
+        onConfirm={() => {
+          void handleConfirmInventoryStatusUpdate();
         }}
       />
 

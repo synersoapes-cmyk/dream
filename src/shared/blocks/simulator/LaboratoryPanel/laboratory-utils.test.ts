@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import { computeDerivedStats } from '@/features/simulator/store/gameLogic';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 import {
+  buildLaboratoryLibrarySourceItems,
   calculateEquipmentTotalStats,
-  mergeLaboratoryDisplayDiffs,
   mergeEquipmentWithInheritance,
+  mergeLaboratoryDisplayDiffs,
   resolveLaboratorySeatEquipment,
 } from './laboratory-utils';
 
@@ -120,6 +120,65 @@ test('resolveLaboratorySeatEquipment keeps compare seat equipment unchanged', ()
   assert.equal(resolved[0]?.id, 'compare_weapon');
 });
 
+test('buildLaboratoryLibrarySourceItems merges current plan, other plans and candidate library sources', () => {
+  const duplicatedWeapon = createEquipment('weapon_shared', {
+    name: '沧海灵杖',
+    mainStat: '法伤 +220',
+    level: 90,
+    type: 'weapon',
+    stats: { magicDamage: 220 },
+  });
+  const candidateWeapon = {
+    id: 'candidate_weapon_shared',
+    equipment: { ...duplicatedWeapon, id: 'candidate_equipment_payload' },
+    timestamp: 1_715_000_000_000,
+    status: 'confirmed' as const,
+    imagePreview: 'r2://candidate',
+    rawText: '{"name":"沧海灵杖"}',
+  };
+
+  const libraryItems = buildLaboratoryLibrarySourceItems({
+    currentEquipment: [duplicatedWeapon, createEquipment('current_hat')],
+    equipmentSets: [
+      {
+        id: 'set_current',
+        name: '当前方案',
+        items: [duplicatedWeapon],
+        isActive: true,
+      },
+      {
+        id: 'set_speed',
+        name: '高速方案',
+        items: [duplicatedWeapon, createEquipment('speed_shoes')],
+      },
+    ],
+    activeSetIndex: 0,
+    candidateLibraryItems: [candidateWeapon],
+  });
+
+  const mergedWeapon = libraryItems.find(
+    (item) => item.equipment.name === '沧海灵杖'
+  );
+
+  assert.ok(mergedWeapon);
+  assert.equal(mergedWeapon?.id, 'candidate_weapon_shared');
+  assert.equal(mergedWeapon?.selectable, true);
+  assert.deepEqual(mergedWeapon?.sourceLabels, [
+    '当前方案',
+    '高速方案',
+    '候选装备库',
+  ]);
+  assert.deepEqual(mergedWeapon?.sourceKinds, [
+    'current_plan',
+    'equipment_plan',
+    'candidate_library',
+  ]);
+  assert.equal(
+    libraryItems.filter((item) => item.equipment.name === '沧海灵杖').length,
+    1
+  );
+});
+
 test('mergeEquipmentWithInheritance keeps candidate build when inheritance is disabled', () => {
   const baseEquipment = createEquipment('weapon_base', {
     gemstone: '12 舍利子',
@@ -196,10 +255,14 @@ test('M6-04 inheritGemstones keeps old gemstone segments for whiteboard comparis
     runeStoneSetsNames: [],
   });
 
-  const merged = mergeEquipmentWithInheritance(baseEquipment, whiteboardEquipment, {
-    inheritGemstones: true,
-    inheritRuneStones: false,
-  });
+  const merged = mergeEquipmentWithInheritance(
+    baseEquipment,
+    whiteboardEquipment,
+    {
+      inheritGemstones: true,
+      inheritRuneStones: false,
+    }
+  );
   const totals = calculateEquipmentTotalStats([merged]);
   const combatStats = computeDerivedStats(
     {
@@ -274,10 +337,14 @@ test('M6-04 inheritRuneStones keeps old rune build while gemstone inheritance st
     ],
   });
 
-  const merged = mergeEquipmentWithInheritance(baseEquipment, whiteboardEquipment, {
-    inheritGemstones: false,
-    inheritRuneStones: true,
-  });
+  const merged = mergeEquipmentWithInheritance(
+    baseEquipment,
+    whiteboardEquipment,
+    {
+      inheritGemstones: false,
+      inheritRuneStones: true,
+    }
+  );
   const totals = calculateEquipmentTotalStats([merged]);
   const combatStats = computeDerivedStats(
     {

@@ -1,5 +1,9 @@
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
 import {
+  buildSimulatorArtifactTreasure,
+  sanitizeSimulatorArtifactConfig,
+} from '@/shared/lib/simulator-artifact';
+import {
   normalizeSimulatorEquipmentSlot,
   type SimulatorEquipmentSlot,
 } from '@/shared/lib/simulator-equipment';
@@ -257,6 +261,9 @@ export function buildSimulatorCharacterDomain(
   }
 
   const rawProfile = parseJsonObject(profile.rawBodyJson);
+  const artifact = buildSimulatorArtifactTreasure(
+    sanitizeSimulatorArtifactConfig(rawProfile.artifactConfig)
+  );
   const meridianConfig = parseMeridianConfig(rawProfile.meridianConfig);
   const spirit =
     toFiniteNumber(rawProfile.magicPower) + toFiniteNumber(meridianConfig.magicPower);
@@ -322,6 +329,13 @@ export function buildSimulatorCharacterDomain(
     },
     {}
   );
+
+  if (artifact?.isActive) {
+    for (const [key, value] of Object.entries(artifact.stats ?? {})) {
+      equipmentAttributeTotals[key] =
+        (equipmentAttributeTotals[key] ?? 0) + toFiniteNumber(value);
+    }
+  }
 
   const cultivationLevels = bundle.cultivations.reduce<SimulatorNumericMap>(
     (totals, item) => {

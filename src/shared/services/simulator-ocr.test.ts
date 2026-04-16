@@ -101,7 +101,7 @@ test('normalizeRecognizedEquipment coerces recognized payload into simulator equ
     magicPower: 32,
     speed: 15,
   });
-  assert.equal(equipment.imageUrl, getEquipmentDefaultImage('helmet'));
+  assert.equal(equipment.imageUrl, getEquipmentDefaultImage('helmet', '晶清诀头盔'));
 });
 
 test('normalizeRecognizedEquipment keeps repair fail count and lucky hole metadata', () => {

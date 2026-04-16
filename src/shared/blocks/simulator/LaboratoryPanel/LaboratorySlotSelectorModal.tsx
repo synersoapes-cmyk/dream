@@ -5,6 +5,8 @@ import type { Equipment } from '@/features/simulator/store/gameTypes';
 import { X, Trash2 } from 'lucide-react';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import type { SimulatorEquipmentLibraryItem } from '@/shared/lib/simulator-equipment-library';
+import { buildSimulatorInventorySelectorStatusLabels } from '@/shared/lib/simulator-inventory-status';
 
 import { mergeEquipmentWithInheritance } from './laboratory-utils';
 
@@ -20,7 +22,7 @@ type LaboratorySelectedSlot = {
 };
 
 type Props = {
-  libraryEquipments: Equipment[];
+  libraryItems: SimulatorEquipmentLibraryItem[];
   selectedSlot: LaboratorySelectedSlot;
   formatPrice: (price: number | undefined) => string;
   onClose: () => void;
@@ -40,7 +42,7 @@ type Props = {
 };
 
 export function LaboratorySlotSelectorModal({
-  libraryEquipments,
+  libraryItems,
   selectedSlot,
   formatPrice,
   onClose,
@@ -65,11 +67,11 @@ export function LaboratorySlotSelectorModal({
     selectedSlot.slotType,
   ]);
 
-  const availableEquipments = libraryEquipments.filter((equipment) => {
-    if (equipment.type !== selectedSlot.slotType) return false;
+  const availableItems = libraryItems.filter((item) => {
+    if (item.equipment.type !== selectedSlot.slotType) return false;
     if (
       selectedSlot.slotSlot !== undefined &&
-      equipment.slot !== selectedSlot.slotSlot
+      item.equipment.slot !== selectedSlot.slotSlot
     ) {
       return false;
     }
@@ -130,6 +132,11 @@ export function LaboratorySlotSelectorModal({
           </div>
         </div>
 
+        <div className="mb-4 rounded-lg border border-sky-800/30 bg-sky-950/10 px-3 py-2 text-[11px] leading-5 text-sky-100/85">
+          这里默认只展示当前可直接参与换装的装备来源，包括当前方案、其他方案、候选装备库和
+          `库存待用` 的正式库存。已经标记为 `已售出 / 已作废` 的正式库存不会出现在这里；如果要继续使用，先到装备总库里执行“恢复待用”。
+        </div>
+
         {canRestoreCurrent && (
           <div
             onClick={() => {
@@ -179,11 +186,14 @@ export function LaboratorySlotSelectorModal({
           </div>
         )}
 
-        {availableEquipments.length > 0 ? (
+        {availableItems.length > 0 ? (
           <div className="grid grid-cols-3 gap-2">
-            {availableEquipments.map((equipment) => {
+            {availableItems.map((item) => {
+              const equipment = item.equipment;
               const totalPrice =
                 (equipment.price || 0) + (equipment.crossServerFee || 0);
+              const inventoryStatusLabels =
+                buildSimulatorInventorySelectorStatusLabels(item);
               const isCurrentlyEquipped =
                 selectedSlot.currentEquip?.id === equipment.id &&
                 inheritGemstones === (selectedSlot.inheritGemstones !== false) &&
@@ -192,7 +202,7 @@ export function LaboratorySlotSelectorModal({
 
               return (
                 <div
-                  key={equipment.id}
+                  key={item.id}
                   onClick={() => {
                     if (!isCurrentlyEquipped) {
                       onSelectEquipment(
@@ -232,6 +242,46 @@ export function LaboratorySlotSelectorModal({
                           </span>
                         )}
                       </div>
+
+                      {inventoryStatusLabels.length > 0 && (
+                        <div className="mb-1.5 flex flex-wrap gap-1">
+                          {inventoryStatusLabels.map((statusLabel) => {
+                            const toneClassName =
+                              statusLabel.tone === 'amber'
+                                ? 'border-amber-500/40 bg-amber-950/30 text-amber-100'
+                                : statusLabel.tone === 'violet'
+                                  ? 'border-violet-500/40 bg-violet-950/30 text-violet-100'
+                                  : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-100';
+
+                            return (
+                              <span
+                                key={`${item.id}-${statusLabel.label}`}
+                                className={`rounded border px-1.5 py-0.5 text-[10px] ${toneClassName}`}
+                              >
+                                {statusLabel.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {item.sourceLabels.length > 0 && (
+                        <div className="mb-1.5 flex flex-wrap gap-1">
+                          {item.sourceLabels.slice(0, 3).map((sourceLabel) => (
+                            <span
+                              key={`${item.id}-${sourceLabel}`}
+                              className="rounded border border-sky-700/40 bg-sky-950/30 px-1.5 py-0.5 text-[10px] text-sky-200"
+                            >
+                              {sourceLabel}
+                            </span>
+                          ))}
+                          {item.sourceLabels.length > 3 && (
+                            <span className="rounded border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-300">
+                              +{item.sourceLabels.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {equipment.mainStat && (
                         <div className="text-xs leading-snug text-slate-300">

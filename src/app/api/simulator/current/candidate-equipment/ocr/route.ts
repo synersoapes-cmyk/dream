@@ -1,5 +1,9 @@
 import { respData, respErr } from '@/shared/lib/resp';
 import {
+  attachSimulatorEquipmentOcrImageHintMeta,
+  normalizeSimulatorEquipmentOcrImageHint,
+} from '@/shared/lib/simulator-ocr-image-hint';
+import {
   createSimulatorOcrJob,
   finalizeSimulatorEquipmentOcrJob,
   markSimulatorOcrJobFailed,
@@ -19,6 +23,16 @@ export async function POST(req: Request) {
 
     const formData = await req.formData();
     const file = formData.get('file');
+    const rawCharacterId = formData.get('characterId');
+    const rawImageHint = formData.get('imageHint');
+    const characterId =
+      typeof rawCharacterId === 'string' && rawCharacterId.trim().length > 0
+        ? rawCharacterId.trim()
+        : undefined;
+    const imageHint = normalizeSimulatorEquipmentOcrImageHint(
+      rawImageHint,
+      'auto'
+    );
 
     if (!(file instanceof File)) {
       return respErr('缺少图片文件');
@@ -31,6 +45,7 @@ export async function POST(req: Request) {
 
     const job = await createSimulatorOcrJob(user.id, {
       sceneType: 'equipment',
+      characterId,
     });
 
     if (!job) {
@@ -38,11 +53,17 @@ export async function POST(req: Request) {
     }
 
     try {
-      const recognized = await recognizeSimulatorEquipmentFromImage(file);
+      const recognized = await recognizeSimulatorEquipmentFromImage(file, {
+        imageHint,
+      });
+      const rawResult = attachSimulatorEquipmentOcrImageHintMeta(
+        recognized.raw,
+        imageHint
+      );
       const result = await finalizeSimulatorEquipmentOcrJob({
         ocrJobId: job.id,
         recognizedEquipment: recognized.equipment,
-        rawResult: recognized.raw,
+        rawResult,
         imageUrl: recognized.url,
         imageKey: recognized.key,
       });
@@ -66,6 +87,7 @@ export async function POST(req: Request) {
         ocrJobId: job.id,
         errorMessage:
           error instanceof Error ? error.message : '识图失败，请稍后重试',
+        rawResult: attachSimulatorEquipmentOcrImageHintMeta({}, imageHint),
       });
       throw error;
     }

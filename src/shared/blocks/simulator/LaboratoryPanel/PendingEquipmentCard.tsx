@@ -1,6 +1,11 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import {
+  getEquipmentPrimaryPreviewLine,
+  getEquipmentSecondaryPreviewLine,
+} from '@/shared/lib/simulator-equipment-preview';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 
 interface PendingEquipmentCardProps {
   equipment: Equipment;
@@ -13,6 +18,10 @@ export function PendingEquipmentCard({
   onClick,
   formatPrice,
 }: PendingEquipmentCardProps) {
+  const spotlightTags = getEquipmentSpotlightTags(equipment);
+  const primaryPreviewLine = getEquipmentPrimaryPreviewLine(equipment);
+  const secondaryPreviewLine = getEquipmentSecondaryPreviewLine(equipment);
+
   return (
     <div
       onClick={onClick}
@@ -31,18 +40,18 @@ export function PendingEquipmentCard({
           </div>
 
           <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-slate-300">
-            {equipment.mainStat}
+            {primaryPreviewLine}
           </div>
 
-          {equipment.extraStat && (
+          {secondaryPreviewLine && (
             <div className="line-clamp-1 text-xs leading-snug break-all whitespace-pre-line text-red-400">
-              {equipment.extraStat}
+              {secondaryPreviewLine}
             </div>
           )}
 
-          {equipment.highlights && equipment.highlights.length > 0 && (
+          {spotlightTags.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {equipment.highlights.map((hl, idx) => (
+              {spotlightTags.slice(0, 3).map((hl, idx) => (
                 <span
                   key={`${equipment.id}-${hl}-${idx}`}
                   className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"

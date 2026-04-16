@@ -29,6 +29,11 @@ export {
 } from './simulator-candidate';
 
 export {
+  listSimulatorInventoryLibraryItems,
+  updateSimulatorInventoryLibraryEntry,
+} from './simulator-inventory';
+
+export {
   createSimulatorOcrJob,
   finalizeSimulatorEquipmentOcrJob,
   finalizeSimulatorProfileOcrJob,

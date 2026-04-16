@@ -2,7 +2,7 @@ import {
   buildEquipmentSetStatePatch,
   syncEquipmentSetsWithActiveEquipment,
 } from './equipmentSetState';
-import { computeDerivedStats } from './gameLogic';
+import { computeCombatStatsWithPanelBaseline } from './gameLogic';
 import { createDefaultManualTarget } from './gameRuntimeSeeds';
 import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
 import type {
@@ -348,13 +348,33 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
       playerSetup,
       activeRegularSetRules,
     } = get();
-    const newStats = computeDerivedStats(baseAttributes, equipment, treasure, {
-      bodyStrength: cultivation.bodyStrength,
-      formation: playerSetup.formation,
-      meridian,
-      regularSetRules: activeRegularSetRules,
-      runeSkillBaselineEquipment: syncedCloudState?.equipment ?? [],
-    });
+    const newStats = computeCombatStatsWithPanelBaseline(
+      {
+        baseAttributes,
+        equipment,
+        treasure,
+        bodyStrength: cultivation.bodyStrength,
+        formation: playerSetup.formation,
+        meridian,
+        regularSetRules: activeRegularSetRules,
+        runeSkillBaselineEquipment: syncedCloudState?.equipment ?? [],
+      },
+      syncedCloudState
+        ? {
+            panelStats: syncedCloudState.combatStats,
+            baseAttributes: syncedCloudState.baseAttributes,
+            equipment: syncedCloudState.equipment,
+            treasure: syncedCloudState.treasure,
+            bodyStrength: syncedCloudState.cultivation.bodyStrength,
+            formation:
+              syncedCloudState.playerSetup?.formation ??
+              syncedCloudState.formation,
+            meridian: syncedCloudState.meridian,
+            regularSetRules: activeRegularSetRules,
+            runeSkillBaselineEquipment: syncedCloudState.equipment,
+          }
+        : null
+    );
     Object.keys(newStats).forEach((key) => {
       const k = key as keyof typeof newStats;
       newStats[k] = Math.round(newStats[k]);

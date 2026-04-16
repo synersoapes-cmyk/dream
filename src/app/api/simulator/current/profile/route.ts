@@ -1,4 +1,5 @@
 import { respData, respErr } from '@/shared/lib/resp';
+import { buildSimulatorArtifactConfigFromTreasure } from '@/shared/lib/simulator-artifact';
 import { updateSimulatorProfile } from '@/shared/models/simulator-user';
 import { getUserInfo } from '@/shared/models/user';
 
@@ -63,6 +64,7 @@ export async function PATCH(req: Request) {
       dodge: toNumber(body?.dodge),
       sealHit: toOptionalNumber(body?.sealHit),
       meridianConfig: toMeridianConfig(body?.meridianConfig),
+      artifactConfig: buildSimulatorArtifactConfigFromTreasure(body?.treasure),
     });
 
     if (!bundle) {

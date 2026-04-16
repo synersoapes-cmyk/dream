@@ -318,6 +318,8 @@ export interface OcrLog {
   message: string;
   details?: string;
   imagePreview?: string;
+  hintLabel?: string;
+  hintRoutingMode?: 'automatic' | 'manual';
   rawText?: string;
   parsedData?: unknown;
 }
@@ -351,6 +353,15 @@ export interface PendingEquipment {
   targetSetId?: string;
   targetEquipmentId?: string;
   targetRuneStoneSetIndex?: number;
+  inventoryRefs?: Array<{
+    entryId: string;
+    assetId: string;
+    status: string;
+    sourceKind?: string | null;
+    sourceLabel?: string | null;
+    folderKey: string;
+    price: number | null;
+  }>;
   status: 'pending' | 'confirmed' | 'replaced';
 }
 
@@ -368,6 +379,7 @@ export interface SyncedCloudState {
   equipment: Equipment[];
   equipmentSets: EquipmentSet[];
   activeSetIndex: number;
+  laboratorySampleSetIndex?: number;
   skills: Skill[];
   cultivation: Cultivation;
   meridian: MeridianConfig;
@@ -400,6 +412,7 @@ export interface GameState {
   equipment: Equipment[];
   equipmentSets: EquipmentSet[];
   activeSetIndex: number;
+  laboratorySampleSetIndex: number;
   skills: Skill[];
   cultivation: Cultivation;
   meridian: MeridianConfig;
@@ -438,6 +451,11 @@ export interface GameState {
   exitPreviewMode: () => void;
   confirmReplacement: () => void;
   updateEquipment: (equipment: Equipment) => void;
+  updateEquipmentInSet: (index: number, equipment: Equipment) => void;
+  updateEquipmentListInSet: (index: number, equipmentList: Equipment[]) => void;
+  removeEquipmentInSet: (index: number, equipment: Equipment) => void;
+  removeEquipmentListInSet: (index: number, equipmentList: Equipment[]) => void;
+  setLaboratorySampleSetIndex: (index: number) => void;
   removeEquipment: (id: string) => void;
   selectEquipmentSet: (index: number) => void;
   updateEquipmentSetName: (index: number, name: string) => void;

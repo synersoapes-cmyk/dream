@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
-import { getEquipmentDefaultImage } from '@/features/simulator/utils/equipmentImage';
 import { motion } from 'motion/react';
 
 import type { SimulatorPrimaryEquipmentType } from '@/shared/lib/simulator-equipment';
-import { getSimulatorDisplayImageUrl } from '@/shared/lib/simulator-image-url';
+import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 
 type EquipmentPanelSlotTheme = 'yellow' | 'blue' | 'purple';
 export type EquipmentPanelSlotInfo = {
@@ -89,6 +89,7 @@ export function EquipmentPanelSlot({
 }: EquipmentPanelSlotProps) {
   const Icon = slotInfo.icon;
   const config = themeConfig[theme];
+  const spotlightTags = equip ? getEquipmentSpotlightTags(equip) : [];
 
   return (
     <div className="relative">
@@ -99,16 +100,7 @@ export function EquipmentPanelSlot({
       >
         <div className="flex gap-3">
           {equip ? (
-            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
-              <img
-                src={
-                  getSimulatorDisplayImageUrl(equip.imageUrl) ||
-                  getEquipmentDefaultImage(equip.type)
-                }
-                alt={equip.name}
-                className="h-full w-full object-cover"
-              />
-            </div>
+            <EquipmentImage equipment={equip} size="md" />
           ) : (
             <div
               className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg border bg-gradient-to-br transition-colors ${config.iconBg}`}
@@ -168,9 +160,9 @@ export function EquipmentPanelSlot({
                   </div>
                 )}
 
-                {equip.highlights && equip.highlights.length > 0 && (
+                {spotlightTags.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {equip.highlights.map((highlight, index) => (
+                    {spotlightTags.slice(0, 3).map((highlight, index) => (
                       <span
                         key={`${equip.id}-${highlight}-${index}`}
                         className="rounded border border-red-500/50 bg-red-900/10 px-1 py-0.5 text-[10px] whitespace-nowrap text-red-400"

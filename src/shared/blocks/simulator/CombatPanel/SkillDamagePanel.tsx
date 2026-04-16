@@ -1,10 +1,10 @@
 'use client';
 
 import {
+  startTransition,
   useEffect,
   useMemo,
   useRef,
-  startTransition,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -17,29 +17,34 @@ import {
   mergeDungeonDatabases,
 } from '@/features/simulator/utils/targetTemplates';
 import { Calculator, ChevronDown, RefreshCw, X, Zap } from 'lucide-react';
-import {
-  resolveBattleContextDerivedFields,
-  resolveElementRelationFromElements,
-} from '@/shared/lib/simulator-battle-context';
-import { getSimulatorNetworkErrorMessage } from '@/shared/lib/simulator-network';
-import {
-  getSkillTargetCountOptions,
-  resolveLaboratorySkillLevels,
-} from '@/shared/lib/simulator-rune-skill';
 
+import { Input } from '@/shared/components/ui/input';
+import { Label } from '@/shared/components/ui/label';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/shared/components/ui/tooltip';
-import { Input } from '@/shared/components/ui/input';
-import { Label } from '@/shared/components/ui/label';
-import { SimpleSelect } from './SimpleSelect';
+import {
+  resolveBattleContextDerivedFields,
+  resolveElementRelationFromElements,
+} from '@/shared/lib/simulator-battle-context';
+import {
+  buildDamageExplanationChips,
+  buildDamageExplanationStages,
+} from '@/shared/lib/simulator-damage-explanation';
+import { getSimulatorNetworkErrorMessage } from '@/shared/lib/simulator-network';
+import {
+  getSkillTargetCountOptions,
+  resolveLaboratorySkillLevels,
+} from '@/shared/lib/simulator-rune-skill';
 import type {
   DamageEngineResult,
   DamageEngineTargetInput,
   DamageEngineTargetResult,
 } from '@/shared/services/damage-engine';
+
+import { SimpleSelect } from './SimpleSelect';
 
 const ELEMENT_RELATION_OPTIONS = ['克制', '无克/普通', '被克制'];
 const PREFERRED_DAMAGE_SKILL_NAMES = ['龙卷雨击', '龙腾'];
@@ -209,6 +214,18 @@ const getPanelMagicDamageTooltipLines = (
 const getPanelMagicDamageTooltipText = (
   details: DamageTargetDetails | null | undefined
 ) => getPanelMagicDamageTooltipLines(details).join('\n');
+
+const getExplanationToneClassName = (
+  tone: 'neutral' | 'positive' | 'warning' | undefined
+) => {
+  if (tone === 'positive') {
+    return 'border-emerald-700/30 bg-emerald-950/20 text-emerald-200';
+  }
+  if (tone === 'warning') {
+    return 'border-amber-700/30 bg-amber-950/20 text-amber-200';
+  }
+  return 'border-slate-700/40 bg-slate-950/40 text-slate-200';
+};
 
 const decodeName = (name: string): string => {
   if (!name) return '';
@@ -568,10 +585,13 @@ export function SkillDamagePanel({
 
     const loadTemplates = async () => {
       try {
-        const response = await fetch('/api/simulator/target-templates?scene=dungeon', {
-          method: 'GET',
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          '/api/simulator/target-templates?scene=dungeon',
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
         const payload = await response.json();
         if (
           !response.ok ||
@@ -671,7 +691,10 @@ export function SkillDamagePanel({
 
     const persistedBattleContext = syncedCloudState?.battleContext;
     setElementRelation(
-      resolveElementRelationFromElements(playerSetup.element, combatTarget.element)
+      resolveElementRelationFromElements(
+        playerSetup.element,
+        combatTarget.element
+      )
     );
     setShenmuValue(persistedBattleContext?.shenmuValue ?? 0);
     setMagicResult(persistedBattleContext?.magicResult ?? 0);
@@ -829,7 +852,9 @@ export function SkillDamagePanel({
         return;
       }
       console.error('failed to calculate skill damage panel:', error);
-      setCalculationError(getSimulatorNetworkErrorMessage(error, '伤害试算失败'));
+      setCalculationError(
+        getSimulatorNetworkErrorMessage(error, '伤害试算失败')
+      );
       setDamageDisplayData([]);
     } finally {
       if (requestId === latestCalculationRequestRef.current) {
@@ -1176,7 +1201,13 @@ export function SkillDamagePanel({
                 type="number"
                 step={1}
                 onChange={(e) =>
-                  updatePercentInput(setShenmuValue, e.target.value, 0, -99999, 99999)
+                  updatePercentInput(
+                    setShenmuValue,
+                    e.target.value,
+                    0,
+                    -99999,
+                    99999
+                  )
                 }
                 className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
               />
@@ -1188,15 +1219,19 @@ export function SkillDamagePanel({
                 type="number"
                 step={1}
                 onChange={(e) =>
-                  updatePercentInput(setMagicResult, e.target.value, 0, -99999, 99999)
+                  updatePercentInput(
+                    setMagicResult,
+                    e.target.value,
+                    0,
+                    -99999,
+                    99999
+                  )
                 }
                 className="h-9 border-yellow-800/40 bg-slate-950/60 text-sm text-yellow-100"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-yellow-300/80">
-                目标法防结果
-              </Label>
+              <Label className="text-xs text-yellow-300/80">目标法防结果</Label>
               <Input
                 value={targetMagicDefenseResult}
                 type="number"
@@ -1215,9 +1250,7 @@ export function SkillDamagePanel({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-yellow-300/80">
-                法术减伤系数
-              </Label>
+              <Label className="text-xs text-yellow-300/80">法术减伤系数</Label>
               <Input
                 value={specialMagicDamageReductionFactor}
                 type="number"
@@ -1443,286 +1476,376 @@ export function SkillDamagePanel({
             </div>
 
             <div className="max-h-[80vh] space-y-5 overflow-y-auto p-6">
-              <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
-                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
-                    1
-                  </span>
-                  基础项计算
-                </div>
-                <div className="mb-3 rounded bg-black/30 p-2 text-xs text-yellow-100/60">
-                  公式: (技能等级² / 145) + (技能等级 * 1.4) + 39.5
-                </div>
-                <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
-                  = ({modalSkillDetails.level}² / 145) + (
-                  {modalSkillDetails.level} * 1.4) + 39.5
-                  <br />
-                  <span className="mt-1 inline-block font-bold text-yellow-300">
-                    = {modalSkillDetails.details.baseItem}
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const explanationStages = buildDamageExplanationStages(
+                  modalSkillDetails.details.rawBreakdown
+                );
+                const explanationChips = buildDamageExplanationChips(
+                  modalSkillDetails.details.rawBreakdown
+                );
 
-              <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
-                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
-                    2
-                  </span>
-                  分灵系数计算
-                </div>
-                <div className="mb-3 rounded bg-black/30 p-2 text-xs text-yellow-100/60">
-                  服务端规则命中后的分灵系数
-                </div>
-                <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
-                  秒{modalSkillDetails.targets}
-                  <br />
-                  <span className="mt-1 inline-block font-bold text-yellow-300">
-                    = {modalSkillDetails.details.splitRatio}
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
-                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
-                    3
-                  </span>
-                  最终伤害计算
-                </div>
-                <div className="mb-3 rounded bg-black/30 p-2 text-xs leading-relaxed text-yellow-100/60">
-                  <div className="mb-2">
-                    公式: {modalSkillDetails.details.formulaExpression}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-yellow-800/40 pt-2 text-yellow-500/80">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          title={getPanelMagicDamageTooltipText(
-                            modalSkillDetails.details
-                          )}
-                          className="inline-flex cursor-help items-center underline decoration-dotted underline-offset-2"
-                        >
-                          面板法伤: {modalSkillDetails.details.magicDamage}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="top"
-                        className="max-w-xs text-left whitespace-pre-line"
-                      >
-                        {getPanelMagicDamageTooltipText(
-                          modalSkillDetails.details
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                    <span>目标法防: {modalSkillDetails.details.targetDef}</span>
-                    <span>
-                      阵法系数: {modalSkillDetails.details.formationRatio}
-                    </span>
-                    <span>
-                      变身卡: {modalSkillDetails.details.transformCardFactor}
-                    </span>
-                    <span>罗汉: {modalSkillDetails.details.luohanFactor}</span>
-                    <span>修炼差: {modalSkillDetails.details.cultDiff}</span>
-                    <span>
-                      五行系数: {modalSkillDetails.details.elementFactor}
-                    </span>
-                    <span>
-                      波动: {modalSkillDetails.details.damageVarianceFactor}
-                    </span>
-                    <span>
-                      法爆率: {modalSkillDetails.details.criticalChance}
-                    </span>
-                    <span>神木符: {modalSkillDetails.details.shenmuValue}</span>
-                    <span>
-                      法伤结果: {modalSkillDetails.details.magicResult}
-                    </span>
-                    <span>
-                      目标法防结果:{' '}
-                      {toNumber(
-                        modalSkillDetails.details.rawBreakdown
-                          ?.targetMagicDefenseResult
-                      )}
-                    </span>
-                    <span>
-                      天气:{' '}
-                      {String(
-                        modalSkillDetails.details.rawBreakdown?.weather || '无天气'
-                      )}
-                    </span>
-                    <span>
-                      目标状态:{' '}
-                      {String(
-                        modalSkillDetails.details.rawBreakdown
-                          ?.targetDefenseState || '普通'
-                      )}
-                    </span>
-                    <span>
-                      法术减伤系数:{' '}
-                      {toNumber(
-                        modalSkillDetails.details.rawBreakdown
-                          ?.specialMagicDamageReductionFactor,
-                        1
-                      )}
-                    </span>
-                  </div>
-                </div>
-                <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
-                  = ({modalSkillDetails.details.baseItem} +{' '}
-                  {modalSkillDetails.details.magicDamage} -{' '}
-                  {modalSkillDetails.details.targetDef}) *{' '}
-                  {modalSkillDetails.details.formationRatio} *{' '}
-                  {modalSkillDetails.details.transformCardFactor} *{' '}
-                  {modalSkillDetails.details.elementFactor} *{' '}
-                  {modalSkillDetails.details.splitRatio} * (1 +{' '}
-                  {modalSkillDetails.details.cultDiff} * 0.02) +{' '}
-                  {modalSkillDetails.details.cultDiff} * 5 +{' '}
-                  {modalSkillDetails.details.shenmuValue}
-                  <br />
-                  罗汉后非结果部分 x {modalSkillDetails.details.luohanFactor}
-                  ，再 + {modalSkillDetails.details.magicResult}，最后波动 x{' '}
-                  {modalSkillDetails.details.damageVarianceFactor}，再扣目标法防结果
-                  <br />
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <div className="rounded border border-yellow-600/40 bg-yellow-900/30 px-4 py-2 font-bold text-yellow-300">
-                      <span className="mb-1 block text-[10px] text-yellow-500/80">
-                        普通伤害
-                      </span>
-                      {modalSkillDetails.details.finalDamage}
-                    </div>
-                    <div className="rounded border border-red-600/40 bg-red-900/30 px-4 py-2 font-bold text-red-300">
-                      <span className="mb-1 block text-[10px] text-red-500/80">
-                        暴击伤害 (x1.5)
-                      </span>
-                      {modalSkillDetails.details.critDamage}
-                    </div>
-                    {modalSkillDetails.details.expectedDamage > 0 && (
-                      <div className="rounded border border-cyan-600/40 bg-cyan-900/30 px-4 py-2 font-bold text-cyan-300">
-                        <span className="mb-1 block text-[10px] text-cyan-500/80">
-                          法爆期望
+                return (
+                  <>
+                    <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
+                      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
+                          1
                         </span>
-                        {modalSkillDetails.details.expectedDamage}
+                        基础项计算
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {modalSkillDetails.details.matchedBonusRules?.length > 0 && (
-                <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
-                  <div className="mb-2 text-sm font-bold text-yellow-400">
-                    命中的技能加成规则
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {modalSkillDetails.details.matchedBonusRules.map((rule) => (
-                      <span
-                        key={rule.ruleCode}
-                        className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
-                      >
-                        {rule.skillName} +{rule.bonusValue}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {!!modalSkillDetails.details.rawBreakdown?.starBonuses && (
-                <div className="rounded-xl border border-cyan-800/30 bg-slate-900/50 p-4 shadow-inner">
-                  <div className="mb-2 text-sm font-bold text-cyan-300">
-                    星石 / 星相互合加成
-                  </div>
-
-                  {Array.isArray(
-                    modalSkillDetails.details.rawBreakdown.starBonuses
-                      ?.starPositionBonuses
-                  ) &&
-                    modalSkillDetails.details.rawBreakdown.starBonuses
-                      .starPositionBonuses!.length > 0 && (
-                      <div className="mb-3">
-                        <div className="mb-1.5 text-xs text-cyan-200/80">
-                          单件星位加成
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {modalSkillDetails.details.rawBreakdown.starBonuses.starPositionBonuses!.map(
-                            (item) => (
-                              <span
-                                key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
-                                className="rounded-full border border-cyan-700/30 bg-cyan-900/20 px-2.5 py-1 text-xs text-cyan-100"
-                              >
-                                {item.slot}: {item.label}
-                              </span>
-                            )
-                          )}
-                        </div>
+                      <div className="mb-3 rounded bg-black/30 p-2 text-xs text-yellow-100/60">
+                        公式: (技能等级² / 145) + (技能等级 * 1.4) + 39.5
                       </div>
-                    )}
-
-                  {Array.isArray(
-                    modalSkillDetails.details.rawBreakdown.starBonuses
-                      ?.starAlignmentBonuses
-                  ) &&
-                    modalSkillDetails.details.rawBreakdown.starBonuses
-                      .starAlignmentBonuses!.length > 0 && (
-                      <div className="mb-3">
-                        <div className="mb-1.5 text-xs text-cyan-200/80">
-                          单件互合属性
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {modalSkillDetails.details.rawBreakdown.starBonuses.starAlignmentBonuses!.map(
-                            (item) => (
-                              <span
-                                key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
-                                className="rounded-full border border-sky-700/30 bg-sky-900/20 px-2.5 py-1 text-xs text-sky-100"
-                              >
-                                {item.slot}: {item.label}
-                              </span>
-                            )
-                          )}
-                        </div>
+                      <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
+                        = ({modalSkillDetails.level}² / 145) + (
+                        {modalSkillDetails.level} * 1.4) + 39.5
+                        <br />
+                        <span className="mt-1 inline-block font-bold text-yellow-300">
+                          = {modalSkillDetails.details.baseItem}
+                        </span>
                       </div>
-                    )}
-
-                  <div className="space-y-1.5 text-xs text-cyan-100/90">
-                    <div>
-                      六件全套：
-                      <span className="ml-2 font-semibold text-cyan-300">
-                        {modalSkillDetails.details.rawBreakdown.starBonuses
-                          ?.fullSetActive
-                          ? `已生效（全基础属性 +${modalSkillDetails.details.rawBreakdown.starBonuses?.fullSetAttributeBonus ?? 0}）`
-                          : '未生效'}
-                      </span>
                     </div>
-                    {modalSkillDetails.details.rawBreakdown.starBonuses
-                      ?.attributeSourceBonuses && (
-                      <div className="text-cyan-200/75">
-                        基础属性加成：
-                        {Object.entries(
-                          modalSkillDetails.details.rawBreakdown.starBonuses
-                            .attributeSourceBonuses
-                        )
-                          .map(([key, value]) => `${key} +${value}`)
-                          .join(' / ')}
+
+                    <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
+                      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
+                          2
+                        </span>
+                        分灵系数计算
+                      </div>
+                      <div className="mb-3 rounded bg-black/30 p-2 text-xs text-yellow-100/60">
+                        服务端规则命中后的分灵系数
+                      </div>
+                      <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
+                        秒{modalSkillDetails.targets}
+                        <br />
+                        <span className="mt-1 inline-block font-bold text-yellow-300">
+                          = {modalSkillDetails.details.splitRatio}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
+                      <div className="mb-2 flex items-center gap-2 text-sm font-bold text-yellow-400">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-yellow-900/60 text-xs text-yellow-300">
+                          3
+                        </span>
+                        最终伤害计算
+                      </div>
+                      <div className="mb-3 rounded bg-black/30 p-2 text-xs leading-relaxed text-yellow-100/60">
+                        <div className="mb-2">
+                          公式: {modalSkillDetails.details.formulaExpression}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-yellow-800/40 pt-2 text-yellow-500/80">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                title={getPanelMagicDamageTooltipText(
+                                  modalSkillDetails.details
+                                )}
+                                className="inline-flex cursor-help items-center underline decoration-dotted underline-offset-2"
+                              >
+                                面板法伤:{' '}
+                                {modalSkillDetails.details.magicDamage}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-xs text-left whitespace-pre-line"
+                            >
+                              {getPanelMagicDamageTooltipText(
+                                modalSkillDetails.details
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                          <span>
+                            目标法防: {modalSkillDetails.details.targetDef}
+                          </span>
+                          <span>
+                            阵法系数: {modalSkillDetails.details.formationRatio}
+                          </span>
+                          <span>
+                            变身卡:{' '}
+                            {modalSkillDetails.details.transformCardFactor}
+                          </span>
+                          <span>
+                            罗汉: {modalSkillDetails.details.luohanFactor}
+                          </span>
+                          <span>
+                            修炼差: {modalSkillDetails.details.cultDiff}
+                          </span>
+                          <span>
+                            五行系数: {modalSkillDetails.details.elementFactor}
+                          </span>
+                          <span>
+                            波动:{' '}
+                            {modalSkillDetails.details.damageVarianceFactor}
+                          </span>
+                          <span>
+                            法爆率: {modalSkillDetails.details.criticalChance}
+                          </span>
+                          <span>
+                            神木符: {modalSkillDetails.details.shenmuValue}
+                          </span>
+                          <span>
+                            法伤结果: {modalSkillDetails.details.magicResult}
+                          </span>
+                          <span>
+                            目标法防结果:{' '}
+                            {toNumber(
+                              modalSkillDetails.details.rawBreakdown
+                                ?.targetMagicDefenseResult
+                            )}
+                          </span>
+                          <span>
+                            天气:{' '}
+                            {String(
+                              modalSkillDetails.details.rawBreakdown?.weather ||
+                                '无天气'
+                            )}
+                          </span>
+                          <span>
+                            目标状态:{' '}
+                            {String(
+                              modalSkillDetails.details.rawBreakdown
+                                ?.targetDefenseState || '普通'
+                            )}
+                          </span>
+                          <span>
+                            法术减伤系数:{' '}
+                            {toNumber(
+                              modalSkillDetails.details.rawBreakdown
+                                ?.specialMagicDamageReductionFactor,
+                              1
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="font-mono text-sm leading-relaxed tracking-wide text-green-400">
+                        = ({modalSkillDetails.details.baseItem} +{' '}
+                        {modalSkillDetails.details.magicDamage} -{' '}
+                        {modalSkillDetails.details.targetDef}) *{' '}
+                        {modalSkillDetails.details.formationRatio} *{' '}
+                        {modalSkillDetails.details.transformCardFactor} *{' '}
+                        {modalSkillDetails.details.elementFactor} *{' '}
+                        {modalSkillDetails.details.splitRatio} * (1 +{' '}
+                        {modalSkillDetails.details.cultDiff} * 0.02) +{' '}
+                        {modalSkillDetails.details.cultDiff} * 5 +{' '}
+                        {modalSkillDetails.details.shenmuValue}
+                        <br />
+                        罗汉后非结果部分 x{' '}
+                        {modalSkillDetails.details.luohanFactor}
+                        ，再 + {modalSkillDetails.details.magicResult}，最后波动
+                        x {modalSkillDetails.details.damageVarianceFactor}
+                        ，再扣目标法防结果
+                        <br />
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <div className="rounded border border-yellow-600/40 bg-yellow-900/30 px-4 py-2 font-bold text-yellow-300">
+                            <span className="mb-1 block text-[10px] text-yellow-500/80">
+                              普通伤害
+                            </span>
+                            {modalSkillDetails.details.finalDamage}
+                          </div>
+                          <div className="rounded border border-red-600/40 bg-red-900/30 px-4 py-2 font-bold text-red-300">
+                            <span className="mb-1 block text-[10px] text-red-500/80">
+                              暴击伤害 (x1.5)
+                            </span>
+                            {modalSkillDetails.details.critDamage}
+                          </div>
+                          {modalSkillDetails.details.expectedDamage > 0 && (
+                            <div className="rounded border border-cyan-600/40 bg-cyan-900/30 px-4 py-2 font-bold text-cyan-300">
+                              <span className="mb-1 block text-[10px] text-cyan-500/80">
+                                法爆期望
+                              </span>
+                              {modalSkillDetails.details.expectedDamage}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {explanationStages.length > 0 && (
+                      <div className="rounded-xl border border-sky-800/30 bg-slate-900/50 p-4 shadow-inner">
+                        <div className="mb-3 text-sm font-bold text-sky-300">
+                          过程分解
+                        </div>
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {explanationStages.map((stage, index) => (
+                            <div
+                              key={stage.key}
+                              className={`rounded-lg border px-3 py-2 ${getExplanationToneClassName(
+                                stage.tone
+                              )}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-black/25 text-[10px] font-semibold">
+                                    {index + 1}
+                                  </span>
+                                  <span className="text-sm font-semibold">
+                                    {stage.label}
+                                  </span>
+                                </div>
+                                <span className="font-mono text-sm font-bold tabular-nums">
+                                  {stage.value.toLocaleString()}
+                                </span>
+                              </div>
+                              {stage.note && (
+                                <div className="mt-1.5 text-xs leading-relaxed text-slate-300/85">
+                                  {stage.note}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    {modalSkillDetails.details.rawBreakdown.starBonuses
-                      ?.panelStatBonuses &&
-                      Object.keys(
-                        modalSkillDetails.details.rawBreakdown.starBonuses
-                          .panelStatBonuses
-                      ).length > 0 && (
-                        <div className="text-cyan-200/75">
-                          面板直加：
-                          {Object.entries(
-                            modalSkillDetails.details.rawBreakdown.starBonuses
-                              .panelStatBonuses
-                          )
-                            .map(([key, value]) => `${key} +${value}`)
-                            .join(' / ')}
+
+                    {explanationChips.length > 0 && (
+                      <div className="rounded-xl border border-violet-800/30 bg-slate-900/50 p-4 shadow-inner">
+                        <div className="mb-3 text-sm font-bold text-violet-300">
+                          生效规则与来源
                         </div>
-                      )}
-                  </div>
-                </div>
-              )}
+                        <div className="flex flex-wrap gap-2">
+                          {explanationChips.map((chip) => (
+                            <div
+                              key={chip.key}
+                              className={`rounded-full border px-3 py-1.5 text-xs ${getExplanationToneClassName(
+                                chip.tone
+                              )}`}
+                            >
+                              <span className="mr-1.5 text-slate-400">
+                                {chip.label}
+                              </span>
+                              <span className="font-medium">{chip.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {modalSkillDetails.details.matchedBonusRules?.length >
+                      0 && (
+                      <div className="rounded-xl border border-yellow-800/30 bg-slate-900/50 p-4 shadow-inner">
+                        <div className="mb-2 text-sm font-bold text-yellow-400">
+                          命中的技能加成规则
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {modalSkillDetails.details.matchedBonusRules.map(
+                            (rule) => (
+                              <span
+                                key={rule.ruleCode}
+                                className="rounded-full border border-yellow-700/30 bg-yellow-900/30 px-2.5 py-1 text-xs text-yellow-200"
+                              >
+                                {rule.skillName} +{rule.bonusValue}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {!!modalSkillDetails.details.rawBreakdown?.starBonuses && (
+                      <div className="rounded-xl border border-cyan-800/30 bg-slate-900/50 p-4 shadow-inner">
+                        <div className="mb-2 text-sm font-bold text-cyan-300">
+                          星石 / 星相互合加成
+                        </div>
+
+                        {Array.isArray(
+                          modalSkillDetails.details.rawBreakdown.starBonuses
+                            ?.starPositionBonuses
+                        ) &&
+                          modalSkillDetails.details.rawBreakdown.starBonuses
+                            .starPositionBonuses!.length > 0 && (
+                            <div className="mb-3">
+                              <div className="mb-1.5 text-xs text-cyan-200/80">
+                                单件星位加成
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {modalSkillDetails.details.rawBreakdown.starBonuses.starPositionBonuses!.map(
+                                  (item) => (
+                                    <span
+                                      key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
+                                      className="rounded-full border border-cyan-700/30 bg-cyan-900/20 px-2.5 py-1 text-xs text-cyan-100"
+                                    >
+                                      {item.slot}: {item.label}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                        {Array.isArray(
+                          modalSkillDetails.details.rawBreakdown.starBonuses
+                            ?.starAlignmentBonuses
+                        ) &&
+                          modalSkillDetails.details.rawBreakdown.starBonuses
+                            .starAlignmentBonuses!.length > 0 && (
+                            <div className="mb-3">
+                              <div className="mb-1.5 text-xs text-cyan-200/80">
+                                单件互合属性
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {modalSkillDetails.details.rawBreakdown.starBonuses.starAlignmentBonuses!.map(
+                                  (item) => (
+                                    <span
+                                      key={`${item.equipmentId}-${item.targetKey}-${item.label}`}
+                                      className="rounded-full border border-sky-700/30 bg-sky-900/20 px-2.5 py-1 text-xs text-sky-100"
+                                    >
+                                      {item.slot}: {item.label}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                        <div className="space-y-1.5 text-xs text-cyan-100/90">
+                          <div>
+                            六件全套：
+                            <span className="ml-2 font-semibold text-cyan-300">
+                              {modalSkillDetails.details.rawBreakdown
+                                .starBonuses?.fullSetActive
+                                ? `已生效（全基础属性 +${modalSkillDetails.details.rawBreakdown.starBonuses?.fullSetAttributeBonus ?? 0}）`
+                                : '未生效'}
+                            </span>
+                          </div>
+                          {modalSkillDetails.details.rawBreakdown.starBonuses
+                            ?.attributeSourceBonuses && (
+                            <div className="text-cyan-200/75">
+                              基础属性加成：
+                              {Object.entries(
+                                modalSkillDetails.details.rawBreakdown
+                                  .starBonuses.attributeSourceBonuses
+                              )
+                                .map(([key, value]) => `${key} +${value}`)
+                                .join(' / ')}
+                            </div>
+                          )}
+                          {modalSkillDetails.details.rawBreakdown.starBonuses
+                            ?.panelStatBonuses &&
+                            Object.keys(
+                              modalSkillDetails.details.rawBreakdown.starBonuses
+                                .panelStatBonuses
+                            ).length > 0 && (
+                              <div className="text-cyan-200/75">
+                                面板直加：
+                                {Object.entries(
+                                  modalSkillDetails.details.rawBreakdown
+                                    .starBonuses.panelStatBonuses
+                                )
+                                  .map(([key, value]) => `${key} +${value}`)
+                                  .join(' / ')}
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

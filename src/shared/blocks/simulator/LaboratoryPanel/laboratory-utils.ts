@@ -2,11 +2,17 @@ import type {
   BaseAttributes,
   CombatStats,
   Equipment,
+  EquipmentSet,
   ExperimentSeat,
+  PendingEquipment,
 } from '@/features/simulator/store/gameTypes';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
 import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
+import {
+  buildSimulatorEquipmentLibraryItems,
+  type SimulatorEquipmentLibraryItem as LaboratoryLibrarySourceItem,
+} from '@/shared/lib/simulator-equipment-library';
 import {
   getSimulatorSlotDefinitions,
   getSimulatorSlotLabel,
@@ -189,6 +195,16 @@ export const LABORATORY_ATTRIBUTE_LIST: Array<{
   { key: 'dodge', label: '躲避', isBase: false },
   { key: 'elementalResistance', label: '五行克制抵御能力', isBase: false },
 ];
+
+export function buildLaboratoryLibrarySourceItems(params: {
+  currentEquipment: Equipment[];
+  equipmentSets: EquipmentSet[];
+  activeSetIndex: number;
+  candidateLibraryItems: PendingEquipment[];
+  inventoryLibraryItems?: PendingEquipment[];
+}) {
+  return buildSimulatorEquipmentLibraryItems(params);
+}
 
 export function summarizeEquipmentEffects(
   equipments: Equipment[],

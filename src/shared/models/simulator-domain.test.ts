@@ -56,6 +56,13 @@ function createBundle(): SimulatorCharacterBundle {
       rawBodyJson: JSON.stringify({
         magicPower: 610,
         dodge: 205,
+        artifactConfig: {
+          name: '阳玉',
+          statKey: 'fixedDamage',
+          value: 20,
+          description: '神器法结',
+          isActive: true,
+        },
         meridianConfig: {
           physique: 0,
           magic: 10,
@@ -250,7 +257,7 @@ test('buildSimulatorCharacterDomain maps profile, battle context, and equipment 
   assert.equal(domain.equipmentAttributeTotals.spirit, 12);
   assert.equal(domain.equipmentAttributeTotals.speed, 8);
   assert.equal(domain.equipmentAttributeTotals.magic, 8);
-  assert.equal(domain.equipmentAttributeTotals.magicResult, 35);
+  assert.equal(domain.equipmentAttributeTotals.magicResult, 55);
   assert.equal(domain.battleContext?.selfElement, '水');
   assert.equal(domain.battleContext?.targetName, '乌鸡国树怪');
   assert.equal(domain.battleContext?.targetSpeed, 720);

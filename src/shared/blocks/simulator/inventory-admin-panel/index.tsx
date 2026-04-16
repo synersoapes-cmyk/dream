@@ -35,6 +35,8 @@ type InventoryEntryItem = {
   equipmentName: string;
   equipmentType: string;
   candidateStatus: string | null;
+  inventorySourceKind: string | null;
+  inventorySourceLabel: string | null;
 };
 
 type InventoryStatus = 'all' | 'active' | 'sold' | 'discarded';
@@ -207,6 +209,11 @@ export function SimulatorInventoryAdminPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-medium">{item.equipmentName}</div>
                     <Badge variant="outline">{item.status}</Badge>
+                    {item.inventorySourceLabel ? (
+                      <Badge variant="outline">
+                        来源:{item.inventorySourceLabel}
+                      </Badge>
+                    ) : null}
                     {item.candidateStatus ? (
                       <Badge variant="outline">
                         候选:{item.candidateStatus}
@@ -220,6 +227,11 @@ export function SimulatorInventoryAdminPanel({
                     角色：{item.characterName} · 类型：
                     {item.equipmentType || item.itemType}
                   </div>
+                  {item.inventorySourceKind ? (
+                    <div className="text-muted-foreground text-sm">
+                      来源类型：{item.inventorySourceKind}
+                    </div>
+                  ) : null}
                   <div className="text-muted-foreground text-sm">
                     folder_key：{item.folderKey}
                   </div>

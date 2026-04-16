@@ -14,6 +14,7 @@ const QUALITY_PREFIX_PATTERN =
   /(珍品|稀有|极品|神品|白板|金色|紫色|蓝色|白色|红色|绿色|黄色|橙色)/g;
 const DECORATION_PATTERN = /[【】\[\]（）()<>《》「」『』]/g;
 const CONNECTOR_PATTERN = /[·•・‧]/g;
+const TRAILING_VARIANT_PATTERN = /^(.+?)[（(][^()（）]+[）)]$/;
 
 function buildEquipmentArtUrl(
   type: SimulatorEquipmentType,
@@ -54,13 +55,49 @@ export function normalizeEquipmentArtworkName(name?: string) {
 }
 
 const STATIC_ARTWORK_REGISTRY = new Map<string, string>();
+
+function registerArtworkRegistryKey(
+  registry: Map<string, string>,
+  type: SimulatorEquipmentType,
+  name: string,
+  assetPath: string
+) {
+  const compactName = compactEquipmentArtworkName(name);
+  if (!compactName) {
+    return;
+  }
+
+  const registryKey = `${type}:${compactName}`;
+  if (!registry.has(registryKey)) {
+    registry.set(registryKey, assetPath);
+  }
+
+  const strippedVariantName = name.replace(TRAILING_VARIANT_PATTERN, '$1').trim();
+  if (!strippedVariantName || strippedVariantName === name) {
+    return;
+  }
+
+  const strippedKey = `${type}:${compactEquipmentArtworkName(strippedVariantName)}`;
+  if (!registry.has(strippedKey)) {
+    registry.set(strippedKey, assetPath);
+  }
+}
+
 for (const entry of SIMULATOR_EQUIPMENT_ARTWORK_ENTRIES) {
-  const baseKey = `${entry.type}:${compactEquipmentArtworkName(entry.canonicalName)}`;
-  STATIC_ARTWORK_REGISTRY.set(baseKey, entry.assetPath);
+  registerArtworkRegistryKey(
+    STATIC_ARTWORK_REGISTRY,
+    entry.type,
+    entry.canonicalName,
+    entry.assetPath
+  );
 
   for (const alias of entry.aliases ?? []) {
-    const aliasKey = `${entry.type}:${compactEquipmentArtworkName(alias)}`;
-    STATIC_ARTWORK_REGISTRY.set(aliasKey, entry.assetPath);
+    registerArtworkRegistryKey(
+      STATIC_ARTWORK_REGISTRY,
+      entry.type,
+      alias,
+      entry.assetPath
+    );
   }
 }
 

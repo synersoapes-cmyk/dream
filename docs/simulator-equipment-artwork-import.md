@@ -11,11 +11,12 @@
    - 放可维护的素材源数据
    - 用于补充别名等人工信息
 
-当前约定：
+当前状态：
 
-- 真实装备素材文件本体先空着
-- 项目里先只保留目录占位、manifest 结构和导入脚本
-- 等后续收到正式 CC 素材包和别名表后，再批量执行导入
+- 本地 `素材/icons` 已完成首批真实装备图导入
+- `public/simulator/equipment-art/` 与 `data/simulator-equipment-artwork-manifest.source.json` 已同步生成静态映射
+- 前台默认优先命中本地真实素材，命不中时再回退到部位占位图
+- 少量“属性说明图”会在导入时自动跳过，不会误当成装备图
 
 ## 推荐操作流程
 
@@ -44,6 +45,7 @@ pnpm simulator:artwork:import -- --source /path/to/cc-artwork
 脚本会完成：
 
 - 复制图片到 `public/simulator/equipment-art/<type>/`
+- 对平铺中文命名素材自动推断装备部位，默认把无法明确归类的图片按武器处理
 - 自动执行 `simulator:artwork:sync-source`
 - 如提供别名文件，则自动合并进 `data/simulator-equipment-artwork-manifest.source.json`
 - 自动执行 `simulator:artwork:build`
@@ -64,6 +66,12 @@ pnpm simulator:artwork:import -- --source /path/to/cc-artwork
 /path/to/cc-artwork/
   weapon-沧海灵杖.webp
   腰带 星河腰带.webp
+```
+
+项目当前也支持直接从本地素材目录导入：
+
+```bash
+pnpm simulator:artwork:import -- --source 素材/icons
 ```
 
 如果外部目录全是同一类装备，可以显式指定类型：

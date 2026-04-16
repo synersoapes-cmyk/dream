@@ -101,7 +101,7 @@ test('computeDerivedStats applies jade magic upper percent modifiers to panel mp
 
   const result = computeDerivedStats(baseAttributes, [jade], null);
 
-  assert.equal(result.magic, 367.5);
+  assert.equal(result.magic, 451.5);
 });
 
 test('computeDerivedStats applies bodyStrength percent to base hp only', () => {
@@ -131,7 +131,89 @@ test('computeDerivedStats applies bodyStrength percent to base hp only', () => {
     bodyStrength: 20,
   });
 
-  assert.equal(result.hp, 854);
+  assert.equal(result.hp, 374);
+});
+
+test('computeDerivedStats applies meditation only to base mp and keeps equipment mp flat outside the passive multiplier', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 100,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 0,
+    agility: 0,
+    faction: '龙宫',
+  };
+
+  const necklace: Equipment = {
+    id: 'necklace_mp_1',
+    name: '测试项链',
+    type: 'necklace',
+    mainStat: '魔法 +40',
+    baseStats: { magic: 40 },
+    stats: { magic: 40 },
+  };
+
+  const result = computeDerivedStats(baseAttributes, [necklace], null, {
+    meditation: 20,
+  });
+
+  assert.equal(result.magic, 556);
+});
+
+test('computeDerivedStats applies physicalFitness only to base defense and keeps equipment defense as flat addend', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 0,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 10,
+    agility: 0,
+    faction: '龙宫',
+  };
+
+  const armor: Equipment = {
+    id: 'armor_def_1',
+    name: '测试衣服',
+    type: 'armor',
+    mainStat: '防御 +20',
+    baseStats: { defense: 20 },
+    stats: { defense: 20 },
+  };
+
+  const result = computeDerivedStats(baseAttributes, [armor], null, {
+    physicalFitness: 25,
+  });
+
+  assert.equal(result.defense, 40);
+});
+
+test('computeDerivedStats applies divineSpeed as fixed +1.5 per level before formation speed factor', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 0,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 0,
+    agility: 10,
+    faction: '龙宫',
+  };
+
+  const result = computeDerivedStats(baseAttributes, [], null, {
+    divineSpeed: 4,
+    formation: '天覆阵',
+  });
+
+  assert.ok(Math.abs(result.speed - 11.7) < 1e-9);
 });
 
 test('computeDerivedStats converts magic into mp magicDamage and magicDefense at the expected rates', () => {
@@ -150,7 +232,7 @@ test('computeDerivedStats converts magic into mp magicDamage and magicDefense at
 
   const result = computeDerivedStats(baseAttributes, [], null);
 
-  assert.equal(result.magic, 3.5);
+  assert.equal(result.magic, 83.5);
   assert.equal(result.magicDamage, 0.7);
   assert.equal(result.magicDefense, 0.7);
 });
@@ -215,7 +297,7 @@ test('computeDerivedStats converts physique into hp magicDamage magicDefense and
 
   const result = computeDerivedStats(baseAttributes, [], null);
 
-  assert.equal(result.hp, 45);
+  assert.equal(result.hp, 145);
   assert.equal(result.magicDamage, 3);
   assert.equal(result.magicDefense, 3);
   assert.equal(result.speed, 1);
@@ -384,7 +466,7 @@ test('computeDerivedStats applies meridian magic bonus to panel values', () => {
     },
   });
 
-  assert.equal(result.magic, 385);
+  assert.equal(result.magic, 465);
   assert.equal(result.magicDamage, 77);
   assert.equal(result.magicDefense, 77);
   assert.equal(result.spiritualPower, 77);
@@ -496,7 +578,7 @@ test('computeDerivedStats applies three-piece regular set magic bonus', () => {
     null
   );
 
-  assert.equal(result.magic, 385);
+  assert.equal(result.magic, 465);
   assert.equal(result.magicDamage, 77);
   assert.equal(result.magicDefense, 77);
 });
@@ -529,7 +611,7 @@ test('computeDerivedStats upgrades regular set bonus from three to five pieces',
     null
   );
 
-  assert.equal(result.magic, 420);
+  assert.equal(result.magic, 500);
   assert.equal(result.magicDamage, 84);
   assert.equal(result.magicDefense, 84);
 });
@@ -597,7 +679,7 @@ test('computeDerivedStats prefers configured regular set rules over defaults', (
     }
   );
 
-  assert.equal(result.magic, 392);
+  assert.equal(result.magic, 472);
   assert.ok(Math.abs(result.magicDamage - 78.4) < 1e-9);
   assert.ok(Math.abs(result.magicDefense - 78.4) < 1e-9);
 });

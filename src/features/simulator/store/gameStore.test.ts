@@ -911,6 +911,7 @@ test('allocatePotentialPoints spends remaining points and updates panel stats fo
   useGameStore.setState((state) => ({
     ...state,
     autoRecalculateDerivedStats: true,
+    syncedCloudState: null,
     baseAttributes: {
       ...state.baseAttributes,
       level: 0,
@@ -973,10 +974,10 @@ test('bodyStrength cultivation scales hp when physique changes', () => {
   }));
 
   useGameStore.getState().recalculateCombatStats();
-  assert.equal(useGameStore.getState().combatStats.hp, 654);
+  assert.equal(useGameStore.getState().combatStats.hp, 174);
 
   useGameStore.getState().updateBaseAttribute('physique', 20);
-  assert.equal(useGameStore.getState().combatStats.hp, 708);
+  assert.equal(useGameStore.getState().combatStats.hp, 228);
 });
 
 test('meridian magic bonus updates panel stats immediately', () => {
@@ -1093,7 +1094,7 @@ test('setActiveRegularSetRules updates current combat panel stats immediately', 
   ]);
 
   const after = useGameStore.getState().combatStats;
-  assert.equal(after.magic, 392);
+  assert.equal(after.magic, 472);
   assert.equal(after.magicDamage, 78);
   assert.equal(after.magicDefense, 78);
 });

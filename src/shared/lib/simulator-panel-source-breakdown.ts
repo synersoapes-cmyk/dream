@@ -408,9 +408,8 @@ function buildAttributeDetailItems(
     }
   };
 
-  const deltaLevel = current.level - baseline.level;
-  const deltaBaseHp = current.hp - baseline.hp;
   const deltaPhysique = current.physique - baseline.physique;
+  const deltaMagic = current.magic - baseline.magic;
   const deltaMagicPower = current.magicPower - baseline.magicPower;
   const deltaStrength = current.strength - baseline.strength;
   const deltaEndurance = current.endurance - baseline.endurance;
@@ -420,9 +419,9 @@ function buildAttributeDetailItems(
     case 'magicDamage':
     case 'spiritualPower':
     case 'magicDefense':
-      add(ATTRIBUTE_DETAIL_LABELS.level ?? '等级', deltaLevel * 3, '等级自带法伤成长');
       add(ATTRIBUTE_DETAIL_LABELS.magicPower ?? '灵力', deltaMagicPower, '灵力直接联动法伤/法防');
       add(ATTRIBUTE_DETAIL_LABELS.physique ?? '体质', deltaPhysique * 0.3, '体质按 0.3 灵力折算');
+      add(ATTRIBUTE_DETAIL_LABELS.magic ?? '魔力', deltaMagic * 0.7, '魔力按 0.7 灵力折算');
       add(ATTRIBUTE_DETAIL_LABELS.strength ?? '力量', deltaStrength * 0.4, '力量按 0.4 灵力折算');
       add(ATTRIBUTE_DETAIL_LABELS.endurance ?? '耐力', deltaEndurance * 0.2, '耐力按 0.2 灵力折算');
       break;
@@ -433,11 +432,9 @@ function buildAttributeDetailItems(
       add(ATTRIBUTE_DETAIL_LABELS.agility ?? '敏捷', deltaAgility * 0.7, '敏捷按 0.7 速度折算');
       break;
     case 'hp':
-      add(ATTRIBUTE_DETAIL_LABELS.hp ?? '基础气血', deltaBaseHp * 5, '基础气血按 5 倍进入面板');
       add(ATTRIBUTE_DETAIL_LABELS.physique ?? '体质', deltaPhysique * 4.5, '体质按 4.5 气血折算');
       break;
     case 'hit':
-      add(ATTRIBUTE_DETAIL_LABELS.level ?? '等级', deltaLevel * 6, '等级自带命中成长');
       add(ATTRIBUTE_DETAIL_LABELS.strength ?? '力量', deltaStrength * 1.7, '仙族力量按 1.7 命中折算');
       break;
     case 'magicCritLevel':
@@ -509,11 +506,19 @@ function buildCultivationDetailItems(
   key: PanelSourceBreakdownKey,
   totalValue: number
 ) {
-  if (key !== 'hp' || totalValue === 0) {
+  if (totalValue === 0) {
     return [] as PanelSourceValueItem[];
   }
 
-  return [{ label: '强身', value: totalValue, note: '强身百分比只作用于气血' }];
+  if (key === 'hp') {
+    return [{ label: '强身', value: totalValue, note: '强身百分比只作用于气血基础部分' }];
+  }
+
+  if (key === 'speed') {
+    return [{ label: '神速', value: totalValue, note: '神速按每级固定 +1.5 速度结算' }];
+  }
+
+  return [] as PanelSourceValueItem[];
 }
 
 function buildTreasureDetailItems(

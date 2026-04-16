@@ -354,6 +354,9 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
         equipment,
         treasure,
         bodyStrength: cultivation.bodyStrength,
+        meditation: cultivation.meditation,
+        physicalFitness: cultivation.physicalFitness,
+        divineSpeed: cultivation.divineSpeed,
         formation: playerSetup.formation,
         meridian,
         regularSetRules: activeRegularSetRules,
@@ -366,6 +369,9 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
             equipment: syncedCloudState.equipment,
             treasure: syncedCloudState.treasure,
             bodyStrength: syncedCloudState.cultivation.bodyStrength,
+            meditation: syncedCloudState.cultivation.meditation,
+            physicalFitness: syncedCloudState.cultivation.physicalFitness,
+            divineSpeed: syncedCloudState.cultivation.divineSpeed,
             formation:
               syncedCloudState.playerSetup?.formation ??
               syncedCloudState.formation,

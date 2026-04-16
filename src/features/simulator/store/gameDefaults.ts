@@ -46,6 +46,9 @@ const defaultPhysicalSkills: Skill[] = [
 
 const defaultPhysicalCultivation: Cultivation = {
   bodyStrength: 0,
+  meditation: 0,
+  physicalFitness: 0,
+  divineSpeed: 0,
   physicalAttack: 25,
   physicalDefense: 20,
   magicAttack: 0,

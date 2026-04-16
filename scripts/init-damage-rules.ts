@@ -245,10 +245,23 @@ const attributeConversions: RuleSeedRow[] = [
     roleType: '法师',
     sourceAttr: 'baseHp',
     targetAttr: 'hp',
-    coefficient: 5,
+    coefficient: 1,
     valueType: 'linear',
     conditionJson: '{}',
     sort: 10,
+    enabled: true,
+  },
+  {
+    id: 'rac_base_mp_mp',
+    versionId: RULE_VERSION_ID,
+    school: '龙宫',
+    roleType: '法师',
+    sourceAttr: 'baseMp',
+    targetAttr: 'mp',
+    coefficient: 1,
+    valueType: 'linear',
+    conditionJson: '{}',
+    sort: 15,
     enabled: true,
   },
   {
@@ -472,15 +485,14 @@ const skillFormulas: RuleSeedRow[] = [
     formulaKey: 'lg_dragon_roll_v1',
     baseFormulaJson: JSON.stringify({
       baseTerm: {
-        type: 'quadratic',
-        a: 1 / 145,
-        b: 1.4,
-        c: 39.5,
+        type: 'linear',
+        multiplier: 2.5,
+        addend: 0,
       },
     }),
     extraFormulaJson: JSON.stringify({
       formula:
-        '(base + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result',
+        '(skill_base_term + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result',
     }),
     conditionJson: JSON.stringify({
       targetType: 'magic',
@@ -502,14 +514,14 @@ const skillFormulas: RuleSeedRow[] = [
     baseFormulaJson: JSON.stringify({
       baseTerm: {
         type: 'quadratic',
-        a: 1 / 145,
-        b: 1.4,
-        c: 39.5,
+        a: 1 / 120,
+        b: 1.5,
+        c: 55,
       },
     }),
     extraFormulaJson: JSON.stringify({
       formula:
-        '(base + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result',
+        '(skill_base_term + panel_magic_damage - actual_target_magic_defense) * formation_factor * transform_card_factor * element_factor * split_factor * (1 + cult_diff * 0.02) + cult_diff * 5 + shenmu_value + magic_result',
     }),
     conditionJson: JSON.stringify({
       targetType: 'magic',

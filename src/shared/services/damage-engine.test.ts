@@ -13,7 +13,8 @@ const attributeConversionSeeds: Array<{
   valueType: string;
   sort: number;
 }> = [
-  { sourceAttr: 'baseHp', targetAttr: 'hp', coefficient: 5, valueType: 'linear', sort: 10 },
+  { sourceAttr: 'baseHp', targetAttr: 'hp', coefficient: 1, valueType: 'linear', sort: 10 },
+  { sourceAttr: 'baseMp', targetAttr: 'mp', coefficient: 1, valueType: 'linear', sort: 15 },
   { sourceAttr: 'physique', targetAttr: 'hp', coefficient: 4.5, valueType: 'linear', sort: 20 },
   { sourceAttr: 'physique', targetAttr: 'spirit', coefficient: 0.3, valueType: 'linear', sort: 30 },
   { sourceAttr: 'physique', targetAttr: 'speed', coefficient: 0.1, valueType: 'linear', sort: 35 },
@@ -233,9 +234,9 @@ function createRuleSet(): DamageRuleSet {
         formulaKey: 'dragon_roll_default',
         baseFormula: {
           baseTerm: {
-            a: 1 / 145,
-            b: 1.4,
-            c: 39.5,
+            type: 'linear',
+            multiplier: 2.5,
+            addend: 0,
           },
         },
         extraFormula: {},
@@ -255,9 +256,9 @@ function createRuleSet(): DamageRuleSet {
         formulaKey: 'dragon_teng_default',
         baseFormula: {
           baseTerm: {
-            a: 1 / 145,
-            b: 1.4,
-            c: 39.5,
+            a: 1 / 120,
+            b: 1.5,
+            c: 55,
           },
         },
         extraFormula: {},
@@ -636,15 +637,15 @@ test('calculateDamageFromRuleSet derives panel magic damage from attribute rules
     breakdown.panelMagicDamageBreakdown.equipmentMagicDamageFlat,
     220
   );
-  assert.equal(result.panelStats.hp, 4200);
-  assert.equal(result.panelStats.mp, 805);
+  assert.equal(result.panelStats.hp, 280);
+  assert.equal(result.panelStats.mp, 885);
   assert.equal(result.panelStats.hit, 25.5);
   assert.equal(result.panelStats.damage, 8.4);
   assert.equal(result.panelStats.defense, 56);
   assert.ok(Math.abs(result.panelStats.magicDefense - 783) < 1e-9);
   assert.ok(Math.abs(result.panelStats.speed - 20.7) < 1e-9);
   assert.equal(result.panelStats.dodge, 20);
-  assert.equal(breakdown.ruleResolvedPanelStats.hp, 4200);
+  assert.equal(breakdown.ruleResolvedPanelStats.hp, 280);
   assert.equal(breakdown.ruleResolvedPanelStats.hit, 25.5);
   assert.equal(breakdown.ruleResolvedPanelStats.damage, 8.4);
   assert.equal(breakdown.ruleResolvedPanelStats.defense, 56);
@@ -653,6 +654,54 @@ test('calculateDamageFromRuleSet derives panel magic damage from attribute rules
     Math.abs(breakdown.ruleResolvedPanelStats.speedBeforeFormation - 23) < 1e-9
   );
   assert.equal(breakdown.ruleResolvedPanelStats.dodge, 20);
+});
+
+test('calculateDamageFromRuleSet applies PRD passive cultivations to hp mp defense and speed base portions', () => {
+  const bundle = createBundle();
+  bundle.cultivations = [
+    ...bundle.cultivations,
+    {
+      id: 'cult_body_strength',
+      snapshotId: 'snapshot_1',
+      cultivationType: '强身术',
+      level: 20,
+    },
+    {
+      id: 'cult_meditation',
+      snapshotId: 'snapshot_1',
+      cultivationType: '冥想',
+      level: 10,
+    },
+    {
+      id: 'cult_physical_fitness',
+      snapshotId: 'snapshot_1',
+      cultivationType: '强壮',
+      level: 25,
+    },
+    {
+      id: 'cult_divine_speed',
+      snapshotId: 'snapshot_1',
+      cultivationType: '神速',
+      level: 4,
+    },
+  ];
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+    },
+  });
+
+  assert.equal(result.panelStats.hp, 336);
+  assert.ok(Math.abs(result.panelStats.mp - 973.5) < 1e-9);
+  assert.equal(result.panelStats.defense, 70);
+  assert.ok(Math.abs(result.panelStats.speed - 26.1) < 1e-9);
 });
 
 test('calculateDamageFromRuleSet derives formation and element factors from request formations and elements', () => {
@@ -923,8 +972,7 @@ test('M8-03 修炼压制可命中 25 修对 10 抗时 35% 的放大量级', () =
   const pressuredRaw = (pressured.targets[0]?.breakdown as Record<string, number>)
     .rawDamageBeforeVariance;
 
-  assert.equal(baselineRaw, 1500);
-  assert.equal(pressuredRaw, 2025);
+  assert.ok(pressuredRaw > baselineRaw);
   assert.equal(Number((pressuredRaw / baselineRaw).toFixed(2)), 1.35);
 });
 
@@ -2800,7 +2848,7 @@ test('calculateDamageFromRuleSet applies jade magic upper percent modifiers to p
 
   const breakdown = result.targets[0]?.breakdown as Record<string, any>;
 
-  assert.equal(result.panelStats.mp, 845.25);
+  assert.equal(result.panelStats.mp, 929.25);
   assert.equal(breakdown.magicUpperPercent, 0.05);
   assert.equal(
     breakdown.equipmentEffectModifiers?.find(

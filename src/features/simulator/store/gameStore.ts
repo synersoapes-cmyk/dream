@@ -84,6 +84,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
     skills: [], // 会在初始化后更新
     cultivation: {
       bodyStrength: 0,
+      meditation: 0,
+      physicalFitness: 0,
+      divineSpeed: 0,
       physicalAttack: 20,
       physicalDefense: 20,
       magicAttack: 25,

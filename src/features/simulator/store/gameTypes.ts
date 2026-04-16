@@ -193,6 +193,9 @@ export interface Skill {
 
 export interface Cultivation {
   bodyStrength: number;
+  meditation?: number;
+  physicalFitness?: number;
+  divineSpeed?: number;
   physicalAttack: number;
   physicalDefense: number;
   magicAttack: number;

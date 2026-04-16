@@ -436,6 +436,16 @@
 
 | 测试项 | 状态 | 备注 |
 | ------ | ---- | ---- |
+
+### 3.59 2026-04-16 本地真实装备图接入回归
+
+| 测试项 | 状态 | 备注 |
+| ------ | ---- | ---- |
+| `素材/icons` 首批导入回归 | 测试成功 | 已执行 `pnpm simulator:artwork:import -- --source /Users/czy/Documents/dream/素材/icons`，确认 448 张真实装备图已导入到 `public/simulator/equipment-art/`，2 张“属性说明图”被安全跳过 |
+| 中文命名自动归类回归 | 测试成功 | 已执行 `node --import tsx --test scripts/import-simulator-equipment-artwork.test.ts`，确认平铺中文素材目录支持按装备名自动推断 `头盔 / 项链 / 衣服 / 腰带 / 鞋子 / 灵饰 / 玉魄 / 武器`，未知项安全回落到武器 |
+| parenthetical 变体命中回归 | 测试成功 | 已执行 `node --import tsx --test src/features/simulator/utils/equipmentImage.test.ts`，确认像 `罗喉计都（乾坤）.png` 这类本地素材，前台传入基础名 `罗喉计都` 时仍能命中静态图片 |
+| artwork 清单一致性回归 | 测试成功 | 已执行 `pnpm simulator:artwork:check-source`、`pnpm simulator:artwork:check` 与 `node --import tsx --test src/shared/lib/simulator-equipment-artwork-manifest.test.ts`，确认 source JSON、生成后的 manifest 与本地素材目录保持一致 |
+| 类型与前台引用回归 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认导图脚本、resolver、测试用例和前台展示链路在接入真实素材后无新增类型错误 |
 | OCR 解释 helper 回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/lib/simulator-equipment-ocr-review.test.ts`，确认 helper 能稳定输出“有效字段数 / 数值属性数 / 已识别关键项 / 关键缺失项 / 疑似漏识别属性 / 建议优先核对项 / 置信度文案”这组统一解释口径。 |
 | 前台接线类型检查 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认 `OcrEquipmentReviewDialog` 与 `PendingEquipmentDetailModal` 接入统一 OCR 解释区后无新增类型错误。 |
 
@@ -831,3 +841,12 @@
 | 实验室槽位选择器浏览器验收 | 测试成功 | 已在有效登录态下打开本地 `http://localhost:3000/zh`，进入 `实验室 -> 新增对比席位 -> 武器槽位选择器`；弹窗内已显示“已售出 / 已作废不会出现在这里，需到装备总库恢复待用”的边界说明，`QA恢复待用测试杖` 同时展示独立 `库存待用` 徽标与 `正式库存` 来源标签。 |
 | 当前装备替换弹窗浏览器验收 | 测试成功 | 已在当前装备页临时卸下武器但不保存云端，再点击空武器槽打开普通换装弹窗；弹窗内同样展示统一边界说明，并且 `QA恢复待用测试杖` 以 `库存待用` 徽标 + `正式库存` 来源标签分离展示。验证后已刷新页面恢复云端装备状态。 |
 | 正式库存收尾清理 | 测试成功 | 本轮用于选择器验收的 `QA恢复待用测试杖` 已通过 `PATCH /api/simulator/current/inventory/[id]` 回落为 `discarded`；复查 `/api/simulator/current/inventory?status=all` 返回该样本状态为 `discarded`，当前正式库存汇总为 `discarded: 14`，不再占用可换装 `active` 池。 |
+
+### 3.59 2026-04-16 PRD V3.0 核心数值规则接入回归
+
+| 测试项 | 状态 | 备注 |
+| ------ | ---- | ---- |
+| PRD 底盘类型检查 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认前台 `gameLogic`、服务端 `damage-engine`、实验室估值与面板来源拆解在接入 `PRD V3.0` 后无类型错误。 |
+| 面板底盘共享回归 | 测试成功 | 已执行 `node --import tsx --test src/features/simulator/store/gameLogic.test.ts src/features/simulator/store/gameStore.test.ts src/shared/lib/simulator-panel-source-breakdown.test.ts`，确认 `HP/MP/DEF` 基础常数、`强身/冥想/强壮/神速` 作用方式、武器伤害 `/4 -> 法伤`、以及当前状态页的本地增量面板口径已统一。 |
+| 服务端伤害主链回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/services/damage-engine.test.ts src/shared/services/lab-valuation.test.ts`，确认 `龙卷雨击 = 技能等级 × 2.5`、`龙腾 = 技能等级²/120 + 技能等级 × 1.5 + 55` 已接入正式试算，同时天气、五行、分灵、修炼差、法伤结果、目标法防结果、符石组合、灵饰套装与玉魄百分比词条均继续可叠加。 |
+| 前后端同源验证 | 测试成功 | 本轮已新增“被动修炼”显式专项回归，确认前台与服务端都按同一口径处理：`强身/冥想/强壮` 只放大各自基础部分，`神速` 按固定 `+1.5/级` 生效；实验室总伤估值继续复用服务端正式试算结果。 |

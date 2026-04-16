@@ -12,6 +12,13 @@ test('getEquipmentDefaultImage returns named artwork route for mapped equipment'
   );
 });
 
+test('getEquipmentDefaultImage returns static local artwork when manifest already contains the asset', () => {
+  assert.equal(
+    getEquipmentDefaultImage('shoes', '踏雪无痕'),
+    '/simulator/equipment-art/shoes/踏雪无痕.jpg'
+  );
+});
+
 test('getEquipmentDefaultImage falls back to generated local art route for unknown equipment name', () => {
   assert.equal(
     getEquipmentDefaultImage('helmet', '测试头盔'),
@@ -35,4 +42,11 @@ test('getEquipmentDefaultImage returns type placeholder route when name is empty
 
 test('normalizeEquipmentArtworkName strips quality wrappers and keeps canonical punctuation', () => {
   assert.equal(normalizeEquipmentArtworkName('【珍品】灵玉 映月'), '灵玉·映月');
+});
+
+test('getEquipmentDefaultImage can resolve parenthetical local artwork by stripped base name', () => {
+  assert.equal(
+    getEquipmentDefaultImage('weapon', '罗喉计都'),
+    '/simulator/equipment-art/weapon/罗喉计都（乾坤）.png'
+  );
 });

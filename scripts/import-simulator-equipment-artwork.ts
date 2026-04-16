@@ -69,6 +69,62 @@ const IMPORT_TYPE_ALIASES: Record<string, SimulatorEquipmentType> = {
   rune: 'rune',
 };
 
+const FLAT_ARTWORK_EXACT_TYPE_MAP: Record<string, SimulatorEquipmentType> = {
+  命魂之玉: 'jade',
+  '上古玉魄·阳': 'jade',
+  '上古玉魄·阴': 'jade',
+  水晶夔帽: 'helmet',
+  珠翠玉环: 'necklace',
+  穰花翠裙: 'armor',
+  踏雪无痕: 'shoes',
+  绣娇珰: 'trinket',
+  翠玉珰: 'trinket',
+  瑜华珰: 'trinket',
+  春韵镯: 'trinket',
+  清水镯: 'trinket',
+  清漪镯: 'trinket',
+  花影镯: 'trinket',
+  霜雪镯: 'trinket',
+  碧木镯: 'trinket',
+  含玉指: 'trinket',
+  太华指: 'trinket',
+  流光指: 'trinket',
+  玲珑指: 'trinket',
+  琬琰指: 'trinket',
+  瑞兆指: 'trinket',
+  清韵佩: 'trinket',
+  琅玕佩: 'trinket',
+  思情佩: 'trinket',
+  流光佩: 'trinket',
+  琢玉佩: 'trinket',
+  五灵佩: 'trinket',
+  黄玉琉佩: 'trinket',
+  衔珠金凤佩: 'trinket',
+  紫金碧玺佩: 'trinket',
+  鎏金点翠佩: 'trinket',
+  碧葭耳: 'trinket',
+  珍珠链: 'necklace',
+  风月宝链: 'necklace',
+  荧光坠子: 'necklace',
+  落霞陨星坠: 'necklace',
+  八卦坠: 'necklace',
+  九宫坠: 'necklace',
+  圣王坠: 'necklace',
+  骷髅吊坠: 'necklace',
+  冰心盏: 'necklace',
+  玉兔盏: 'necklace',
+  玲珑盏: 'necklace',
+  攫魂铃: 'necklace',
+  疾风之铃: 'necklace',
+  护身符: 'necklace',
+  凤翅金翎: 'helmet',
+  玉翼附蝉翎: 'helmet',
+  媚狐头饰: 'helmet',
+};
+
+const TRAILING_VARIANT_PATTERN = /^(.+?)[（(][^()（）]+[）)]$/;
+const PROPERTY_VARIANT_PATTERN = /[（(]属性[）)]/;
+
 export type SimulatorArtworkImportFile = {
   sourcePath: string;
   targetPath: string;
@@ -298,6 +354,69 @@ function sanitizeArtworkFileName(fileName: string) {
     .trim();
 }
 
+function getArtworkBaseName(fileName: string) {
+  return path.basename(fileName, path.extname(fileName)).trim();
+}
+
+function normalizeFlatArtworkInferenceName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const strippedVariant = trimmed.replace(TRAILING_VARIANT_PATTERN, '$1').trim();
+  return strippedVariant || trimmed;
+}
+
+export function shouldIgnoreFlatArtworkFileName(fileName: string) {
+  return PROPERTY_VARIANT_PATTERN.test(getArtworkBaseName(fileName));
+}
+
+export function inferFlatArtworkEquipmentType(
+  canonicalName: string
+): SimulatorEquipmentType {
+  const normalizedName = normalizeFlatArtworkInferenceName(canonicalName);
+  if (!normalizedName) {
+    return 'weapon';
+  }
+
+  const exactMatch = FLAT_ARTWORK_EXACT_TYPE_MAP[normalizedName];
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  if (normalizedName.includes('玉魄')) {
+    return 'jade';
+  }
+  if (/(履|靴|鞋)$/.test(normalizedName)) {
+    return 'shoes';
+  }
+  if (
+    /(盔|帽|冠|钗|簪|巾|冕|面具|面|头带|发冠|花环|头饰|金翎|蝉翎)$/.test(
+      normalizedName
+    )
+  ) {
+    return 'helmet';
+  }
+  if (
+    /(腰链|带)$/.test(normalizedName) &&
+    !/(丝带|绸带|缎带|彩带)$/.test(normalizedName)
+  ) {
+    return 'belt';
+  }
+  if (/(衣|甲|袍|裙|衫|披风|羽衣|披肩|银纱|斗篷|帐|帷)$/.test(normalizedName)) {
+    return 'armor';
+  }
+  if (/(镯|珰|佩|耳|指)$/.test(normalizedName)) {
+    return 'trinket';
+  }
+  if (/(链|坠|坠子|铃|盏|吊坠|项链|宝链)$/.test(normalizedName)) {
+    return 'necklace';
+  }
+
+  return 'weapon';
+}
+
 function buildTargetPath(params: {
   targetRoot: string;
   type: SimulatorEquipmentType;
@@ -341,7 +460,12 @@ function collectFilesFromTypedDirectory(params: {
   overwrite: boolean;
 }) {
   const files = readdirSync(params.sourceDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && isImageFile(entry.name))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        isImageFile(entry.name) &&
+        !shouldIgnoreFlatArtworkFileName(entry.name)
+    )
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 
@@ -357,7 +481,7 @@ function collectFilesFromTypedDirectory(params: {
       sourcePath: path.join(params.sourceDir, fileName),
       targetPath,
       type: params.type,
-      canonicalName: path.basename(fileName, ext),
+      canonicalName: getArtworkBaseName(fileName),
       action: existsSync(targetPath)
         ? params.overwrite
           ? 'overwrite'
@@ -412,24 +536,31 @@ export function buildSimulatorArtworkImportPlan(params: {
     if (!entry.isFile() || !isImageFile(entry.name)) {
       continue;
     }
-
-    const parsed = parseFlatTypedFileName(entry.name);
-    if (!parsed) {
+    if (shouldIgnoreFlatArtworkFileName(entry.name)) {
       continue;
     }
 
+    const parsed = parseFlatTypedFileName(entry.name);
+    const canonicalName = parsed
+      ? getArtworkBaseName(parsed.fileName)
+      : getArtworkBaseName(entry.name);
+    const inferredType = parsed
+      ? parsed.type
+      : inferFlatArtworkEquipmentType(canonicalName);
+    const normalizedFileName = parsed ? parsed.fileName : entry.name;
+
     const targetPath = buildTargetPath({
       targetRoot,
-      type: parsed.type,
-      fileName: parsed.fileName,
+      type: inferredType,
+      fileName: normalizedFileName,
     });
-    const ext = path.extname(parsed.fileName);
+    const ext = path.extname(normalizedFileName);
 
     planned.push({
       sourcePath: path.join(sourceRoot, entry.name),
       targetPath,
-      type: parsed.type,
-      canonicalName: path.basename(parsed.fileName, ext),
+      type: inferredType,
+      canonicalName: path.basename(normalizedFileName, ext),
       action: existsSync(targetPath)
         ? overwrite
           ? 'overwrite'

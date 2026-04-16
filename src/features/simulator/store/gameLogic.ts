@@ -12,6 +12,12 @@ import {
   type RegularSetRuntimeRule,
 } from '@/shared/lib/simulator-regular-set';
 import { resolveJiulongPanelSpiritDelta } from '@/shared/lib/simulator-rune-skill';
+import {
+  computeWeaponDamageToMagicDamageBonus,
+  getPanelConversionProfile,
+  getPrdPanelBaseConstant,
+  resolveTrustedBasePanelConstant,
+} from '@/shared/lib/simulator-core-rules';
 
 const COMBAT_STAT_KEYS: Array<keyof CombatStats> = [
   'hp',
@@ -90,7 +96,7 @@ const sumWeaponDamageMagicDamageBonus = (equipment: Equipment[]) =>
     }
 
     const itemTotals = sumSingleEquipmentStats(item);
-    return sum + Number(itemTotals.damage ?? 0) / 4;
+    return sum + computeWeaponDamageToMagicDamageBonus(itemTotals.damage);
   }, 0);
 
 type DerivedStatsInput = {
@@ -98,6 +104,9 @@ type DerivedStatsInput = {
   equipment: Equipment[];
   treasure: Treasure | null;
   bodyStrength?: number;
+  meditation?: number;
+  physicalFitness?: number;
+  divineSpeed?: number;
   formation?: string;
   meridian?: MeridianConfig;
   regularSetRules?: RegularSetRuntimeRule[];
@@ -114,6 +123,9 @@ export const computeDerivedStats = (
   treasure: Treasure | null,
   options?: {
     bodyStrength?: number;
+    meditation?: number;
+    physicalFitness?: number;
+    divineSpeed?: number;
     formation?: string;
     meridian?: MeridianConfig;
     regularSetRules?: RegularSetRuntimeRule[];
@@ -145,18 +157,33 @@ export const computeDerivedStats = (
   const formationSpeedFactor = resolveFormationSpeedFactor(options?.formation);
   const bodyStrengthFactor =
     1 + normalizePercentValue(options?.bodyStrength ?? 0);
+  const meditationFactor =
+    1 + normalizePercentValue(options?.meditation ?? 0);
+  const physicalFitnessFactor =
+    1 + normalizePercentValue(options?.physicalFitness ?? 0);
+  const divineSpeedBonus = Number(options?.divineSpeed ?? 0) * 1.5;
   const magicUpperPercent = sumEquipmentEffectModifierPercent(
     equipment,
     'magic_upper_percent'
   );
   const weaponDamageMagicDamageBonus =
     sumWeaponDamageMagicDamageBonus(equipment);
+  const conversionProfile = getPanelConversionProfile({
+    school: effectiveBaseAttributes.faction,
+  });
   const jiulongPanelSpiritDelta = resolveJiulongPanelSpiritDelta(
     equipment,
     options?.runeSkillBaselineEquipment ?? []
   );
   const baseHp =
-    baseAttributes.hp * 5 + effectiveBaseAttributes.physique * 4.5;
+    resolveTrustedBasePanelConstant(
+      baseAttributes.hp,
+      getPrdPanelBaseConstant('hp')
+    ) +
+    effectiveBaseAttributes.physique * conversionProfile.hpPerPhysique;
+  const baseMp =
+    getPrdPanelBaseConstant('mp') +
+    effectiveBaseAttributes.magic * conversionProfile.mpPerMagic;
   const derivedSpirit =
     effectiveBaseAttributes.magicPower +
     effectiveBaseAttributes.physique * 0.3 +
@@ -175,29 +202,27 @@ export const computeDerivedStats = (
       (equipmentTotals.hp ?? 0) +
       (treasureTotals.hp ?? 0),
     magic:
-      (effectiveBaseAttributes.magic * 3.5 +
+      (baseMp * meditationFactor +
         (equipmentTotals.magic ?? 0) +
         (treasureTotals.magic ?? 0)) *
       (1 + magicUpperPercent),
     hit:
-      effectiveBaseAttributes.strength * 1.7 +
-      effectiveBaseAttributes.level * 6 +
+      effectiveBaseAttributes.strength * conversionProfile.hitPerStrength +
       (equipmentTotals.hit ?? 0) +
       (treasureTotals.hit ?? 0),
     damage:
-      effectiveBaseAttributes.strength * 0.56 +
-      effectiveBaseAttributes.level * 6 +
+      effectiveBaseAttributes.strength * conversionProfile.damagePerStrength +
       (equipmentTotals.damage ?? 0) +
       (treasureTotals.damage ?? 0),
     magicDamage:
       derivedSpirit +
-      effectiveBaseAttributes.level * 3 +
       weaponDamageMagicDamageBonus +
       (equipmentTotals.magicDamage ?? 0) +
       (treasureTotals.magicDamage ?? 0),
     defense:
-      effectiveBaseAttributes.endurance * 1.6 +
-      effectiveBaseAttributes.level * 3 +
+      effectiveBaseAttributes.endurance *
+        conversionProfile.defensePerEndurance *
+        physicalFitnessFactor +
       (equipmentTotals.defense ?? 0) +
       (treasureTotals.defense ?? 0),
     magicDefense:
@@ -209,6 +234,7 @@ export const computeDerivedStats = (
         effectiveBaseAttributes.strength * 0.1 +
         effectiveBaseAttributes.endurance * 0.1 +
         effectiveBaseAttributes.agility * 0.7 +
+        divineSpeedBonus +
         (equipmentTotals.speed ?? 0) +
         (treasureTotals.speed ?? 0)) *
       formationSpeedFactor,

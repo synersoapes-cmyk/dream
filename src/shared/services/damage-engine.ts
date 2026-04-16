@@ -33,6 +33,13 @@ import {
   resolveRegularSetAttributeBonuses,
 } from '@/shared/lib/simulator-regular-set';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
+import {
+  computeMagicSkillBaseTerm,
+  computeWeaponDamageToMagicDamageBonus,
+  getPrdPanelBaseConstant,
+  resolvePassiveCultivationLevels,
+  resolveTrustedBasePanelConstant,
+} from '@/shared/lib/simulator-core-rules';
 
 type JsonObject = Record<string, unknown>;
 
@@ -179,6 +186,19 @@ function buildRuleInputValues(
   const inputs: SimulatorNumericMap = {};
 
   for (const sourceAttr of sourceAttrs) {
+    if (sourceAttr === 'baseHp') {
+      inputs[sourceAttr] = resolveTrustedBasePanelConstant(
+        domain.attributeSources[sourceAttr],
+        getPrdPanelBaseConstant('hp')
+      );
+      continue;
+    }
+
+    if (sourceAttr === 'baseMp') {
+      inputs[sourceAttr] = getPrdPanelBaseConstant('mp');
+      continue;
+    }
+
     inputs[sourceAttr] = toFiniteNumber(domain.attributeSources[sourceAttr]);
   }
 
@@ -314,6 +334,17 @@ function matchesConditionValue(
   }
 
   return String(expected) === actual;
+}
+
+function matchesScopedRule(
+  value: string | null | undefined,
+  actual: string | undefined
+) {
+  if (!value || value.trim().length === 0) {
+    return true;
+  }
+
+  return value === actual;
 }
 
 const PRIMARY_EQUIPMENT_SLOTS = new Set([
@@ -1117,17 +1148,48 @@ function resolvePanelStatBonusesFromSkillBonuses(
   };
 }
 
-function findSkillFormula(skillCode: string, ruleSet: DamageRuleSet) {
+function findSkillFormula(params: {
+  skillCode: string;
+  ruleSet: DamageRuleSet;
+  school?: string;
+  roleType?: string;
+}) {
+  const scopedMatch = params.ruleSet.skillFormulas.find(
+    (item) =>
+      item.skillCode === params.skillCode &&
+      matchesScopedRule(item.school, params.school) &&
+      matchesScopedRule(item.roleType, params.roleType)
+  );
+
   return (
-    ruleSet.skillFormulas.find((item) => item.skillCode === skillCode) ?? null
+    scopedMatch ??
+    params.ruleSet.skillFormulas.find((item) => item.skillCode === params.skillCode) ??
+    null
   );
 }
 
-function computeQuadraticBaseTerm(
+function computeSkillBaseTerm(
   rule: DamageSkillFormulaRule,
   skillLevel: number
 ) {
   const baseTerm = rule.baseFormula.baseTerm as JsonObject | undefined;
+  const type =
+    typeof baseTerm?.type === 'string' ? baseTerm.type : 'quadratic';
+
+  if (type === 'linear') {
+    return (
+      toFiniteNumber(baseTerm?.multiplier) * skillLevel +
+      toFiniteNumber(baseTerm?.addend)
+    );
+  }
+
+  if (type === 'prd_magic_skill') {
+    return computeMagicSkillBaseTerm({
+      skillCode: rule.skillCode,
+      skillLevel,
+    });
+  }
+
   const a = toFiniteNumber(baseTerm?.a);
   const b = toFiniteNumber(baseTerm?.b);
   const c = toFiniteNumber(baseTerm?.c);
@@ -1436,15 +1498,26 @@ export function calculateDamageFromRuleSet({
     throw new Error('skill not found');
   }
 
-  const skillFormula = findSkillFormula(skill.skillCode, ruleSet);
+  const resolvedSchool = profile.school || character.school;
+  const resolvedRoleType = domain.roleType;
+  const skillFormula = findSkillFormula({
+    skillCode: skill.skillCode,
+    ruleSet,
+    school: resolvedSchool,
+    roleType: resolvedRoleType,
+  });
   if (!skillFormula) {
     throw new Error(`skill formula not found for ${skill.skillCode}`);
   }
-  const resolvedSchool = profile.school || character.school;
+  const scopedAttributeConversions = ruleSet.attributeConversions.filter(
+    (item) =>
+      matchesScopedRule(item.school, resolvedSchool) &&
+      matchesScopedRule(item.roleType, resolvedRoleType)
+  );
   const modifierScope = {
     ruleSet,
     school: resolvedSchool,
-    roleType: domain.roleType,
+    roleType: resolvedRoleType,
     skillCode: skill.skillCode,
     domain,
   };
@@ -1502,10 +1575,7 @@ export function calculateDamageFromRuleSet({
     panelStatBonuses[key] = (panelStatBonuses[key] ?? 0) + value;
   }
 
-  const ruleInputValues = buildRuleInputValues(
-    domain,
-    ruleSet.attributeConversions
-  );
+  const ruleInputValues = buildRuleInputValues(domain, scopedAttributeConversions);
   for (const [key, value] of Object.entries(starBonuses.attributeSourceBonuses)) {
     ruleInputValues[key] = (ruleInputValues[key] ?? 0) + value;
   }
@@ -1521,7 +1591,10 @@ export function calculateDamageFromRuleSet({
   }
   const derivedStats = computeAttributeConversions(
     ruleInputValues,
-    ruleSet.attributeConversions
+    scopedAttributeConversions
+  );
+  const passiveCultivationLevels = resolvePassiveCultivationLevels(
+    domain.cultivationLevels
   );
   const equipmentTotals = domain.equipmentAttributeTotals;
   const skillBonus = resolveSkillBonus(
@@ -1532,7 +1605,7 @@ export function calculateDamageFromRuleSet({
   const finalSkillLevel =
     toFiniteNumber(skill.finalLevel || skill.baseLevel) + skillBonus.bonusLevel;
   const resolvedSkillManaCost = resolveSkillManaCost(skill);
-  const baseTerm = computeQuadraticBaseTerm(skillFormula, finalSkillLevel);
+  const baseTerm = computeSkillBaseTerm(skillFormula, finalSkillLevel);
   const targetCount = clampTargetCount(
     request.targetCount ?? domain.battleContext?.splitTargetCount
   );
@@ -1633,9 +1706,13 @@ export function calculateDamageFromRuleSet({
   const ruleDerivedMagicDamage = toFiniteNumber(
     derivedStats.valueBag.magicDamage
   );
+  const weaponDamageMagicDamageBonus = computeWeaponDamageToMagicDamageBonus(
+    equipmentTotals.damage
+  );
   const equipmentMagicDamageFlat = toFiniteNumber(equipmentTotals.magicDamage);
   const panelMagicDamageBeforePercent =
     ruleDerivedMagicDamage +
+    weaponDamageMagicDamageBonus +
     equipmentMagicDamageFlat +
     toFiniteNumber(panelStatBonuses.spirit) +
     toFiniteNumber(panelStatBonuses.magicDamage);
@@ -1677,6 +1754,10 @@ export function calculateDamageFromRuleSet({
         contribution: roundForBreakdown(item.contribution, 4),
       })),
     ruleDerivedMagicDamage: roundForBreakdown(ruleDerivedMagicDamage, 4),
+    weaponDamageMagicDamageBonus: roundForBreakdown(
+      weaponDamageMagicDamageBonus,
+      4
+    ),
     equipmentMagicDamageFlat: roundForBreakdown(equipmentMagicDamageFlat, 4),
     panelStatBonusMagicDamage: roundForBreakdown(
       toFiniteNumber(panelStatBonuses.magicDamage),
@@ -1700,20 +1781,18 @@ export function calculateDamageFromRuleSet({
   const panelMagicDamage = hasPanelMagicDamageOverride
     ? toFiniteNumber(request.panelMagicDamageOverride)
     : panelMagicDamageFromRules;
-  const resolvedHp = resolveRuleDerivedPanelStat(
-    derivedStats.valueBag,
-    equipmentTotals,
-    'hp',
-    profile.hp
-  ) + toFiniteNumber(panelStatBonuses.hp);
-  const resolvedMp = resolveRuleDerivedPanelStat(
-    derivedStats.valueBag,
-    equipmentTotals,
-    'mp',
-    profile.mp
-  );
+  const resolvedHpBase = toFiniteNumber(derivedStats.valueBag.hp);
+  const resolvedHp =
+    resolvedHpBase * (1 + passiveCultivationLevels.bodyStrength / 100) +
+    toFiniteNumber(equipmentTotals.hp) +
+    toFiniteNumber(panelStatBonuses.hp);
+  const resolvedMpBase = toFiniteNumber(derivedStats.valueBag.mp);
   const resolvedMpAfterPercent =
-    (resolvedMp + toFiniteNumber(panelStatBonuses.mp)) * (1 + magicUpperPercent);
+    (resolvedMpBase * (1 + passiveCultivationLevels.meditation / 100) +
+      toFiniteNumber(equipmentTotals.mp) +
+      toFiniteNumber(equipmentTotals.magic) +
+      toFiniteNumber(panelStatBonuses.mp)) *
+    (1 + magicUpperPercent);
   const resolvedMagicDefense = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
@@ -1734,18 +1813,19 @@ export function calculateDamageFromRuleSet({
     'damage',
     profile.damage
   ) + toFiniteNumber(panelStatBonuses.damage);
-  const resolvedDefense = resolveRuleDerivedPanelStat(
-    derivedStats.valueBag,
-    equipmentTotals,
-    'defense',
-    profile.defense
-  ) + toFiniteNumber(panelStatBonuses.defense);
+  const resolvedDefense =
+    toFiniteNumber(derivedStats.valueBag.defense) *
+      (1 + passiveCultivationLevels.physicalFitness / 100) +
+    toFiniteNumber(equipmentTotals.defense) +
+    toFiniteNumber(panelStatBonuses.defense);
   const resolvedSpeedBeforeFormation = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,
     equipmentTotals,
     'speed',
     profile.speed
-  ) + toFiniteNumber(panelStatBonuses.speed);
+  ) +
+    passiveCultivationLevels.divineSpeed * 1.5 +
+    toFiniteNumber(panelStatBonuses.speed);
   const resolvedSpeed = resolvedSpeedBeforeFormation * formationSpeedFactor;
   const resolvedDodge = resolveRuleDerivedPanelStat(
     derivedStats.valueBag,

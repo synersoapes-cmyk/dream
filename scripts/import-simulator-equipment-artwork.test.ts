@@ -8,8 +8,10 @@ import {
   applySimulatorArtworkAliasFile,
   buildSimulatorArtworkImportPlan,
   executeSimulatorArtworkImportPlan,
+  inferFlatArtworkEquipmentType,
   mergeSimulatorArtworkAliases,
   parseSimulatorArtworkAliasFile,
+  shouldIgnoreFlatArtworkFileName,
 } from './import-simulator-equipment-artwork';
 
 function makeTempDir() {
@@ -62,6 +64,47 @@ test('buildSimulatorArtworkImportPlan infers type from flat file prefix', () => 
     plan.map((item) => `${item.type}:${item.canonicalName}`).sort(),
     ['weapon:沧海灵杖', 'belt:星河腰带'].sort()
   );
+});
+
+test('buildSimulatorArtworkImportPlan infers type from flat Chinese equipment names', () => {
+  const sourceRoot = makeTempDir();
+  const targetRoot = makeTempDir();
+  writeFileSync(path.join(sourceRoot, '踏雪无痕.jpg'), 'fake');
+  writeFileSync(path.join(sourceRoot, '水晶夔帽.jpg'), 'fake');
+  writeFileSync(path.join(sourceRoot, '命魂之玉.png'), 'fake');
+
+  const plan = buildSimulatorArtworkImportPlan({ sourceRoot, targetRoot });
+
+  assert.deepEqual(
+    plan.map((item) => `${item.type}:${item.canonicalName}`).sort(),
+    ['helmet:水晶夔帽', 'jade:命魂之玉', 'shoes:踏雪无痕'].sort()
+  );
+});
+
+test('buildSimulatorArtworkImportPlan skips property helper images in flat directories', () => {
+  const sourceRoot = makeTempDir();
+  const targetRoot = makeTempDir();
+  writeFileSync(path.join(sourceRoot, '上古玉魄·阳（属性）.png'), 'fake');
+  writeFileSync(path.join(sourceRoot, '上古玉魄·阳.jpg'), 'fake');
+
+  const plan = buildSimulatorArtworkImportPlan({ sourceRoot, targetRoot });
+
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0]?.canonicalName, '上古玉魄·阳');
+  assert.equal(plan[0]?.type, 'jade');
+});
+
+test('inferFlatArtworkEquipmentType falls back to weapon for unresolved names', () => {
+  assert.equal(inferFlatArtworkEquipmentType('非天（乾坤）'), 'weapon');
+  assert.equal(inferFlatArtworkEquipmentType('乾元鸣凤冕'), 'helmet');
+  assert.equal(inferFlatArtworkEquipmentType('凤翅金翎'), 'helmet');
+  assert.equal(inferFlatArtworkEquipmentType('风月宝链'), 'necklace');
+  assert.equal(inferFlatArtworkEquipmentType('琥珀腰链'), 'belt');
+});
+
+test('shouldIgnoreFlatArtworkFileName ignores property helper variants only', () => {
+  assert.equal(shouldIgnoreFlatArtworkFileName('上古玉魄·阳（属性）.png'), true);
+  assert.equal(shouldIgnoreFlatArtworkFileName('罗喉计都（乾坤）.png'), false);
 });
 
 test('executeSimulatorArtworkImportPlan copies files and skips existing targets', () => {

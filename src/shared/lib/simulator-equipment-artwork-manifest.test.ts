@@ -10,7 +10,7 @@ import {
 import { SIMULATOR_EQUIPMENT_ARTWORK_ENTRIES } from '@/shared/lib/simulator-equipment-artwork-manifest';
 
 const VALID_ASSET_PATH_PATTERN =
-  /^\/simulator\/equipment-art\/[a-z0-9/_-]+\.(png|jpg|jpeg|webp|avif|svg)$/i;
+  /^\/simulator\/equipment-art\/[^?#]+\.(png|jpg|jpeg|webp|avif|svg)$/i;
 
 function listArtworkAssetPaths(
   rootDir: string,

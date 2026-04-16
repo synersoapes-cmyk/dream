@@ -808,8 +808,8 @@ export default function SimulatorApp() {
               <EquipmentPanel />
             </div>
             <div className="flex h-full flex-1 flex-col overflow-hidden">
-              <div className="flex h-full flex-col gap-4 overflow-hidden">
-                <div className="rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
+              <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
                   <div className="flex items-center justify-between border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-5 py-4">
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-600">
@@ -829,7 +829,7 @@ export default function SimulatorApp() {
                     </div>
                   </div>
 
-                  <div className="space-y-4 p-4">
+                  <div className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 px-3 py-3">
                         <div className="text-[11px] text-cyan-200/70">

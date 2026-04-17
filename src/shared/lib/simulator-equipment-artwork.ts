@@ -55,6 +55,16 @@ export function normalizeEquipmentArtworkName(name?: string) {
 }
 
 const STATIC_ARTWORK_REGISTRY = new Map<string, string>();
+const DEFAULT_ARTWORK_BY_TYPE: Partial<Record<SimulatorEquipmentType, string>> = {
+  weapon: '/simulator/equipment-art/weapon/折扇.jpg',
+  helmet: '/simulator/equipment-art/helmet/布帽.jpg',
+  necklace: '/simulator/equipment-art/necklace/珍珠链.jpg',
+  armor: '/simulator/equipment-art/armor/布衣.jpg',
+  belt: '/simulator/equipment-art/belt/腰带.jpg',
+  shoes: '/simulator/equipment-art/shoes/布鞋.jpg',
+  trinket: '/simulator/equipment-art/trinket/碧木镯.jpg',
+  jade: '/simulator/equipment-art/jade/上古玉魄·阳.jpg',
+};
 
 function registerArtworkRegistryKey(
   registry: Map<string, string>,
@@ -115,6 +125,12 @@ export function getSimulatorEquipmentArtworkAssetPath(
   );
 }
 
+export function getSimulatorEquipmentDefaultArtworkAssetPath(
+  type: SimulatorEquipmentType
+) {
+  return DEFAULT_ARTWORK_BY_TYPE[type];
+}
+
 export function getSimulatorEquipmentArtworkUrl(
   type: SimulatorEquipmentType,
   name?: string
@@ -124,12 +140,13 @@ export function getSimulatorEquipmentArtworkUrl(
     return assetPath;
   }
 
-  const normalizedName = normalizeEquipmentArtworkName(name);
-  if (normalizedName) {
-    return buildEquipmentArtUrl(type, normalizedName);
+  const defaultAssetPath = getSimulatorEquipmentDefaultArtworkAssetPath(type);
+  if (defaultAssetPath) {
+    return defaultAssetPath;
   }
 
-  return buildEquipmentArtUrl(type);
+  const normalizedName = normalizeEquipmentArtworkName(name);
+  return normalizedName ? buildEquipmentArtUrl(type, normalizedName) : buildEquipmentArtUrl(type);
 }
 
 export function getSimulatorEquipmentDisplayImageUrl(equipment: Equipment) {

@@ -5,10 +5,10 @@ import { normalizeEquipmentArtworkName } from '@/shared/lib/simulator-equipment-
 
 import { getEquipmentDefaultImage } from './equipmentImage';
 
-test('getEquipmentDefaultImage returns named artwork route for mapped equipment', () => {
+test('getEquipmentDefaultImage falls back to local default artwork when weapon name does not hit manifest', () => {
   assert.equal(
     getEquipmentDefaultImage('weapon', '沧海灵杖'),
-    '/api/simulator/equipment-art?type=weapon&name=%E6%B2%A7%E6%B5%B7%E7%81%B5%E6%9D%96'
+    '/simulator/equipment-art/weapon/折扇.jpg'
   );
 });
 
@@ -19,24 +19,24 @@ test('getEquipmentDefaultImage returns static local artwork when manifest alread
   );
 });
 
-test('getEquipmentDefaultImage falls back to generated local art route for unknown equipment name', () => {
+test('getEquipmentDefaultImage falls back to local default artwork for unknown equipment name', () => {
   assert.equal(
     getEquipmentDefaultImage('helmet', '测试头盔'),
-    '/api/simulator/equipment-art?type=helmet&name=%E6%B5%8B%E8%AF%95%E5%A4%B4%E7%9B%94'
+    '/simulator/equipment-art/helmet/布帽.jpg'
   );
 });
 
-test('getEquipmentDefaultImage normalizes aliases before resolving artwork route', () => {
+test('getEquipmentDefaultImage normalizes aliases and still falls back to local default artwork when alias is not in manifest', () => {
   assert.equal(
     getEquipmentDefaultImage('trinket', '【珍品】灵符 潮声'),
-    '/api/simulator/equipment-art?type=trinket&name=%E7%81%B5%E7%AC%A6%C2%B7%E6%BD%AE%E5%A3%B0'
+    '/simulator/equipment-art/trinket/碧木镯.jpg'
   );
 });
 
-test('getEquipmentDefaultImage returns type placeholder route when name is empty', () => {
+test('getEquipmentDefaultImage returns local default artwork when name is empty', () => {
   assert.equal(
     getEquipmentDefaultImage('jade'),
-    '/api/simulator/equipment-art?type=jade'
+    '/simulator/equipment-art/jade/上古玉魄·阳.jpg'
   );
 });
 

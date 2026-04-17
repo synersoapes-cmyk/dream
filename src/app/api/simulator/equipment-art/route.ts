@@ -1,4 +1,8 @@
 import { respErr } from '@/shared/lib/resp';
+import {
+  getSimulatorEquipmentArtworkAssetPath,
+  getSimulatorEquipmentDefaultArtworkAssetPath,
+} from '@/shared/lib/simulator-equipment-artwork';
 
 const TYPE_THEME = {
   weapon: {
@@ -97,6 +101,21 @@ export async function GET(req: Request) {
   const theme = TYPE_THEME[rawType as keyof typeof TYPE_THEME];
   if (!theme) {
     return respErr('unsupported equipment type');
+  }
+
+  const matchedAssetPath = getSimulatorEquipmentArtworkAssetPath(
+    rawType as keyof typeof TYPE_THEME,
+    rawName
+  );
+  if (matchedAssetPath) {
+    return Response.redirect(new URL(matchedAssetPath, req.url), 307);
+  }
+
+  const defaultAssetPath = getSimulatorEquipmentDefaultArtworkAssetPath(
+    rawType as keyof typeof TYPE_THEME
+  );
+  if (defaultAssetPath) {
+    return Response.redirect(new URL(defaultAssetPath, req.url), 307);
   }
 
   const displayName = rawName || theme.title;

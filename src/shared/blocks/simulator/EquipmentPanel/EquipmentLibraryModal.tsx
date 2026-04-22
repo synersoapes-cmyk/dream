@@ -6,7 +6,12 @@ import { Package, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
-import type { SimulatorEquipmentLibraryItem } from '@/shared/lib/simulator-equipment-library';
+import {
+  buildSimulatorEquipmentSelectorHelperText,
+  sortSimulatorEquipmentSelectorItems,
+  type SimulatorEquipmentLibraryItem,
+} from '@/shared/lib/simulator-equipment-library';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { buildSimulatorInventorySelectorStatusLabels } from '@/shared/lib/simulator-inventory-status';
 
 interface EquipmentLibraryModalProps {
@@ -29,17 +34,19 @@ export function EquipmentLibraryModal({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // 筛选匹配的装备
-  const filteredItems = availableItems.filter((item) => {
-    if (item.equipment.type !== slotType) return false;
-    if (
-      slotSlot !== undefined &&
-      item.equipment.slot !== undefined &&
-      item.equipment.slot !== slotSlot
-    ) {
-      return false;
-    }
-    return true;
-  });
+  const filteredItems = sortSimulatorEquipmentSelectorItems(
+    availableItems.filter((item) => {
+      if (item.equipment.type !== slotType) return false;
+      if (
+        slotSlot !== undefined &&
+        item.equipment.slot !== undefined &&
+        item.equipment.slot !== slotSlot
+      ) {
+        return false;
+      }
+      return true;
+    })
+  );
 
   // 主题配置
   const getThemeConfig = () => {
@@ -123,7 +130,7 @@ export function EquipmentLibraryModal({
                   选择{slotName}
                 </h2>
                 <p className={`text-xs ${theme.accentColor}/80`}>
-                  当前默认只展示可直接换装的待用装备来源
+                  当前优先展示正式库存与候选装备库中的同部位装备
                 </p>
               </div>
             </div>
@@ -138,23 +145,28 @@ export function EquipmentLibraryModal({
           {/* 装备列表 */}
           <div className="flex-1 overflow-y-auto p-6">
             <div className="mb-4 rounded-xl border border-sky-800/30 bg-sky-950/10 px-3 py-2 text-[11px] leading-5 text-sky-100/85">
-              当前会合并展示当前方案、其他方案、候选装备库，以及状态为 `库存待用` 的正式库存。
-              `已售出 / 已作废` 的正式库存不会进入换装选择器；如需继续使用，请先到装备总库里执行“恢复待用”。
+              当前只展示这个部位可直接参与换装的真实库存来源，包括 `库存待用`
+              的正式库存和候选装备库。方案关系只作为辅助说明展示，`已售出 /
+              已作废`
+              的正式库存不会进入这里；如需继续使用，请先到装备总库里执行“恢复待用”。
             </div>
             {filteredItems.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center py-12">
                 <Package className={`h-16 w-16 ${theme.accentColor}/30 mb-4`} />
                 <p className="text-sm text-slate-400">暂无{slotName}装备</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  当前方案、其他装备方案和候选装备库里都还没有可用装备
+                  这个部位的正式库存待用与候选装备库都还是空的。可以先上传候选装备、确认入库，或到装备总库恢复待用。
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {filteredItems.map((item) => {
                   const equipment = item.equipment;
+                  const spotlightTags = getEquipmentSpotlightTags(equipment);
                   const inventoryStatusLabels =
                     buildSimulatorInventorySelectorStatusLabels(item);
+                  const helperText =
+                    buildSimulatorEquipmentSelectorHelperText(item);
 
                   return (
                     <motion.div
@@ -171,7 +183,9 @@ export function EquipmentLibraryModal({
                         {/* 装备图片 */}
                         <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-yellow-800/30 bg-slate-950/50">
                           <img
-                            src={getSimulatorEquipmentDisplayImageUrl(equipment)}
+                            src={getSimulatorEquipmentDisplayImageUrl(
+                              equipment
+                            )}
                             alt={equipment.name}
                             className="h-full w-full object-cover"
                           />
@@ -207,9 +221,9 @@ export function EquipmentLibraryModal({
                             </div>
                           )}
 
-                          {item.sourceLabels.length > 0 && (
+                          {(item.primarySourceLabels?.length ?? 0) > 0 && (
                             <div className="mb-1.5 flex flex-wrap gap-1">
-                              {item.sourceLabels
+                              {(item.primarySourceLabels ?? [])
                                 .slice(0, 3)
                                 .map((sourceLabel) => (
                                   <span
@@ -219,13 +233,19 @@ export function EquipmentLibraryModal({
                                     {sourceLabel}
                                   </span>
                                 ))}
-                              {item.sourceLabels.length > 3 && (
+                              {(item.primarySourceLabels?.length ?? 0) > 3 && (
                                 <span className="rounded border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-300">
-                                  +{item.sourceLabels.length - 3}
+                                  +{(item.primarySourceLabels?.length ?? 0) - 3}
                                 </span>
                               )}
                             </div>
                           )}
+
+                          {helperText ? (
+                            <div className="mb-1 text-[11px] text-slate-400">
+                              {helperText}
+                            </div>
+                          ) : null}
 
                           {/* 基础信息 */}
                           <div className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-yellow-500/70">
@@ -264,10 +284,9 @@ export function EquipmentLibraryModal({
                           )}
 
                           {/* 亮点信息 */}
-                          {equipment.highlights &&
-                            equipment.highlights.length > 0 && (
+                          {spotlightTags.length > 0 && (
                               <div className="mt-1 flex flex-wrap gap-1">
-                                {equipment.highlights.map((hl, idx) => (
+                                {spotlightTags.slice(0, 4).map((hl, idx) => (
                                   <span
                                     key={idx}
                                     className="rounded border border-red-500/50 bg-red-900/10 px-1 py-0.5 text-[10px] whitespace-nowrap text-red-400"

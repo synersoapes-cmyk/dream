@@ -7,13 +7,17 @@ import type {
   SyncedCloudState,
   Treasure,
 } from '@/features/simulator/store/gameTypes';
+
 import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
+import {
+  getTrackedStatContributionFromBonuses,
+  resolveSimulatorStarRuntimeBonuses,
+} from '@/shared/lib/simulator-rune-star-rules';
+import type { RegularSetRuntimeRule } from '@/shared/lib/simulator-regular-set';
 import {
   findSimulatorSlotDefinition,
   getSimulatorSlotLabel,
 } from '@/shared/lib/simulator-slot-config';
-
-import type { RegularSetRuntimeRule } from '@/shared/lib/simulator-regular-set';
 
 export type PanelSourceBreakdownKey =
   | 'magicDamage'
@@ -139,13 +143,14 @@ export function buildPanelSourceBreakdownSummary(
   limit = 2
 ) {
   if (item.sources.length === 0) {
-    return item.hasBaseline ? '当前没有可拆解的增量来源' : '当前还没有 OCR 基线可对照';
+    return null;
   }
 
   return sortPanelSourceValueItems(item.sources)
     .slice(0, limit)
-    .map((source, index) =>
-      `${index === 0 ? '主因' : '次因'} ${source.label} ${formatPanelSourceSignedValue(source.value)}`
+    .map(
+      (source, index) =>
+        `${index === 0 ? '主因' : '次因'} ${source.label} ${formatPanelSourceSignedValue(source.value)}`
     )
     .join(' · ');
 }
@@ -160,8 +165,9 @@ export function buildPanelSourceDeltaSummary(
 
   return sortPanelSourceValueItems(item.sourceDiffs)
     .slice(0, limit)
-    .map((source, index) =>
-      `${index === 0 ? '主因' : '次因'} ${source.label} ${formatPanelSourceSignedValue(source.value)}`
+    .map(
+      (source, index) =>
+        `${index === 0 ? '主因' : '次因'} ${source.label} ${formatPanelSourceSignedValue(source.value)}`
     )
     .join(' · ');
 }
@@ -171,7 +177,8 @@ function sumSingleEquipmentStats(item: Equipment) {
 
   const activeRuneSet =
     item.runeStoneSets && item.runeStoneSets.length > 0
-      ? item.runeStoneSets[item.activeRuneStoneSet ?? 0] ?? item.runeStoneSets[0]
+      ? (item.runeStoneSets[item.activeRuneStoneSet ?? 0] ??
+        item.runeStoneSets[0])
       : [];
 
   for (const [key, value] of Object.entries(item.stats ?? {})) {
@@ -193,12 +200,25 @@ function sumSingleEquipmentStats(item: Equipment) {
   return totals;
 }
 
+function sumStarPositionStats(item: Equipment) {
+  const totals: Record<string, number> = {};
+  const starBonus = item.starPositionConfig;
+
+  if (!starBonus?.attrType || !Number.isFinite(Number(starBonus.attrValue))) {
+    return totals;
+  }
+
+  totals[starBonus.attrType] = Number(starBonus.attrValue ?? 0);
+  return totals;
+}
+
 function sumRuneStoneStats(item: Equipment) {
   const totals: Record<string, number> = {};
 
   const activeRuneSet =
     item.runeStoneSets && item.runeStoneSets.length > 0
-      ? item.runeStoneSets[item.activeRuneStoneSet ?? 0] ?? item.runeStoneSets[0]
+      ? (item.runeStoneSets[item.activeRuneStoneSet ?? 0] ??
+        item.runeStoneSets[0])
       : [];
 
   for (const runeStone of activeRuneSet ?? []) {
@@ -222,7 +242,7 @@ function sumBaseEquipmentStats(item: Equipment) {
 
 function sumComponentStats(
   item: Equipment | undefined,
-  component: 'base' | 'gemstone' | 'rune'
+  component: 'base' | 'gemstone' | 'rune' | 'star'
 ) {
   if (!item) {
     return {};
@@ -234,6 +254,10 @@ function sumComponentStats(
 
   if (component === 'gemstone') {
     return sumEquipmentGemstoneStats(item.gemstones);
+  }
+
+  if (component === 'star') {
+    return sumStarPositionStats(item);
   }
 
   return sumRuneStoneStats(item);
@@ -307,11 +331,14 @@ function buildEquipmentDetailGroups(
   const equipmentItems: PanelSourceValueItem[] = [];
   const gemstoneItems: PanelSourceValueItem[] = [];
   const runeItems: PanelSourceValueItem[] = [];
+  const starItems: PanelSourceValueItem[] = [];
 
   slotKeys.forEach((slotKey) => {
     const currentItem = currentMap.get(slotKey);
     const baselineItem = baselineMap.get(slotKey);
-    const slotLabel = getEquipmentSlotDisplayLabel(currentItem ?? baselineItem!);
+    const slotLabel = getEquipmentSlotDisplayLabel(
+      currentItem ?? baselineItem!
+    );
     const currentName = currentItem?.name;
     const baselineName = baselineItem?.name;
 
@@ -326,7 +353,7 @@ function buildEquipmentDetailGroups(
 
     const pushIfNeeded = (
       bucket: PanelSourceValueItem[],
-      component: 'base' | 'gemstone' | 'rune'
+      component: 'base' | 'gemstone' | 'rune' | 'star'
     ) => {
       const currentValue = getTrackedEquipmentContributionFromStats(
         key,
@@ -338,22 +365,24 @@ function buildEquipmentDetailGroups(
         baselineItem,
         sumComponentStats(baselineItem, component)
       );
-      const diff = toRoundedNumber(currentValue) - toRoundedNumber(baselineValue);
+      const diff =
+        toRoundedNumber(currentValue) - toRoundedNumber(baselineValue);
 
       if (diff !== 0) {
         let note: string | undefined;
 
-        if (key === 'magicDamage' && component === 'base' && currentItem?.type === 'weapon') {
+        if (
+          key === 'magicDamage' &&
+          component === 'base' &&
+          currentItem?.type === 'weapon'
+        ) {
           note = '含武器伤害/4转法伤';
         } else if (
           key === 'magicDamage' &&
-          (component === 'gemstone' || component === 'rune')
+          (component === 'gemstone' || component === 'rune' || component === 'star')
         ) {
           note = '直接计入法伤';
-        } else if (
-          key === 'spiritualPower' ||
-          key === 'magicDefense'
-        ) {
+        } else if (key === 'spiritualPower' || key === 'magicDefense') {
           note = '灵力同时联动法伤/法防';
         } else if (key === 'hp' && component === 'base') {
           note = '仅统计装备气血底子';
@@ -372,7 +401,29 @@ function buildEquipmentDetailGroups(
     pushIfNeeded(equipmentItems, 'base');
     pushIfNeeded(gemstoneItems, 'gemstone');
     pushIfNeeded(runeItems, 'rune');
+    pushIfNeeded(starItems, 'star');
   });
+
+  const currentStarBonuses = resolveSimulatorStarRuntimeBonuses(currentEquipment);
+  const baselineStarBonuses = resolveSimulatorStarRuntimeBonuses(baselineEquipment);
+  const fullColorDiff =
+    Math.round(
+      getTrackedStatContributionFromBonuses(key, currentStarBonuses) -
+        getTrackedStatContributionFromBonuses(key, baselineStarBonuses)
+    ) -
+    starItems.reduce((sum, item) => sum + item.value, 0);
+
+  if (fullColorDiff !== 0) {
+    starItems.push({
+      label: '全套同色奖励',
+      value: fullColorDiff,
+      note: currentStarBonuses.fullColorSetRule
+        ? `${currentStarBonuses.fullColorSetRule.label} 已激活`
+        : baselineStarBonuses.fullColorSetRule
+          ? `${baselineStarBonuses.fullColorSetRule.label} 已移除`
+          : '星石全套颜色奖励变动',
+    });
+  }
 
   return [
     {
@@ -386,6 +437,10 @@ function buildEquipmentDetailGroups(
     {
       label: '符石',
       items: sortPanelSourceValueItems(runeItems),
+    },
+    {
+      label: '星石',
+      items: sortPanelSourceValueItems(starItems),
     },
   ].filter((group) => group.items.length > 0);
 }
@@ -419,23 +474,67 @@ function buildAttributeDetailItems(
     case 'magicDamage':
     case 'spiritualPower':
     case 'magicDefense':
-      add(ATTRIBUTE_DETAIL_LABELS.magicPower ?? '灵力', deltaMagicPower, '灵力直接联动法伤/法防');
-      add(ATTRIBUTE_DETAIL_LABELS.physique ?? '体质', deltaPhysique * 0.3, '体质按 0.3 灵力折算');
-      add(ATTRIBUTE_DETAIL_LABELS.magic ?? '魔力', deltaMagic * 0.7, '魔力按 0.7 灵力折算');
-      add(ATTRIBUTE_DETAIL_LABELS.strength ?? '力量', deltaStrength * 0.4, '力量按 0.4 灵力折算');
-      add(ATTRIBUTE_DETAIL_LABELS.endurance ?? '耐力', deltaEndurance * 0.2, '耐力按 0.2 灵力折算');
+      add(
+        ATTRIBUTE_DETAIL_LABELS.magicPower ?? '灵力',
+        deltaMagicPower,
+        '灵力直接联动法伤/法防'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.physique ?? '体质',
+        deltaPhysique * 0.3,
+        '体质按 0.3 灵力折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.magic ?? '魔力',
+        deltaMagic * 0.7,
+        '魔力按 0.7 灵力折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.strength ?? '力量',
+        deltaStrength * 0.4,
+        '力量按 0.4 灵力折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.endurance ?? '耐力',
+        deltaEndurance * 0.2,
+        '耐力按 0.2 灵力折算'
+      );
       break;
     case 'speed':
-      add(ATTRIBUTE_DETAIL_LABELS.physique ?? '体质', deltaPhysique * 0.1, '体质按 0.1 速度折算');
-      add(ATTRIBUTE_DETAIL_LABELS.strength ?? '力量', deltaStrength * 0.1, '力量按 0.1 速度折算');
-      add(ATTRIBUTE_DETAIL_LABELS.endurance ?? '耐力', deltaEndurance * 0.1, '耐力按 0.1 速度折算');
-      add(ATTRIBUTE_DETAIL_LABELS.agility ?? '敏捷', deltaAgility * 0.7, '敏捷按 0.7 速度折算');
+      add(
+        ATTRIBUTE_DETAIL_LABELS.physique ?? '体质',
+        deltaPhysique * 0.1,
+        '体质按 0.1 速度折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.strength ?? '力量',
+        deltaStrength * 0.1,
+        '力量按 0.1 速度折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.endurance ?? '耐力',
+        deltaEndurance * 0.1,
+        '耐力按 0.1 速度折算'
+      );
+      add(
+        ATTRIBUTE_DETAIL_LABELS.agility ?? '敏捷',
+        deltaAgility * 0.7,
+        '敏捷按 0.7 速度折算'
+      );
       break;
     case 'hp':
-      add(ATTRIBUTE_DETAIL_LABELS.physique ?? '体质', deltaPhysique * 4.5, '体质按 4.5 气血折算');
+      add(
+        ATTRIBUTE_DETAIL_LABELS.physique ?? '体质',
+        deltaPhysique * 4.5,
+        '体质按 4.5 气血折算'
+      );
       break;
     case 'hit':
-      add(ATTRIBUTE_DETAIL_LABELS.strength ?? '力量', deltaStrength * 1.7, '仙族力量按 1.7 命中折算');
+      add(
+        ATTRIBUTE_DETAIL_LABELS.strength ?? '力量',
+        deltaStrength * 1.7,
+        '仙族力量按 1.7 命中折算'
+      );
       break;
     case 'magicCritLevel':
     case 'fixedDamage':
@@ -475,23 +574,67 @@ function buildMeridianDetailItems(
     case 'magicDamage':
     case 'spiritualPower':
     case 'magicDefense':
-      add(MERIDIAN_DETAIL_LABELS.physique, deltaPhysique * 0.3, '经脉体质按 0.3 灵力折算');
-      add(MERIDIAN_DETAIL_LABELS.magic, deltaMagic * 0.7, '经脉魔力按 0.7 灵力折算');
-      add(MERIDIAN_DETAIL_LABELS.strength, deltaStrength * 0.4, '经脉力量按 0.4 灵力折算');
-      add(MERIDIAN_DETAIL_LABELS.endurance, deltaEndurance * 0.2, '经脉耐力按 0.2 灵力折算');
-      add(MERIDIAN_DETAIL_LABELS.magicPower, deltaMagicPower, '经脉灵力直接联动法伤/法防');
+      add(
+        MERIDIAN_DETAIL_LABELS.physique,
+        deltaPhysique * 0.3,
+        '经脉体质按 0.3 灵力折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.magic,
+        deltaMagic * 0.7,
+        '经脉魔力按 0.7 灵力折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.strength,
+        deltaStrength * 0.4,
+        '经脉力量按 0.4 灵力折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.endurance,
+        deltaEndurance * 0.2,
+        '经脉耐力按 0.2 灵力折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.magicPower,
+        deltaMagicPower,
+        '经脉灵力直接联动法伤/法防'
+      );
       break;
     case 'speed':
-      add(MERIDIAN_DETAIL_LABELS.physique, deltaPhysique * 0.1, '经脉体质按 0.1 速度折算');
-      add(MERIDIAN_DETAIL_LABELS.strength, deltaStrength * 0.1, '经脉力量按 0.1 速度折算');
-      add(MERIDIAN_DETAIL_LABELS.endurance, deltaEndurance * 0.1, '经脉耐力按 0.1 速度折算');
-      add(MERIDIAN_DETAIL_LABELS.agility, deltaAgility * 0.7, '经脉敏捷按 0.7 速度折算');
+      add(
+        MERIDIAN_DETAIL_LABELS.physique,
+        deltaPhysique * 0.1,
+        '经脉体质按 0.1 速度折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.strength,
+        deltaStrength * 0.1,
+        '经脉力量按 0.1 速度折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.endurance,
+        deltaEndurance * 0.1,
+        '经脉耐力按 0.1 速度折算'
+      );
+      add(
+        MERIDIAN_DETAIL_LABELS.agility,
+        deltaAgility * 0.7,
+        '经脉敏捷按 0.7 速度折算'
+      );
       break;
     case 'hp':
-      add(MERIDIAN_DETAIL_LABELS.physique, deltaPhysique * 4.5, '经脉体质按 4.5 气血折算');
+      add(
+        MERIDIAN_DETAIL_LABELS.physique,
+        deltaPhysique * 4.5,
+        '经脉体质按 4.5 气血折算'
+      );
       break;
     case 'hit':
-      add(MERIDIAN_DETAIL_LABELS.strength, deltaStrength * 1.7, '经脉力量按 1.7 命中折算');
+      add(
+        MERIDIAN_DETAIL_LABELS.strength,
+        deltaStrength * 1.7,
+        '经脉力量按 1.7 命中折算'
+      );
       break;
     case 'magicCritLevel':
     case 'fixedDamage':
@@ -511,11 +654,23 @@ function buildCultivationDetailItems(
   }
 
   if (key === 'hp') {
-    return [{ label: '强身', value: totalValue, note: '强身百分比只作用于气血基础部分' }];
+    return [
+      {
+        label: '强身',
+        value: totalValue,
+        note: '强身百分比只作用于气血基础部分',
+      },
+    ];
   }
 
   if (key === 'speed') {
-    return [{ label: '神速', value: totalValue, note: '神速按每级固定 +1.5 速度结算' }];
+    return [
+      {
+        label: '神速',
+        value: totalValue,
+        note: '神速按每级固定 +1.5 速度结算',
+      },
+    ];
   }
 
   return [] as PanelSourceValueItem[];
@@ -527,18 +682,10 @@ function buildTreasureDetailItems(
   baseline: Treasure | null
 ) {
   const currentValue = current?.isActive
-    ? Number(
-        current.stats?.[
-          key === 'fixedDamage' ? 'magicResult' : key
-        ] ?? 0
-      )
+    ? Number(current.stats?.[key === 'fixedDamage' ? 'magicResult' : key] ?? 0)
     : 0;
   const baselineValue = baseline?.isActive
-    ? Number(
-        baseline.stats?.[
-          key === 'fixedDamage' ? 'magicResult' : key
-        ] ?? 0
-      )
+    ? Number(baseline.stats?.[key === 'fixedDamage' ? 'magicResult' : key] ?? 0)
     : 0;
   const diff = toRoundedNumber(currentValue) - toRoundedNumber(baselineValue);
 
@@ -638,7 +785,8 @@ function buildCurrentCombatStats(
       formation: params.formation,
       meridian: params.meridian,
       regularSetRules: params.regularSetRules,
-      runeSkillBaselineEquipment: params.syncedCloudState?.equipment ?? params.equipment,
+      runeSkillBaselineEquipment:
+        params.syncedCloudState?.equipment ?? params.equipment,
     },
     params.syncedCloudState
       ? {
@@ -764,7 +912,10 @@ export function buildSimulatorPanelSourceBreakdowns(
       },
     ].filter((entry) => entry.value !== 0);
 
-    const knownTotal = sourceEntries.reduce((sum, entry) => sum + entry.value, 0);
+    const knownTotal = sourceEntries.reduce(
+      (sum, entry) => sum + entry.value,
+      0
+    );
     const residual = deltaValue - knownTotal;
 
     if (residual !== 0) {
@@ -827,11 +978,11 @@ export function buildSimulatorPanelSourceDeltaBreakdowns(
     const sourceDetailDiffs = Array.from(detailLabels)
       .map((label) => {
         const sampleDetails =
-          sampleItem?.sourceDetails.find((item) => item.label === label)?.items ??
-          [];
+          sampleItem?.sourceDetails.find((item) => item.label === label)
+            ?.items ?? [];
         const currentDetails =
-          currentItem?.sourceDetails.find((item) => item.label === label)?.items ??
-          [];
+          currentItem?.sourceDetails.find((item) => item.label === label)
+            ?.items ?? [];
         const itemLabels = new Set<string>([
           ...sampleDetails.map((item) => item.label),
           ...currentDetails.map((item) => item.label),
@@ -840,9 +991,11 @@ export function buildSimulatorPanelSourceDeltaBreakdowns(
         const items = Array.from(itemLabels)
           .map((itemLabel) => {
             const sampleValue =
-              sampleDetails.find((item) => item.label === itemLabel)?.value ?? 0;
+              sampleDetails.find((item) => item.label === itemLabel)?.value ??
+              0;
             const currentValue =
-              currentDetails.find((item) => item.label === itemLabel)?.value ?? 0;
+              currentDetails.find((item) => item.label === itemLabel)?.value ??
+              0;
 
             return {
               label: itemLabel,

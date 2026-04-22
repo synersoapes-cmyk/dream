@@ -18,6 +18,7 @@ import {
   getPrdPanelBaseConstant,
   resolveTrustedBasePanelConstant,
 } from '@/shared/lib/simulator-core-rules';
+import { resolveSimulatorStarRuntimeBonuses } from '@/shared/lib/simulator-rune-star-rules';
 
 const COMBAT_STAT_KEYS: Array<keyof CombatStats> = [
   'hp',
@@ -140,18 +141,36 @@ export const computeDerivedStats = (
     })),
     options?.regularSetRules
   );
+  const starBonuses = resolveSimulatorStarRuntimeBonuses(equipment);
   const effectiveBaseAttributes: BaseAttributes = {
     ...baseAttributes,
     physique: baseAttributes.physique + Number(meridian?.physique ?? 0),
     magic:
       baseAttributes.magic +
       Number(meridian?.magic ?? 0) +
-      Number(regularSetBonuses.attributeSourceBonuses.magic ?? 0),
-    magicPower: baseAttributes.magicPower + Number(meridian?.magicPower ?? 0),
-    strength: baseAttributes.strength + Number(meridian?.strength ?? 0),
-    endurance: baseAttributes.endurance + Number(meridian?.endurance ?? 0),
-    agility: baseAttributes.agility + Number(meridian?.agility ?? 0),
+      Number(regularSetBonuses.attributeSourceBonuses.magic ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.magic ?? 0),
+    magicPower:
+      baseAttributes.magicPower +
+      Number(meridian?.magicPower ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.magicPower ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.spirit ?? 0),
+    strength:
+      baseAttributes.strength +
+      Number(meridian?.strength ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.strength ?? 0),
+    endurance:
+      baseAttributes.endurance +
+      Number(meridian?.endurance ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.endurance ?? 0),
+    agility:
+      baseAttributes.agility +
+      Number(meridian?.agility ?? 0) +
+      Number(starBonuses.attributeSourceBonuses.agility ?? 0),
   };
+  effectiveBaseAttributes.physique += Number(
+    starBonuses.attributeSourceBonuses.physique ?? 0
+  );
   const equipmentTotals = sumEquipmentStats(equipment);
   const treasureTotals = treasure?.isActive ? treasure.stats ?? {} : {};
   const formationSpeedFactor = resolveFormationSpeedFactor(options?.formation);
@@ -243,6 +262,10 @@ export const computeDerivedStats = (
       (equipmentTotals.dodge ?? 0) +
       (treasureTotals.dodge ?? 0),
   };
+
+  for (const [key, value] of Object.entries(starBonuses.panelStatBonuses)) {
+    result[key] = (result[key] ?? 0) + Number(value ?? 0);
+  }
 
   for (const [key, value] of Object.entries(equipmentTotals)) {
     if (!COMBAT_STAT_KEYS.includes(key as keyof CombatStats)) {

@@ -1,8 +1,9 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 import { resolveRuneComboActivation } from '@/shared/lib/simulator-rune-combo';
+import { findRuneComboRuleByName } from '@/shared/lib/simulator-rune-star-rules';
 
-type RuneComboEffectType = 'skill_level' | 'panel_spirit';
+type RuneComboEffectType = 'skill_level' | 'panel_spirit' | 'panel_stat';
 
 type RuneComboEffectDefinition = {
   comboName: string;
@@ -37,76 +38,32 @@ export type RuneComboEffectDiff = {
   nextActiveCount: number;
 };
 
-const RUNE_COMBO_EFFECT_DEFINITIONS: Record<string, RuneComboEffectDefinition> =
-  {
-    九龙诀: {
-      comboName: '九龙诀',
-      effectType: 'skill_level',
-      effectLabel: '九龙诀技能等级',
-      maxActive: 1,
-      bonusByTier: {
-        2: 2,
-        3: 4,
-        4: 6,
-      },
-    },
-    呼风唤雨: {
-      comboName: '呼风唤雨',
-      effectType: 'skill_level',
-      effectLabel: '呼风唤雨技能等级',
-      maxActive: 1,
-      bonusByTier: {
-        2: 2,
-        3: 4,
-        4: 6,
-      },
-    },
-    破浪诀: {
-      comboName: '破浪诀',
-      effectType: 'skill_level',
-      effectLabel: '破浪诀技能等级',
-      maxActive: 1,
-      bonusByTier: {
-        2: 2,
-        3: 4,
-        4: 6,
-      },
-    },
-    逆鳞: {
-      comboName: '逆鳞',
-      effectType: 'skill_level',
-      effectLabel: '逆鳞技能等级',
-      maxActive: 1,
-      bonusByTier: {
-        2: 2,
-        3: 4,
-        4: 6,
-      },
-    },
-    龙腾: {
-      comboName: '龙腾',
-      effectType: 'skill_level',
-      effectLabel: '龙腾技能等级',
-      maxActive: 1,
-      bonusByTier: {
-        2: 2,
-        3: 4,
-        4: 6,
-      },
-    },
-    隔山打牛: {
-      comboName: '隔山打牛',
-      effectType: 'panel_spirit',
-      effectLabel: '隔山打牛灵力加成',
-      maxActive: 2,
-      bonusByTier: {
-        2: 20,
-        3: 30,
-        4: 50,
-        5: 70,
-      },
-    },
+function getEffectDefinitionByComboName(
+  comboName: string
+): RuneComboEffectDefinition | null {
+  const comboRule = findRuneComboRuleByName(comboName);
+  if (!comboRule || !comboRule.effectType || comboRule.effectType === 'none') {
+    return null;
+  }
+
+  const bonusByTier = Object.fromEntries(
+    comboRule.tiers
+      .filter((tier) => Number.isFinite(Number(tier.bonusValue)))
+      .map((tier) => [tier.tier, Number(tier.bonusValue ?? 0)])
+  );
+
+  if (Object.keys(bonusByTier).length === 0) {
+    return null;
+  }
+
+  return {
+    comboName: comboRule.name,
+    effectType: comboRule.effectType,
+    effectLabel: comboRule.effectLabel ?? `${comboRule.name}加成`,
+    maxActive: Math.max(1, comboRule.maxActive ?? 1),
+    bonusByTier,
   };
+}
 
 function sortByBonusPriority(
   left: { bonusValue: number; matchedTier: number | null },
@@ -135,8 +92,7 @@ export function resolveActiveRuneComboEffects(equipment: Equipment[]) {
       continue;
     }
 
-    const definition =
-      RUNE_COMBO_EFFECT_DEFINITIONS[activation.normalizedSetName];
+    const definition = getEffectDefinitionByComboName(activation.normalizedSetName);
     if (!definition) {
       continue;
     }
@@ -229,16 +185,16 @@ export function buildRuneComboDropWarnings(
     }
 
     switch (item.comboName) {
-      case '破浪诀':
-        return ['丢弃破浪诀将降低大量基础伤害'];
+      case '海市蜃楼':
+        return ['海市蜃楼跌落后，九龙诀带来的法伤与法防联动收益会同步变弱'];
       case '呼风唤雨':
         return ['呼风唤雨跌落后，龙卷雨击技能等级会同步下降'];
-      case '九龙诀':
-        return ['九龙诀跌落后，法伤与法防联动收益会同步变弱'];
       case '龙腾':
         return ['龙腾组合跌落后，单体技能爆发会同步下降'];
       case '逆鳞':
         return ['逆鳞组合跌落后，相关技能等级会同步下降'];
+      case '破浪诀':
+        return ['丢弃破浪诀将降低大量基础伤害'];
       case '隔山打牛':
         return ['隔山打牛层数减少后，战斗内灵力爆发期望会下降'];
       default:

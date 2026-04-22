@@ -446,6 +446,8 @@
 | parenthetical 变体命中回归 | 测试成功 | 已执行 `node --import tsx --test src/features/simulator/utils/equipmentImage.test.ts`，确认像 `罗喉计都（乾坤）.png` 这类本地素材，前台传入基础名 `罗喉计都` 时仍能命中静态图片 |
 | artwork 清单一致性回归 | 测试成功 | 已执行 `pnpm simulator:artwork:check-source`、`pnpm simulator:artwork:check` 与 `node --import tsx --test src/shared/lib/simulator-equipment-artwork-manifest.test.ts`，确认 source JSON、生成后的 manifest 与本地素材目录保持一致 |
 | 类型与前台引用回归 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认导图脚本、resolver、测试用例和前台展示链路在接入真实素材后无新增类型错误 |
+| R2 artwork 同步回归 | 测试成功 | 已执行并发上传脚本，将 `public/simulator/equipment-art/` 下 `449` 张素材同步到 R2 `dream/equipment-art/`；随后通过 `pnpm wrangler r2 object get` 抽样验证 `weapon/折扇.jpg`、`shoes/踏雪无痕.jpg`、`jade/上古玉魄·阳.jpg` 三个对象均可成功读回 |
+| artwork R2 resolver 回归 | 测试成功 | 已执行 `node --import tsx --test src/features/simulator/utils/equipmentImage.test.ts src/shared/lib/simulator-equipment-artwork-manifest.test.ts` 与 `pnpm exec tsc --noEmit`，确认前台仍统一走 `equipment-art` resolver，但服务端已可优先把命中的真实素材转到 R2 对象 URL，命不中时继续安全回退 |
 | OCR 解释 helper 回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/lib/simulator-equipment-ocr-review.test.ts`，确认 helper 能稳定输出“有效字段数 / 数值属性数 / 已识别关键项 / 关键缺失项 / 疑似漏识别属性 / 建议优先核对项 / 置信度文案”这组统一解释口径。 |
 | 前台接线类型检查 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认 `OcrEquipmentReviewDialog` 与 `PendingEquipmentDetailModal` 接入统一 OCR 解释区后无新增类型错误。 |
 
@@ -850,3 +852,13 @@
 | 面板底盘共享回归 | 测试成功 | 已执行 `node --import tsx --test src/features/simulator/store/gameLogic.test.ts src/features/simulator/store/gameStore.test.ts src/shared/lib/simulator-panel-source-breakdown.test.ts`，确认 `HP/MP/DEF` 基础常数、`强身/冥想/强壮/神速` 作用方式、武器伤害 `/4 -> 法伤`、以及当前状态页的本地增量面板口径已统一。 |
 | 服务端伤害主链回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/services/damage-engine.test.ts src/shared/services/lab-valuation.test.ts`，确认 `龙卷雨击 = 技能等级 × 2.5`、`龙腾 = 技能等级²/120 + 技能等级 × 1.5 + 55` 已接入正式试算，同时天气、五行、分灵、修炼差、法伤结果、目标法防结果、符石组合、灵饰套装与玉魄百分比词条均继续可叠加。 |
 | 前后端同源验证 | 测试成功 | 本轮已新增“被动修炼”显式专项回归，确认前台与服务端都按同一口径处理：`强身/冥想/强壮` 只放大各自基础部分，`神速` 按固定 `+1.5/级` 生效；实验室总伤估值继续复用服务端正式试算结果。 |
+
+### 3.60 2026-04-17 PRD V3.0 符石 / 星石 / 最优解正式接入回归
+
+| 测试项 | 状态 | 备注 |
+| ------ | ---- | ---- |
+| PRD 规则接线类型检查 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认 `rune_stone_rules / star_stone_rules / rune_combo_rules / star_full_color_rules / rune_optimizer_profiles` 接入现有规则中心后，前台编辑器、规则后台、面板推导与伤害试算均无类型错误。 |
+| 符石/星石规则专项回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/lib/simulator-rune-combo.test.ts src/shared/lib/simulator-rune-bonus.test.ts src/shared/lib/simulator-rune-editor.test.ts src/shared/lib/simulator-rune-skill.test.ts src/shared/lib/simulator-rune-star-rules.test.ts`，共 `22/22` 通过；覆盖 `海市蜃楼` 正式命名、旧 `九龙诀` 兼容映射、龙宫部位默认推荐、符石前缀降级与星石全套同色奖励。 |
+| 伤害主链符石/星石回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/services/damage-engine.test.ts`，共 `51/51` 通过；确认符石单颗属性、门派组合上限、`隔山打牛` 双套上限、星石基础属性、星石全套同色奖励，以及现有天气/五行/分灵/玉魄/灵饰套装扩展规则均能继续叠加。 |
+| 全量模拟器回归 | 测试成功 | 已执行 `pnpm test:simulator`，共 `99/99` 通过；确认当前状态页、最终面板、实验室席位、实验室估值与服务端试算对同一套符石/星石数据保持同源。 |
+| 前台编辑器与来源拆解验证 | 测试成功 | 已确认当前装备详情和实验室详情改为规则驱动选项：星石可按颜色选择，符石组合默认按“龙宫总伤”推荐最优解；面板来源拆解中已区分“星石基础属性”“星石全套同色奖励”“星相互合”三层来源，避免混淆。 |

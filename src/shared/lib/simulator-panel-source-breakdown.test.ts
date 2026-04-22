@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import type {
   BaseAttributes,
   Equipment,
   MeridianConfig,
   SyncedCloudState,
 } from '@/features/simulator/store/gameTypes';
+
 import {
   buildPanelSourceBreakdownSummary,
   buildPanelSourceDeltaSummary,
@@ -358,21 +358,16 @@ test('buildSimulatorPanelSourceBreakdowns supports magic crit fixed damage pierc
       },
     ]
   );
-  assert.deepEqual(
-    result.find((item) => item.key === 'fixedDamage')?.sources,
-    [{ label: '装备/符石', value: 15 }]
-  );
-  assert.deepEqual(
-    result.find((item) => item.key === 'pierceLevel')?.sources,
-    [{ label: '装备/符石', value: 12 }]
-  );
-  assert.deepEqual(
-    result.find((item) => item.key === 'hit')?.sources,
-    [
-      { label: '加点/档案', value: 17 },
-      { label: '装备/符石', value: 20 },
-    ]
-  );
+  assert.deepEqual(result.find((item) => item.key === 'fixedDamage')?.sources, [
+    { label: '装备/符石', value: 15 },
+  ]);
+  assert.deepEqual(result.find((item) => item.key === 'pierceLevel')?.sources, [
+    { label: '装备/符石', value: 12 },
+  ]);
+  assert.deepEqual(result.find((item) => item.key === 'hit')?.sources, [
+    { label: '加点/档案', value: 17 },
+    { label: '装备/符石', value: 20 },
+  ]);
   assert.deepEqual(result.find((item) => item.key === 'hit')?.sourceDetails, [
     {
       label: '加点/档案',
@@ -542,38 +537,41 @@ test('buildSimulatorPanelSourceBreakdowns separates equipment base gemstone and 
     syncedCloudState,
   });
 
-  assert.deepEqual(result.find((item) => item.key === 'magicDamage')?.sourceDetails, [
-    {
-      label: '装备底子',
-      items: [
-        {
-          label: '武器·拆分武器',
-          value: 20,
-          note: '含武器伤害/4转法伤',
-        },
-      ],
-    },
-    {
-      label: '宝石',
-      items: [
-        {
-          label: '武器·拆分武器',
-          value: 12,
-          note: '直接计入法伤',
-        },
-      ],
-    },
-    {
-      label: '符石',
-      items: [
-        {
-          label: '武器·拆分武器',
-          value: 18,
-          note: '直接计入法伤',
-        },
-      ],
-    },
-  ]);
+  assert.deepEqual(
+    result.find((item) => item.key === 'magicDamage')?.sourceDetails,
+    [
+      {
+        label: '装备底子',
+        items: [
+          {
+            label: '武器·拆分武器',
+            value: 20,
+            note: '含武器伤害/4转法伤',
+          },
+        ],
+      },
+      {
+        label: '宝石',
+        items: [
+          {
+            label: '武器·拆分武器',
+            value: 12,
+            note: '直接计入法伤',
+          },
+        ],
+      },
+      {
+        label: '符石',
+        items: [
+          {
+            label: '武器·拆分武器',
+            value: 18,
+            note: '直接计入法伤',
+          },
+        ],
+      },
+    ]
+  );
 });
 
 test('buildPanelSourceBreakdownSummary prioritizes the strongest source text', () => {
@@ -596,6 +594,21 @@ test('buildPanelSourceBreakdownSummary prioritizes the strongest source text', (
     buildPanelSourceBreakdownSummary(item, 2),
     '主因 装备/符石 +100 · 次因 神器 +24'
   );
+});
+
+test('buildPanelSourceBreakdownSummary returns null when there are no source deltas', () => {
+  const item: PanelSourceBreakdownItem = {
+    key: 'magicDamage',
+    label: '法伤',
+    total: 1460,
+    baseline: 1460,
+    delta: 0,
+    sources: [],
+    sourceDetails: [],
+    hasBaseline: true,
+  };
+
+  assert.equal(buildPanelSourceBreakdownSummary(item, 2), null);
 });
 
 test('buildSimulatorPanelSourceDeltaBreakdowns compares seat deltas against sample deltas', () => {

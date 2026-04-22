@@ -59,7 +59,7 @@ test('resolveActiveRuneComboEffects keeps only the highest school skill combo', 
 
   assert.equal(result.length, 1);
   assert.deepEqual(result[0], {
-    comboName: '九龙诀',
+    comboName: '海市蜃楼',
     effectType: 'skill_level',
     effectLabel: '九龙诀技能等级',
     bonusValue: 6,

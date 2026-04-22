@@ -3,6 +3,7 @@ import type { Equipment, Skill } from '@/features/simulator/store/gameTypes';
 import { resolveActiveRuneComboEffects } from '@/shared/lib/simulator-rune-bonus';
 
 const SKILL_NAME_CANDIDATES_BY_COMBO: Record<string, string[]> = {
+  海市蜃楼: ['九龙诀'],
   九龙诀: ['九龙诀'],
   呼风唤雨: ['龙卷雨击', '呼风唤雨'],
   破浪诀: ['破浪诀'],
@@ -115,7 +116,7 @@ export function resolveJiulongPanelSpiritDelta(
   baselineEquipment: Equipment[] = []
 ) {
   return (
-    getRuneComboBonusValue(equipment, '九龙诀') -
-    getRuneComboBonusValue(baselineEquipment, '九龙诀')
+    getRuneComboBonusValue(equipment, '海市蜃楼') -
+    getRuneComboBonusValue(baselineEquipment, '海市蜃楼')
   );
 }

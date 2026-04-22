@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildSimulatorEquipmentLibraryItems } from './simulator-equipment-library';
+import {
+  buildSimulatorEquipmentLibraryItems,
+  buildSimulatorEquipmentSelectorHelperText,
+} from './simulator-equipment-library';
 
 function sortLabels(values: string[]) {
-  return [...values].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+  return [...values].sort((left, right) =>
+    left.localeCompare(right, 'zh-Hans-CN')
+  );
 }
 
 test('buildSimulatorEquipmentLibraryItems merges current plan, other plans and candidate library labels', () => {
@@ -57,11 +62,10 @@ test('buildSimulatorEquipmentLibraryItems merges current plan, other plans and c
     'current_plan',
     'equipment_plan',
   ]);
-  assert.deepEqual(sortLabels(items[0]?.sourceLabels ?? []), sortLabels([
-    '候选装备库',
-    '任务套',
-    '高速方案',
-  ]));
+  assert.deepEqual(
+    sortLabels(items[0]?.sourceLabels ?? []),
+    sortLabels(['候选装备库', '任务套', '高速方案'])
+  );
   assert.equal(items[0]?.selectable, true);
   assert.equal(items[0]?.id, 'candidate-1');
 });
@@ -127,16 +131,14 @@ test('buildSimulatorEquipmentLibraryItems merges managed inventory source withou
   });
 
   assert.equal(items.length, 1);
-  assert.deepEqual(sortLabels(items[0]?.sourceLabels ?? []), sortLabels([
-    '任务套',
-    '正式库存',
-    '候选装备库',
-  ]));
-  assert.deepEqual(sortLabels(items[0]?.sourceKinds ?? []), sortLabels([
-    'current_plan',
-    'inventory_asset',
-    'candidate_library',
-  ]));
+  assert.deepEqual(
+    sortLabels(items[0]?.sourceLabels ?? []),
+    sortLabels(['任务套', '正式库存', '候选装备库'])
+  );
+  assert.deepEqual(
+    sortLabels(items[0]?.sourceKinds ?? []),
+    sortLabels(['current_plan', 'inventory_asset', 'candidate_library'])
+  );
   assert.equal(items[0]?.selectable, true);
   assert.equal(items[0]?.id, 'candidate-1');
   assert.deepEqual(
@@ -206,4 +208,129 @@ test('buildSimulatorEquipmentLibraryItems follows latest equipmentSets input aft
   assert.equal(afterRemoval.length, 1);
   assert.deepEqual(afterRemoval[0]?.sourceKinds, ['current_plan']);
   assert.deepEqual(afterRemoval[0]?.sourceLabels, ['任务套']);
+});
+
+test('buildSimulatorEquipmentLibraryItems skips plan-only items in selector mode and keeps plan usage as helper metadata', () => {
+  const sharedWeapon = {
+    id: 'weapon-shared',
+    name: '沧海灵杖',
+    type: 'weapon' as const,
+    mainStat: '伤害 +423',
+    baseStats: {
+      damage: 423,
+      hit: 638,
+    },
+    level: 160,
+    price: 8880000,
+    stats: {
+      magicDamage: 281,
+    },
+  };
+  const planOnlyShoes = {
+    id: 'shoes-plan-only',
+    name: '踏浪靴',
+    type: 'shoes' as const,
+    mainStat: '速度 +72',
+    baseStats: {
+      speed: 72,
+    },
+    level: 90,
+    price: 830000,
+    stats: {
+      speed: 72,
+    },
+  };
+
+  const items = buildSimulatorEquipmentLibraryItems({
+    currentEquipment: [sharedWeapon, planOnlyShoes],
+    equipmentSets: [
+      {
+        id: 'plan-current',
+        name: '当前方案',
+        items: [sharedWeapon, planOnlyShoes],
+      },
+      {
+        id: 'plan-speed',
+        name: '高速方案',
+        items: [sharedWeapon],
+      },
+    ],
+    activeSetIndex: 0,
+    inventoryLibraryItems: [
+      {
+        id: 'inventory-1',
+        timestamp: 2,
+        status: 'confirmed',
+        equipment: {
+          ...sharedWeapon,
+        },
+      },
+    ],
+    candidateLibraryItems: [],
+    includePlanOnlyItems: false,
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.equipment.name, '沧海灵杖');
+  assert.deepEqual(items[0]?.primarySourceLabels, ['正式库存']);
+  assert.deepEqual(items[0]?.planSourceLabels, ['当前方案', '高速方案']);
+  assert.equal(items[0]?.currentPlanLabel, '当前方案');
+  assert.equal(
+    buildSimulatorEquipmentSelectorHelperText(items[0]!),
+    '当前方案已使用 · 方案占用：高速方案'
+  );
+});
+
+test('buildSimulatorEquipmentLibraryItems keeps candidate and inventory items in selector mode', () => {
+  const belt = {
+    id: 'belt-shared',
+    name: '星河腰带',
+    type: 'belt' as const,
+    mainStat: '速度 +65',
+    baseStats: {
+      speed: 65,
+    },
+    level: 90,
+    price: 760000,
+    stats: {
+      speed: 65,
+    },
+  };
+
+  const items = buildSimulatorEquipmentLibraryItems({
+    currentEquipment: [belt],
+    equipmentSets: [
+      {
+        id: 'plan-current',
+        name: '当前方案',
+        items: [belt],
+      },
+    ],
+    activeSetIndex: 0,
+    inventoryLibraryItems: [
+      {
+        id: 'inventory-belt',
+        timestamp: 1,
+        status: 'confirmed',
+        equipment: { ...belt, id: 'belt-inventory' },
+      },
+    ],
+    candidateLibraryItems: [
+      {
+        id: 'candidate-belt',
+        timestamp: 2,
+        status: 'confirmed',
+        equipment: { ...belt, id: 'belt-candidate' },
+      },
+    ],
+    includePlanOnlyItems: false,
+  });
+
+  assert.equal(items.length, 1);
+  assert.deepEqual(sortLabels(items[0]?.primarySourceLabels ?? []), [
+    '候选装备库',
+    '正式库存',
+  ]);
+  assert.deepEqual(items[0]?.planSourceLabels, ['当前方案']);
+  assert.equal(items[0]?.id, 'candidate-belt');
 });

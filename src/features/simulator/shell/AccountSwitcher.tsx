@@ -7,10 +7,14 @@ import {
   setSelectedSimulatorCharacterId,
 } from '@/features/simulator/utils/characterSelection';
 import { validateImageFile } from '@/features/simulator/utils/fileValidation';
-import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
+import {
+  applySimulatorBundleToStore,
+  buildSimulatorBundleStorePreview,
+} from '@/features/simulator/utils/simulatorBundle';
 import {
   applySimulatorCandidateEquipmentToStore,
   loadSimulatorCandidateEquipmentToStore,
+  mapSimulatorCandidateEquipmentItemToPendingEquipment,
 } from '@/features/simulator/utils/simulatorCandidateEquipment';
 import {
   Check,
@@ -29,6 +33,7 @@ import { toast } from 'sonner';
 
 import { signOut, useSession } from '@/core/auth/client';
 import { useRouter } from '@/core/i18n/navigation';
+import { OcrEquipmentReviewDialog } from '@/shared/blocks/simulator/OcrEquipmentReviewDialog';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import {
@@ -53,7 +58,19 @@ import {
   SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
   type SimulatorEquipmentOcrImageHint,
 } from '@/shared/lib/simulator-ocr-image-hint';
-import type { SimulatorCandidateEquipmentItem } from '@/shared/models/simulator-types';
+import { requestSimulatorOpenPendingReview } from '@/shared/lib/simulator-pending-review-request';
+import {
+  buildSimulatorProfileEditableValuesFromBundle,
+  buildSimulatorProfileReviewChangesFromBundles,
+  type SimulatorProfilePayloadKey,
+  type SimulatorProfileReviewChange,
+  type SimulatorProfileReviewEditableValues,
+} from '@/shared/lib/simulator-profile-review';
+import type {
+  SimulatorCandidateEquipmentItem,
+  SimulatorCharacterBundle,
+} from '@/shared/models/simulator-types';
+import type { PendingEquipment } from '@/features/simulator/store/gameTypes';
 
 type CharacterSummary = {
   id: string;
@@ -86,6 +103,15 @@ type CreateCharacterImportState = {
   profileSuccessCount: number;
   equipmentSuccessCount: number;
   importErrors: string[];
+};
+
+type CreateProfileReviewDraft = {
+  characterId: string;
+  characterName: string;
+  summary: string;
+  changes: SimulatorProfileReviewChange[];
+  values: SimulatorProfileReviewEditableValues;
+  originalValues: SimulatorProfileReviewEditableValues;
 };
 
 const CREATE_CHARACTER_STEP_CONFIG: Array<{
@@ -131,12 +157,55 @@ const DEFAULT_CREATE_IMPORT_STATE: CreateCharacterImportState = {
   importErrors: [],
 };
 
+const SIMULATOR_PROFILE_FACTION_OPTIONS = [
+  '龙宫',
+  '大唐官府',
+  '狮驼岭',
+  '化生寺',
+  '方寸山',
+  '普陀山',
+];
+
 function formatFileSize(size: number) {
   if (size >= 1024 * 1024) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function formatReviewValue(value: number | string) {
+  return typeof value === 'number' ? value.toLocaleString('zh-CN') : value;
+}
+
+function hasProfileReviewEdits(draft: CreateProfileReviewDraft) {
+  return JSON.stringify(draft.values) !== JSON.stringify(draft.originalValues);
+}
+
+function buildCreateProfileReviewDraft(params: {
+  beforeBundle: SimulatorCharacterBundle;
+  afterBundle: SimulatorCharacterBundle;
+}): CreateProfileReviewDraft {
+  const preview = buildSimulatorBundleStorePreview(params.afterBundle);
+  const values = buildSimulatorProfileEditableValuesFromBundle(
+    params.afterBundle
+  );
+
+  return {
+    characterId: params.afterBundle.character.id,
+    characterName: params.afterBundle.character.name,
+    summary: [
+      preview.currentCharacter.school,
+      preview.currentCharacter.level
+        ? `等级 ${preview.currentCharacter.level}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    changes: buildSimulatorProfileReviewChangesFromBundles(params),
+    values,
+    originalValues: { ...values },
+  };
 }
 
 export function AccountSwitcher() {
@@ -158,6 +227,14 @@ export function AccountSwitcher() {
   const [isCreatingCharacter, setIsCreatingCharacter] = useState(false);
   const [createImportState, setCreateImportState] =
     useState<CreateCharacterImportState>(DEFAULT_CREATE_IMPORT_STATE);
+  const [createProfileReviewDraft, setCreateProfileReviewDraft] =
+    useState<CreateProfileReviewDraft | null>(null);
+  const [isSavingCreateProfileReview, setIsSavingCreateProfileReview] =
+    useState(false);
+  const [createEquipmentReview, setCreateEquipmentReview] =
+    useState<PendingEquipment | null>(null);
+  const [queuedCreateEquipmentReview, setQueuedCreateEquipmentReview] =
+    useState<PendingEquipment | null>(null);
   const [isRenamingCharacter, setIsRenamingCharacter] = useState(false);
   const [isDeletingCharacter, setIsDeletingCharacter] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -166,6 +243,7 @@ export function AccountSwitcher() {
   const profileImagesRef = useRef<PendingImportImage[]>([]);
   const equipmentImagesRef = useRef<PendingImportImage[]>([]);
   const sessionUser = session?.user;
+  const pendingEquipments = useGameStore((state) => state.pendingEquipments);
 
   const fallbackCharacters = useMemo(() => {
     if (!currentCharacter) {
@@ -362,6 +440,88 @@ export function AccountSwitcher() {
     });
   };
 
+  const openQueuedEquipmentReview = (nextReview?: PendingEquipment | null) => {
+    const target = nextReview ?? queuedCreateEquipmentReview;
+    if (!target) {
+      return;
+    }
+
+    setCreateEquipmentReview(target);
+    setQueuedCreateEquipmentReview(null);
+  };
+
+  const handleCreateProfileReviewFieldChange = (
+    payloadKey: SimulatorProfilePayloadKey,
+    value: string
+  ) => {
+    setCreateProfileReviewDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        values: {
+          ...current.values,
+          [payloadKey]:
+            payloadKey === 'faction' ? value : Number.isFinite(Number(value)) ? Number(value) : 0,
+        },
+      };
+    });
+  };
+
+  const handleCloseCreateProfileReview = () => {
+    setCreateProfileReviewDraft(null);
+    openQueuedEquipmentReview();
+  };
+
+  const handleCloseCreateEquipmentReview = () => {
+    setCreateEquipmentReview(null);
+  };
+
+  const handleConfirmCreateProfileReview = async () => {
+    if (!createProfileReviewDraft) {
+      return;
+    }
+
+    if (!hasProfileReviewEdits(createProfileReviewDraft)) {
+      toast.success('已确认人物面板 OCR 结果', {
+        description: createProfileReviewDraft.summary || '当前识别结果已保留',
+      });
+      handleCloseCreateProfileReview();
+      return;
+    }
+
+    setIsSavingCreateProfileReview(true);
+    try {
+      const response = await fetch('/api/simulator/current/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(createProfileReviewDraft.values),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload?.code !== 0 || !payload?.data) {
+        throw new Error(payload?.message || '保存人物面板失败');
+      }
+
+      applySimulatorBundleToStore(payload.data, {
+        preserveWorkbenchState: true,
+      });
+      await loadCharacters();
+      toast.success('人物面板基线已更新', {
+        description: createProfileReviewDraft.summary || '已按你的修正结果回写',
+      });
+      handleCloseCreateProfileReview();
+    } catch (error) {
+      console.error('Failed to save created profile review:', error);
+      toast.error(error instanceof Error ? error.message : '保存人物面板失败');
+    } finally {
+      setIsSavingCreateProfileReview(false);
+    }
+  };
+
   const handleCreateCharacter = async () => {
     if (isCreatingCharacter) {
       return;
@@ -401,8 +561,10 @@ export function AccountSwitcher() {
         throw new Error(payload?.message || '创建角色失败');
       }
 
-      let latestBundle = payload.data;
+      const initialBundle = payload.data as SimulatorCharacterBundle;
+      let latestBundle = initialBundle;
       let latestCandidateItems: SimulatorCandidateEquipmentItem[] | null = null;
+      let latestPendingEquipmentReview: PendingEquipment | null = null;
       const nextCharacterId = String(payload.data.character.id);
       let profileSuccessCount = 0;
       let equipmentSuccessCount = 0;
@@ -513,6 +675,12 @@ export function AccountSwitcher() {
           }
 
           latestCandidateItems = ocrPayload.data.items;
+          if (ocrPayload?.data?.item) {
+            latestPendingEquipmentReview =
+              mapSimulatorCandidateEquipmentItemToPendingEquipment(
+                ocrPayload.data.item
+              );
+          }
           equipmentSuccessCount += 1;
           setCreateImportState((current) => ({
             ...current,
@@ -549,6 +717,13 @@ export function AccountSwitcher() {
       if (Array.isArray(latestCandidateItems)) {
         applySimulatorCandidateEquipmentToStore(latestCandidateItems);
       }
+      const nextProfileReviewDraft =
+        profileImageQueue.length > 0
+          ? buildCreateProfileReviewDraft({
+              beforeBundle: initialBundle,
+              afterBundle: latestBundle,
+            })
+          : null;
       setSelectedSimulatorCharacterId(nextCharacterId);
       await loadCharacters();
       setCreateImportState((current) => ({
@@ -581,6 +756,13 @@ export function AccountSwitcher() {
         toast.error('部分图片导入失败', {
           description: importErrors[0],
         });
+      }
+
+      if (nextProfileReviewDraft) {
+        setCreateProfileReviewDraft(nextProfileReviewDraft);
+        setQueuedCreateEquipmentReview(latestPendingEquipmentReview);
+      } else if (latestPendingEquipmentReview) {
+        setCreateEquipmentReview(latestPendingEquipmentReview);
       }
 
       resetCreateDialog();
@@ -752,6 +934,9 @@ export function AccountSwitcher() {
     isRenamingCharacter ||
     isDeletingCharacter ||
     isSigningOut;
+  const pendingQueueCount = pendingEquipments.filter(
+    (item) => item.status === 'pending'
+  ).length;
   const currentStepIndex = CREATE_CHARACTER_STEP_CONFIG.findIndex(
     (step) => step.id === createStep
   );
@@ -1413,6 +1598,180 @@ export function AccountSwitcher() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(createProfileReviewDraft)}
+        onOpenChange={(open) => {
+          if (!open && !isSavingCreateProfileReview) {
+            handleCloseCreateProfileReview();
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-4xl border-yellow-700/60 bg-slate-950 p-0 text-slate-100 shadow-2xl"
+        >
+          <DialogHeader className="border-b border-yellow-800/40 bg-slate-950/80 px-6 py-5">
+            <DialogTitle className="flex items-center gap-2 text-yellow-100">
+              <Check className="h-5 w-5 text-yellow-500" />
+              确认人物面板 OCR 结果
+            </DialogTitle>
+            <DialogDescription className="text-slate-300">
+              这次建角导入后的面板结果已经成为当前角色基线。这里先核对本次真正变动的字段，不对可以直接修改并保存。
+            </DialogDescription>
+          </DialogHeader>
+
+          {createProfileReviewDraft ? (
+            <div className="space-y-4 px-6 py-5">
+              <div className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 p-4">
+                <div className="text-sm font-semibold text-cyan-100">
+                  {createProfileReviewDraft.characterName}
+                </div>
+                <div className="mt-1 text-xs text-slate-300">
+                  {createProfileReviewDraft.summary || '当前角色基线'}
+                </div>
+                <div className="mt-2 text-xs leading-6 text-slate-300">
+                  当前只展示本次 OCR 实际识别并引起变动的字段。保存后会直接回写当前角色面板基线，后续换装和加点都基于这份基线继续增量计算。
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60">
+                <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold text-yellow-100">
+                  本次变动字段
+                </div>
+                {createProfileReviewDraft.changes.length > 0 ? (
+                  <div className="grid gap-3 p-4 sm:grid-cols-2">
+                    {createProfileReviewDraft.changes.map((item) => (
+                      <div
+                        key={item.key}
+                        className="rounded-xl border border-slate-800 bg-slate-950/70 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-medium text-yellow-100">
+                            {item.label}
+                          </div>
+                          {typeof item.delta === 'number' ? (
+                            <Badge
+                              variant="outline"
+                              className={
+                                item.delta >= 0
+                                  ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-200'
+                                  : 'border-rose-700/40 bg-rose-500/10 text-rose-200'
+                              }
+                            >
+                              {item.delta >= 0 ? '+' : ''}
+                              {formatReviewValue(item.delta)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2">
+                            <div>导入前</div>
+                            <div className="mt-1 text-sm text-slate-200">
+                              {formatReviewValue(item.before)}
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2">
+                            <div>OCR 结果</div>
+                            <div className="mt-1 text-sm text-slate-200">
+                              {formatReviewValue(item.after)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <div className="mb-1 text-[11px] text-slate-500">
+                            确认值
+                          </div>
+                          {item.payloadKey === 'faction' ? (
+                            <select
+                              value={createProfileReviewDraft.values.faction}
+                              onChange={(event) =>
+                                handleCreateProfileReviewFieldChange(
+                                  item.payloadKey,
+                                  event.target.value
+                                )
+                              }
+                              className="w-full rounded-lg border border-yellow-800/40 bg-slate-950/80 px-3 py-2 text-sm text-yellow-50 outline-none transition focus:border-yellow-500/60"
+                            >
+                              {SIMULATOR_PROFILE_FACTION_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="number"
+                              value={String(
+                                createProfileReviewDraft.values[item.payloadKey] ?? 0
+                              )}
+                              onChange={(event) =>
+                                handleCreateProfileReviewFieldChange(
+                                  item.payloadKey,
+                                  event.target.value
+                                )
+                              }
+                              className="border-yellow-800/40 bg-slate-950/80 text-yellow-50"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm text-slate-400">
+                    当前没有识别出实际变更。你可以直接确认，保留当前云端识别结果。
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter className="border-t border-slate-800 px-6 py-4 sm:justify-between">
+            <button
+              type="button"
+              disabled={isSavingCreateProfileReview}
+              onClick={handleCloseCreateProfileReview}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300 transition hover:border-slate-600 hover:text-white disabled:opacity-50"
+            >
+              稍后再看
+            </button>
+            <button
+              type="button"
+              disabled={isSavingCreateProfileReview}
+              onClick={() => {
+                void handleConfirmCreateProfileReview();
+              }}
+              className="inline-flex items-center justify-center rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-yellow-400 disabled:opacity-60"
+            >
+              {isSavingCreateProfileReview ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-2 h-4 w-4" />
+              )}
+              保存并继续
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <OcrEquipmentReviewDialog
+        open={Boolean(createEquipmentReview)}
+        item={createEquipmentReview}
+        title="确认装备 OCR 结果"
+        description="本次建角导入的装备截图已经写入候选装备待确认区。这里先快速核对识别结果，需要改字段时可直接进入实验室继续连审。"
+        destinationTitle="写入位置：候选装备待确认区"
+        destinationDescription={`当前待确认共有 ${pendingQueueCount} 件。恢复到实验室后会直接定位到这件装备，方便继续修改和确认入库。`}
+        primaryActionLabel="去实验室继续审核"
+        secondaryActionLabel="关闭"
+        onClose={handleCloseCreateEquipmentReview}
+        onPrimaryAction={() => {
+          if (createEquipmentReview) {
+            requestSimulatorOpenPendingReview(createEquipmentReview.id);
+          }
+          setCreateEquipmentReview(null);
+        }}
+      />
     </>
   );
 }

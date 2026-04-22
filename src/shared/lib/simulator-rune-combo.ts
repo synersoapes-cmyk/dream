@@ -1,17 +1,12 @@
 import type { Equipment } from '@/features/simulator/store/gameTypes';
 
 import { normalizeRuneColor } from '@/shared/lib/simulator-equipment-meta';
-
-type RuneComboTierDefinition = {
-  tier: number;
-  colors: string[];
-};
-
-type RuneComboDefinition = {
-  name: string;
-  allowedSlots: Equipment['type'][];
-  tiers: RuneComboTierDefinition[];
-};
+import {
+  DEFAULT_PRD_RUNE_COMBO_RULES,
+  type SimulatorRuneComboRule,
+  findRuneComboRuleByName,
+  getRuneComboDisplayName,
+} from '@/shared/lib/simulator-rune-star-rules';
 
 type RuneComboEquipmentLike = Pick<
   Equipment,
@@ -35,64 +30,6 @@ export type RuneComboConflict = {
   rawRuneCount: number;
 };
 
-const RUNE_COMBO_DEFINITIONS: RuneComboDefinition[] = [
-  {
-    name: '九龙诀',
-    allowedSlots: ['helmet'],
-    tiers: [
-      { tier: 4, colors: ['白', '红', '黄', '蓝', '绿'] },
-      { tier: 3, colors: ['白', '红', '黄', '蓝'] },
-      { tier: 2, colors: ['白', '红', '黄'] },
-    ],
-  },
-  {
-    name: '呼风唤雨',
-    allowedSlots: ['armor'],
-    tiers: [
-      { tier: 4, colors: ['黑', '黄', '蓝', '绿', '白'] },
-      { tier: 3, colors: ['黑', '黄', '蓝', '绿'] },
-      { tier: 2, colors: ['黑', '黄', '蓝'] },
-    ],
-  },
-  {
-    name: '破浪诀',
-    allowedSlots: ['weapon'],
-    tiers: [
-      { tier: 4, colors: ['白', '红', '蓝', '黑', '绿'] },
-      { tier: 3, colors: ['白', '红', '蓝', '黑'] },
-      { tier: 2, colors: ['白', '红', '蓝'] },
-    ],
-  },
-  {
-    name: '逆鳞',
-    allowedSlots: ['belt'],
-    tiers: [
-      { tier: 4, colors: ['白', '红', '绿', '紫', '蓝'] },
-      { tier: 3, colors: ['白', '红', '绿', '紫'] },
-      { tier: 2, colors: ['白', '红', '绿'] },
-    ],
-  },
-  {
-    name: '龙腾',
-    allowedSlots: ['necklace'],
-    tiers: [
-      { tier: 4, colors: ['黑', '红', '白', '蓝', '紫'] },
-      { tier: 3, colors: ['黑', '红', '白', '蓝'] },
-      { tier: 2, colors: ['黑', '红', '白'] },
-    ],
-  },
-  {
-    name: '隔山打牛',
-    allowedSlots: ['necklace', 'armor', 'belt', 'helmet', 'weapon', 'shoes'],
-    tiers: [
-      { tier: 5, colors: ['白', '红', '紫', '蓝', '黄'] },
-      { tier: 4, colors: ['白', '红', '紫', '蓝'] },
-      { tier: 3, colors: ['白', '红', '紫'] },
-      { tier: 2, colors: ['白', '红'] },
-    ],
-  },
-];
-
 const RUNE_COMBO_TIER_LABELS: Record<number, string> = {
   2: '二级组合',
   3: '三级组合',
@@ -101,11 +38,7 @@ const RUNE_COMBO_TIER_LABELS: Record<number, string> = {
 };
 
 function normalizeSetName(value: unknown) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-
-  return value.split(/[:：]/)[0]?.trim() ?? '';
+  return getRuneComboDisplayName(value, DEFAULT_PRD_RUNE_COMBO_RULES);
 }
 
 function toPositiveHoleCount(value: unknown) {
@@ -158,10 +91,14 @@ export function getRuneComboTierLabel(tier: number | null) {
 }
 
 export function findRuneComboDefinitionByName(value: unknown) {
-  const normalized = normalizeSetName(value);
-  return (
-    RUNE_COMBO_DEFINITIONS.find((item) => item.name === normalized) ?? null
-  );
+  return findRuneComboRuleByName(value, DEFAULT_PRD_RUNE_COMBO_RULES);
+}
+
+function findMatchedTier(
+  definition: SimulatorRuneComboRule,
+  activeColors: string[]
+) {
+  return definition.tiers.find((tier) => matchesColors(activeColors, tier.colors)) ?? null;
 }
 
 export function resolveRuneComboActivation(
@@ -182,9 +119,7 @@ export function resolveRuneComboActivation(
     };
   }
 
-  const definition = RUNE_COMBO_DEFINITIONS.find(
-    (item) => item.name === normalizedSetName
-  );
+  const definition = findRuneComboRuleByName(normalizedSetName, DEFAULT_PRD_RUNE_COMBO_RULES);
 
   if (!definition) {
     return {
@@ -208,9 +143,7 @@ export function resolveRuneComboActivation(
     };
   }
 
-  const matchedTier = definition.tiers.find((tier) =>
-    matchesColors(activeColors, tier.colors)
-  );
+  const matchedTier = findMatchedTier(definition, activeColors);
 
   if (!matchedTier) {
     return {
@@ -225,7 +158,7 @@ export function resolveRuneComboActivation(
 
   return {
     setName,
-    normalizedSetName,
+    normalizedSetName: definition.name,
     isActivated: true,
     matchedTier: matchedTier.tier,
     activeColors,
@@ -256,21 +189,25 @@ export function analyzeRuneComboConflict(
   }
 
   if (rawRuneCount > holeCount) {
+    const truncatedColors = activation.activeColors;
+    const matchedTier =
+      definition.tiers.find((tier) => matchesColors(truncatedColors, tier.colors))?.tier ??
+      null;
+
     return {
-      message:
-        activation.matchedTier !== null
-          ? `当前仅 ${holeCount} 孔，但录入了 ${rawRuneCount} 颗符石，已强制按 ${holeCount} 孔最大可承载的${getRuneComboTierLabel(activation.matchedTier)}计算。`
-          : `当前仅 ${holeCount} 孔，但录入了 ${rawRuneCount} 颗符石，组合无法完整激活，已按 ${holeCount} 孔规则截断计算。`,
+      message: `当前为 ${holeCount} 孔装备，已强制按 ${holeCount} 孔最大可承载的${getRuneComboTierLabel(
+        matchedTier
+      )}计算。`,
       reason: 'hole_capacity_conflict',
-      matchedTier: activation.matchedTier,
+      matchedTier,
       holeCount,
       rawRuneCount,
     };
   }
 
-  if (activation.reason === 'color_invalid' && rawRuneCount > 0) {
+  if (activation.reason === 'color_invalid') {
     return {
-      message: '符石颜色与当前组合不匹配，系统已判定为未激活。',
+      message: '当前颜色顺序未命中该组合，系统仅保留单颗符石属性。',
       reason: 'color_invalid',
       matchedTier: null,
       holeCount,

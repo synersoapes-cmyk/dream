@@ -46,6 +46,10 @@ import {
   SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
   type SimulatorEquipmentOcrImageHint,
 } from '@/shared/lib/simulator-ocr-image-hint';
+import {
+  buildSimulatorProfileReviewChanges,
+  type SimulatorProfileReviewChange,
+} from '@/shared/lib/simulator-profile-review';
 import { requestSimulatorOpenPendingReview } from '@/shared/lib/simulator-pending-review-request';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
@@ -54,145 +58,11 @@ interface UploadPopoverProps {
   trigger: ReactNode;
 }
 
-type ProfileReviewChange = {
-  key: string;
-  label: string;
-  before: number | string;
-  after: number | string;
-  delta?: number;
-};
-
 type PendingProfileReview = {
   bundle: SimulatorCharacterBundle;
   summary: string;
-  changes: ProfileReviewChange[];
+  changes: SimulatorProfileReviewChange[];
 };
-
-const PROFILE_REVIEW_FIELDS: Array<{
-  key: string;
-  label: string;
-  getBefore: (state: {
-    baseAttributes: ReturnType<typeof useGameStore.getState>['baseAttributes'];
-    combatStats: ReturnType<typeof useGameStore.getState>['combatStats'];
-  }) => number | string;
-  getAfter: (state: {
-    baseAttributes: ReturnType<
-      typeof buildSimulatorBundleStorePreview
-    >['baseAttributes'];
-    combatStats: ReturnType<
-      typeof buildSimulatorBundleStorePreview
-    >['combatStats'];
-  }) => number | string;
-}> = [
-  {
-    key: 'faction',
-    label: '门派',
-    getBefore: ({ baseAttributes }) => baseAttributes.faction,
-    getAfter: ({ baseAttributes }) => baseAttributes.faction,
-  },
-  {
-    key: 'level',
-    label: '等级',
-    getBefore: ({ baseAttributes }) => baseAttributes.level,
-    getAfter: ({ baseAttributes }) => baseAttributes.level,
-  },
-  {
-    key: 'physique',
-    label: '体质',
-    getBefore: ({ baseAttributes }) => baseAttributes.physique,
-    getAfter: ({ baseAttributes }) => baseAttributes.physique,
-  },
-  {
-    key: 'potentialPoints',
-    label: '潜力点',
-    getBefore: ({ baseAttributes }) => baseAttributes.potentialPoints,
-    getAfter: ({ baseAttributes }) => baseAttributes.potentialPoints,
-  },
-  {
-    key: 'magicPower',
-    label: '魔力',
-    getBefore: ({ baseAttributes }) => baseAttributes.magicPower,
-    getAfter: ({ baseAttributes }) => baseAttributes.magicPower,
-  },
-  {
-    key: 'strength',
-    label: '力量',
-    getBefore: ({ baseAttributes }) => baseAttributes.strength,
-    getAfter: ({ baseAttributes }) => baseAttributes.strength,
-  },
-  {
-    key: 'endurance',
-    label: '耐力',
-    getBefore: ({ baseAttributes }) => baseAttributes.endurance,
-    getAfter: ({ baseAttributes }) => baseAttributes.endurance,
-  },
-  {
-    key: 'agility',
-    label: '敏捷',
-    getBefore: ({ baseAttributes }) => baseAttributes.agility,
-    getAfter: ({ baseAttributes }) => baseAttributes.agility,
-  },
-  {
-    key: 'hp',
-    label: '气血',
-    getBefore: ({ combatStats }) => combatStats.hp,
-    getAfter: ({ combatStats }) => combatStats.hp,
-  },
-  {
-    key: 'magic',
-    label: '魔法',
-    getBefore: ({ combatStats }) => combatStats.magic,
-    getAfter: ({ combatStats }) => combatStats.magic,
-  },
-  {
-    key: 'damage',
-    label: '伤害',
-    getBefore: ({ combatStats }) => combatStats.damage,
-    getAfter: ({ combatStats }) => combatStats.damage,
-  },
-  {
-    key: 'defense',
-    label: '防御',
-    getBefore: ({ combatStats }) => combatStats.defense,
-    getAfter: ({ combatStats }) => combatStats.defense,
-  },
-  {
-    key: 'magicDamage',
-    label: '法伤',
-    getBefore: ({ combatStats }) => combatStats.magicDamage,
-    getAfter: ({ combatStats }) => combatStats.magicDamage,
-  },
-  {
-    key: 'magicDefense',
-    label: '法防',
-    getBefore: ({ combatStats }) => combatStats.magicDefense,
-    getAfter: ({ combatStats }) => combatStats.magicDefense,
-  },
-  {
-    key: 'speed',
-    label: '速度',
-    getBefore: ({ combatStats }) => combatStats.speed,
-    getAfter: ({ combatStats }) => combatStats.speed,
-  },
-  {
-    key: 'hit',
-    label: '命中',
-    getBefore: ({ combatStats }) => combatStats.hit,
-    getAfter: ({ combatStats }) => combatStats.hit,
-  },
-  {
-    key: 'dodge',
-    label: '躲避',
-    getBefore: ({ combatStats }) => combatStats.dodge,
-    getAfter: ({ combatStats }) => combatStats.dodge,
-  },
-  {
-    key: 'sealHit',
-    label: '封印命中',
-    getBefore: ({ combatStats }) => combatStats.sealHit ?? 0,
-    getAfter: ({ combatStats }) => combatStats.sealHit ?? 0,
-  },
-];
 
 function formatReviewValue(value: number | string) {
   return typeof value === 'number' ? value.toLocaleString('zh-CN') : value;
@@ -206,24 +76,16 @@ function buildProfileReviewChanges(params: {
   bundle: SimulatorCharacterBundle;
 }): PendingProfileReview {
   const preview = buildSimulatorBundleStorePreview(params.bundle);
-  const changes = PROFILE_REVIEW_FIELDS.map((field) => {
-    const before = field.getBefore({
+  const changes = buildSimulatorProfileReviewChanges({
+    beforeState: {
       baseAttributes: params.currentBaseAttributes,
       combatStats: params.currentCombatStats,
-    });
-    const after = field.getAfter(preview);
-
-    return {
-      key: field.key,
-      label: field.label,
-      before,
-      after,
-      delta:
-        typeof before === 'number' && typeof after === 'number'
-          ? after - before
-          : undefined,
-    };
-  }).filter((item) => item.before !== item.after);
+    },
+    afterState: {
+      baseAttributes: preview.baseAttributes,
+      combatStats: preview.combatStats,
+    },
+  });
 
   return {
     bundle: params.bundle,

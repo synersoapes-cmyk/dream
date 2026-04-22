@@ -8,11 +8,16 @@ import type {
 } from '@/features/simulator/store/gameTypes';
 
 import { getEquipmentRuneStoneSetInfo } from '@/shared/blocks/simulator/EquipmentPanel/RuneStoneHelper';
-import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
 import {
   buildSimulatorEquipmentLibraryItems,
   type SimulatorEquipmentLibraryItem as LaboratoryLibrarySourceItem,
 } from '@/shared/lib/simulator-equipment-library';
+import { sumEquipmentGemstoneStats } from '@/shared/lib/simulator-equipment-meta';
+import {
+  getSimulatorRuneSetOptions as getPrdRuneSetOptions,
+  getSimulatorRuneStoneOptions,
+  getSimulatorStarPositionOptions,
+} from '@/shared/lib/simulator-rune-star-rules';
 import {
   getSimulatorSlotDefinitions,
   getSimulatorSlotLabel,
@@ -98,29 +103,11 @@ const cloneGemstones = (equipment: Equipment): Equipment['gemstones'] =>
     stats: gemstone.stats ? { ...gemstone.stats } : undefined,
   }));
 
-export const AVAILABLE_RUNES = [
-  { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
-  { id: '1-2', name: '红符石(精)', type: 'red', stats: { damage: 2 } },
-  { id: '2', name: '蓝符石', type: 'blue', stats: { speed: 1.5 } },
-  { id: '2-2', name: '蓝符石(精)', type: 'blue', stats: { speed: 2 } },
-  { id: '3', name: '绿符石', type: 'green', stats: { defense: 1.5 } },
-  { id: '3-2', name: '绿符石(精)', type: 'green', stats: { defense: 2 } },
-  { id: '4', name: '黄符石', type: 'yellow', stats: { hit: 2 } },
-  { id: '4-2', name: '黄符石(精)', type: 'yellow', stats: { hit: 3 } },
-  { id: '5', name: '白符石', type: 'white', stats: { magic: 2 } },
-  { id: '6', name: '黑符石', type: 'black', stats: { magicDamage: 1.5 } },
-  { id: '7', name: '紫符石', type: 'purple', stats: { dodge: 2 } },
-] as const;
+export const AVAILABLE_RUNES = getSimulatorRuneStoneOptions();
 
-export const AVAILABLE_STAR_POSITIONS = [
-  '无',
-  '伤害 +2.5',
-  '气血 +10',
-  '速度 +1.5',
-  '防御 +2',
-  '法伤 +2.5',
-  '躲避 +2',
-] as const;
+export const AVAILABLE_STAR_POSITIONS = getSimulatorStarPositionOptions().map(
+  (item) => item.label
+);
 
 export const AVAILABLE_STAR_ALIGNMENTS = [
   '无',
@@ -131,17 +118,29 @@ export const AVAILABLE_STAR_ALIGNMENTS = [
   '敏捷 +2',
 ] as const;
 
-export const AVAILABLE_RUNE_SETS = [
-  '全能',
-  '法门',
-  '逐兽',
-  '聚焦',
-  '仙骨',
-  '药香',
-  '心印',
-  '招云',
-  '腾蛟',
-] as const;
+const PRIMARY_LABORATORY_RUNE_SET_SLOTS: Equipment['type'][] = [
+  'weapon',
+  'helmet',
+  'necklace',
+  'armor',
+  'belt',
+  'shoes',
+];
+
+export const AVAILABLE_RUNE_SETS = Array.from(
+  new Set(
+    PRIMARY_LABORATORY_RUNE_SET_SLOTS.flatMap((type) =>
+      getPrdRuneSetOptions({
+        id: `seed-${type}`,
+        name: '',
+        type,
+        mainStat: '',
+        baseStats: {},
+        stats: {},
+      } as Equipment)
+    )
+  )
+);
 
 export const AVAILABLE_GEMSTONES = [
   '红玛瑙',
@@ -202,6 +201,7 @@ export function buildLaboratoryLibrarySourceItems(params: {
   activeSetIndex: number;
   candidateLibraryItems: PendingEquipment[];
   inventoryLibraryItems?: PendingEquipment[];
+  includePlanOnlyItems?: boolean;
 }) {
   return buildSimulatorEquipmentLibraryItems(params);
 }

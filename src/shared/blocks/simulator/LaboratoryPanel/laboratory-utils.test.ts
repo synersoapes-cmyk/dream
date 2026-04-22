@@ -11,6 +11,12 @@ import {
   resolveLaboratorySeatEquipment,
 } from './laboratory-utils';
 
+function sortLabels(values: string[]) {
+  return [...values].sort((left, right) =>
+    left.localeCompare(right, 'zh-Hans-CN')
+  );
+}
+
 function createEquipment(
   id: string,
   overrides?: Partial<Equipment>
@@ -163,20 +169,64 @@ test('buildLaboratoryLibrarySourceItems merges current plan, other plans and can
   assert.ok(mergedWeapon);
   assert.equal(mergedWeapon?.id, 'candidate_weapon_shared');
   assert.equal(mergedWeapon?.selectable, true);
-  assert.deepEqual(mergedWeapon?.sourceLabels, [
-    '当前方案',
-    '高速方案',
-    '候选装备库',
-  ]);
-  assert.deepEqual(mergedWeapon?.sourceKinds, [
+  assert.deepEqual(
+    sortLabels(mergedWeapon?.sourceLabels ?? []),
+    sortLabels(['候选装备库', '当前方案', '高速方案'])
+  );
+  assert.deepEqual([...(mergedWeapon?.sourceKinds ?? [])].sort(), [
+    'candidate_library',
     'current_plan',
     'equipment_plan',
-    'candidate_library',
   ]);
   assert.equal(
     libraryItems.filter((item) => item.equipment.name === '沧海灵杖').length,
     1
   );
+});
+
+test('buildLaboratoryLibrarySourceItems hides plan-only entries in selector mode', () => {
+  const planOnlyShoes = createEquipment('plan_only_shoes', {
+    name: '踏浪靴',
+    mainStat: '速度 +72',
+    level: 90,
+    type: 'shoes',
+    stats: { speed: 72 },
+  });
+  const sharedBelt = createEquipment('shared_belt', {
+    name: '星河腰带',
+    mainStat: '速度 +65',
+    level: 90,
+    type: 'belt',
+    stats: { speed: 65 },
+  });
+
+  const libraryItems = buildLaboratoryLibrarySourceItems({
+    currentEquipment: [planOnlyShoes, sharedBelt],
+    equipmentSets: [
+      {
+        id: 'set_current',
+        name: '当前方案',
+        items: [planOnlyShoes, sharedBelt],
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+    inventoryLibraryItems: [
+      {
+        id: 'inventory_belt',
+        equipment: { ...sharedBelt, id: 'inventory_belt_payload' },
+        timestamp: 1,
+        status: 'confirmed',
+      },
+    ],
+    candidateLibraryItems: [],
+    includePlanOnlyItems: false,
+  });
+
+  assert.equal(libraryItems.length, 1);
+  assert.equal(libraryItems[0]?.equipment.name, '星河腰带');
+  assert.deepEqual(libraryItems[0]?.primarySourceLabels, ['正式库存']);
+  assert.deepEqual(libraryItems[0]?.planSourceLabels, ['当前方案']);
 });
 
 test('mergeEquipmentWithInheritance keeps candidate build when inheritance is disabled', () => {

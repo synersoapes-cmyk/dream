@@ -41,11 +41,16 @@ import {
   sortCandidateEquipmentItems,
   type SimulatorCandidateEquipmentSortKey,
 } from '@/shared/lib/simulator-candidate-equipment-view';
+import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
 import type {
   SimulatorEquipmentLibraryItem,
   SimulatorEquipmentLibrarySourceKind,
 } from '@/shared/lib/simulator-equipment-library';
-import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
+import {
+  buildEquipmentPlanUsageSummary,
+  buildEquipmentSlotKey,
+  resolveLaboratoryCompareSeatCardState,
+} from '@/shared/lib/simulator-equipment-plan-assignment';
 import { mapSimulatorInventoryLibraryItemToPendingEquipment } from '@/shared/lib/simulator-inventory-library';
 import {
   buildSimulatorInventoryEmptyStateCopy,
@@ -60,6 +65,7 @@ import {
   SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
   type SimulatorEquipmentOcrImageHint,
 } from '@/shared/lib/simulator-ocr-image-hint';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import {
   clearSimulatorPendingReviewRequest,
   readSimulatorPendingReviewRequest,
@@ -71,11 +77,6 @@ import {
   getSkillTargetCountOptions,
   resolveLaboratorySkillLevels,
 } from '@/shared/lib/simulator-rune-skill';
-import {
-  buildEquipmentSlotKey,
-  buildEquipmentPlanUsageSummary,
-  resolveLaboratoryCompareSeatCardState,
-} from '@/shared/lib/simulator-equipment-plan-assignment';
 import {
   getSimulatorSlotDefinitions,
   getSimulatorSlotLabel,
@@ -191,8 +192,10 @@ export function LaboratoryPanel() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showLibraryCandidateRemovalConfirm, setShowLibraryCandidateRemovalConfirm] =
-    useState(false);
+  const [
+    showLibraryCandidateRemovalConfirm,
+    setShowLibraryCandidateRemovalConfirm,
+  ] = useState(false);
   const [libraryCandidateRemovalIds, setLibraryCandidateRemovalIds] = useState<
     string[]
   >([]);
@@ -402,6 +405,7 @@ export function LaboratoryPanel() {
         activeSetIndex,
         inventoryLibraryItems: activeManagedInventoryItems,
         candidateLibraryItems: confirmedCandidateList,
+        includePlanOnlyItems: false,
       }),
     [
       activeManagedInventoryItems,
@@ -515,8 +519,9 @@ export function LaboratoryPanel() {
           inventoryLifecycleFilter !== 'all'
           ? categoryFilteredLibraryList.filter(
               (item) =>
-                summarizeSimulatorInventoryRefs(item)[inventoryLifecycleFilter] >
-                0
+                summarizeSimulatorInventoryRefs(item)[
+                  inventoryLifecycleFilter
+                ] > 0
             )
           : categoryFilteredLibraryList,
         candidateSort
@@ -563,7 +568,8 @@ export function LaboratoryPanel() {
   const removableLibraryCandidateItems = useMemo(
     () =>
       filteredLibraryList.filter(
-        (item) => item.selectable && item.sourceKinds.includes('candidate_library')
+        (item) =>
+          item.selectable && item.sourceKinds.includes('candidate_library')
       ),
     [filteredLibraryList]
   );
@@ -933,13 +939,20 @@ export function LaboratoryPanel() {
 
   const handleLoadManagedInventory = async (silent = false) => {
     try {
-      const response = await fetch('/api/simulator/current/inventory?status=all', {
-        method: 'GET',
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        '/api/simulator/current/inventory?status=all',
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      );
 
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取正式库存失败');
       }
 
@@ -1287,7 +1300,9 @@ export function LaboratoryPanel() {
 
       if (
         selectedLibEquip &&
-        inventoryStatusUpdate.items.some((item) => item.id === selectedLibEquip.id)
+        inventoryStatusUpdate.items.some(
+          (item) => item.id === selectedLibEquip.id
+        )
       ) {
         setSelectedLibEquip(null);
       }
@@ -1351,13 +1366,17 @@ export function LaboratoryPanel() {
     [visibleCompareSeats]
   );
   const selectedLibEquipInventoryRefs = useMemo(
-    () => (selectedLibEquip ? getCandidateBackedInventoryRefs(selectedLibEquip) : []),
+    () =>
+      selectedLibEquip ? getCandidateBackedInventoryRefs(selectedLibEquip) : [],
     [selectedLibEquip]
   );
   const selectedLibEquipRestorableInventoryRefs = useMemo(
     () =>
       selectedLibEquip
-        ? getCandidateBackedInventoryRefs(selectedLibEquip, ['sold', 'discarded'])
+        ? getCandidateBackedInventoryRefs(selectedLibEquip, [
+            'sold',
+            'discarded',
+          ])
         : [],
     [selectedLibEquip]
   );
@@ -1831,14 +1850,16 @@ export function LaboratoryPanel() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {libraryActionSummary.affectedSlotLabels.slice(0, 6).map((label) => (
-                    <span
-                      key={`${libraryActionSummary.id}-${label}`}
-                      className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/85"
-                    >
-                      {label}
-                    </span>
-                  ))}
+                  {libraryActionSummary.affectedSlotLabels
+                    .slice(0, 6)
+                    .map((label) => (
+                      <span
+                        key={`${libraryActionSummary.id}-${label}`}
+                        className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/85"
+                      >
+                        {label}
+                      </span>
+                    ))}
                   {libraryActionSummary.affectedSlotLabels.length > 6 ? (
                     <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
                       +{libraryActionSummary.affectedSlotLabels.length - 6}
@@ -1938,26 +1959,27 @@ export function LaboratoryPanel() {
               ))}
             </div>
           )}
-          {libTab === 'library' && librarySourceFilter === 'inventory_asset' && (
-            <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-sky-900/30 bg-sky-950/10 p-2">
-              <span className="self-center px-1 text-xs font-medium text-sky-100">
-                正式库存状态
-              </span>
-              {inventoryLifecycleSummaryItems.map((option) => (
-                <button
-                  key={option.key}
-                  onClick={() => setInventoryLifecycleFilter(option.key)}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                    inventoryLifecycleFilter === option.key
-                      ? 'border-sky-400/60 bg-sky-500/20 font-bold text-sky-50'
-                      : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-                  }`}
-                >
-                  {option.label} ({option.count})
-                </button>
-              ))}
-            </div>
-          )}
+          {libTab === 'library' &&
+            librarySourceFilter === 'inventory_asset' && (
+              <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-sky-900/30 bg-sky-950/10 p-2">
+                <span className="self-center px-1 text-xs font-medium text-sky-100">
+                  正式库存状态
+                </span>
+                {inventoryLifecycleSummaryItems.map((option) => (
+                  <button
+                    key={option.key}
+                    onClick={() => setInventoryLifecycleFilter(option.key)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                      inventoryLifecycleFilter === option.key
+                        ? 'border-sky-400/60 bg-sky-500/20 font-bold text-sky-50'
+                        : 'border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                    }`}
+                  >
+                    {option.label} ({option.count})
+                  </button>
+                ))}
+              </div>
+            )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -2314,10 +2336,11 @@ export function LaboratoryPanel() {
                             </div>
                           )}
 
-                          {item.equipment.highlights &&
-                            item.equipment.highlights.length > 0 && (
+                          {getEquipmentSpotlightTags(item.equipment).length > 0 && (
                               <div className="mt-1 flex flex-wrap gap-1">
-                                {item.equipment.highlights.map((hl, idx) => (
+                                {getEquipmentSpotlightTags(item.equipment)
+                                  .slice(0, 4)
+                                  .map((hl, idx) => (
                                   <span
                                     key={idx}
                                     className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
@@ -2462,10 +2485,11 @@ export function LaboratoryPanel() {
                       summarizeSimulatorInventoryRefs(item);
                     const candidateBackedInventoryRefs =
                       getCandidateBackedInventoryRefs(item);
-                    const restorableInventoryRefs = getCandidateBackedInventoryRefs(
-                      item,
-                      ['sold', 'discarded']
-                    );
+                    const restorableInventoryRefs =
+                      getCandidateBackedInventoryRefs(item, [
+                        'sold',
+                        'discarded',
+                      ]);
                     const inventoryOnlyInactive =
                       item.sourceKinds.includes('inventory_asset') &&
                       inventorySummary.active === 0 &&
@@ -2495,19 +2519,17 @@ export function LaboratoryPanel() {
                         helperText={buildEquipmentPlanUsageSummary(
                           item.sourceLabels
                         )}
-                        statusLabels={
-                          [
-                            ...(compareSeatState.isExplicitCompareMatch
-                              ? [
-                                  {
-                                    label: `实验室:${compareSeatState.compareSeatLabel}`,
-                                    tone: 'violet' as const,
-                                  },
-                                ]
-                              : []),
-                            ...inventoryLifecycleStatusLabels,
-                          ]
-                        }
+                        statusLabels={[
+                          ...(compareSeatState.isExplicitCompareMatch
+                            ? [
+                                {
+                                  label: `实验室:${compareSeatState.compareSeatLabel}`,
+                                  tone: 'violet' as const,
+                                },
+                              ]
+                            : []),
+                          ...inventoryLifecycleStatusLabels,
+                        ]}
                         onClick={() => {
                           setSelectedLibEquip(item);
                           setSelectedPendingItem(null);
@@ -2516,10 +2538,10 @@ export function LaboratoryPanel() {
                           inventoryOnlyInactive
                             ? '库存已失效'
                             : compareSeatState.isExplicitCompareMatch
-                            ? `已在${compareSeatState.compareSeatLabel}`
-                            : compareSeatState.isInheritedFromSample
-                              ? '样本已继承'
-                              : `挂到${compareSeatState.compareSeatLabel}`
+                              ? `已在${compareSeatState.compareSeatLabel}`
+                              : compareSeatState.isInheritedFromSample
+                                ? '样本已继承'
+                                : `挂到${compareSeatState.compareSeatLabel}`
                         }
                         actionDisabled={
                           inventoryOnlyInactive ||
@@ -2570,29 +2592,27 @@ export function LaboratoryPanel() {
                         onTertiaryActionClick={
                           canRestoreInventory
                             ? () => {
-                                const draft = buildSimulatorInventoryStatusUpdateDraft(
-                                  {
+                                const draft =
+                                  buildSimulatorInventoryStatusUpdateDraft({
                                     items: [item],
                                     nextStatus: 'active',
-                                  }
-                                );
+                                  });
                                 if (draft) {
                                   setInventoryStatusUpdate(draft);
                                 }
                               }
                             : canManageInventory
-                            ? () => {
-                                const draft = buildSimulatorInventoryStatusUpdateDraft(
-                                  {
-                                    items: [item],
-                                    nextStatus: 'sold',
+                              ? () => {
+                                  const draft =
+                                    buildSimulatorInventoryStatusUpdateDraft({
+                                      items: [item],
+                                      nextStatus: 'sold',
+                                    });
+                                  if (draft) {
+                                    setInventoryStatusUpdate(draft);
                                   }
-                                );
-                                if (draft) {
-                                  setInventoryStatusUpdate(draft);
                                 }
-                              }
-                            : undefined
+                              : undefined
                         }
                         dangerActionLabel={
                           canManageInventory
@@ -2603,17 +2623,17 @@ export function LaboratoryPanel() {
                               : undefined
                         }
                         dangerActionDisabled={candidateBackedInventoryRefs.some(
-                          (ref) => updatingInventoryEntryIds.includes(ref.entryId)
+                          (ref) =>
+                            updatingInventoryEntryIds.includes(ref.entryId)
                         )}
                         onDangerActionClick={
                           canManageInventory
                             ? () => {
-                                const draft = buildSimulatorInventoryStatusUpdateDraft(
-                                  {
+                                const draft =
+                                  buildSimulatorInventoryStatusUpdateDraft({
                                     items: [item],
                                     nextStatus: 'discarded',
-                                  }
-                                );
+                                  });
                                 if (draft) {
                                   setInventoryStatusUpdate(draft);
                                 }
@@ -2639,7 +2659,8 @@ export function LaboratoryPanel() {
                                 hasScopedInventoryItems:
                                   scopedInventoryLibraryItems.length > 0,
                                 hasLifecycleMatches:
-                                  lifecycleMatchedInventoryLibraryItems.length > 0,
+                                  lifecycleMatchedInventoryLibraryItems.length >
+                                  0,
                                 hasAdditionalFilters:
                                   lifecycleFilteredLibraryList.length > 0,
                                 fallbackTitle:
@@ -2810,13 +2831,15 @@ export function LaboratoryPanel() {
               selectedLibEquipRestorableInventoryRefs.length > 0
                 ? {
                     activeCount: selectedLibEquipInventoryRefs.length,
-                    inactiveCount: selectedLibEquipRestorableInventoryRefs.length,
-                    isUpdating: selectedLibEquipInventoryRefs.some((ref) =>
-                      updatingInventoryEntryIds.includes(ref.entryId)
-                    ) ||
-                    selectedLibEquipRestorableInventoryRefs.some((ref) =>
-                      updatingInventoryEntryIds.includes(ref.entryId)
-                    ),
+                    inactiveCount:
+                      selectedLibEquipRestorableInventoryRefs.length,
+                    isUpdating:
+                      selectedLibEquipInventoryRefs.some((ref) =>
+                        updatingInventoryEntryIds.includes(ref.entryId)
+                      ) ||
+                      selectedLibEquipRestorableInventoryRefs.some((ref) =>
+                        updatingInventoryEntryIds.includes(ref.entryId)
+                      ),
                     onMarkSold: () => {
                       const draft = buildSimulatorInventoryStatusUpdateDraft({
                         items: [selectedLibEquip],
@@ -3017,15 +3040,15 @@ export function LaboratoryPanel() {
                     {inventoryStatusUpdate.primaryItem.equipment.name}{' '}
                   </span>
                   的正式库存状态更新为
-                    <span className="font-bold text-red-400">
-                      {inventoryStatusUpdate.nextStatus === 'sold'
-                        ? '已售出'
-                        : inventoryStatusUpdate.nextStatus === 'discarded'
-                          ? '已作废'
-                          : '库存待用'}
-                    </span>
-                    吗？
-                  </>
+                  <span className="font-bold text-red-400">
+                    {inventoryStatusUpdate.nextStatus === 'sold'
+                      ? '已售出'
+                      : inventoryStatusUpdate.nextStatus === 'discarded'
+                        ? '已作废'
+                        : '库存待用'}
+                  </span>
+                  吗？
+                </>
               ) : (
                 <>
                   确定要将当前实验室总库筛选结果里的
@@ -3034,15 +3057,15 @@ export function LaboratoryPanel() {
                     {inventoryStatusUpdate.items.length}{' '}
                   </span>
                   件正式库存装备批量更新为
-                    <span className="font-bold text-red-400">
-                      {inventoryStatusUpdate.nextStatus === 'sold'
-                        ? '已售出'
-                        : inventoryStatusUpdate.nextStatus === 'discarded'
-                          ? '已作废'
-                          : '库存待用'}
-                    </span>
-                    吗？
-                  </>
+                  <span className="font-bold text-red-400">
+                    {inventoryStatusUpdate.nextStatus === 'sold'
+                      ? '已售出'
+                      : inventoryStatusUpdate.nextStatus === 'discarded'
+                        ? '已作废'
+                        : '库存待用'}
+                  </span>
+                  吗？
+                </>
               )}
               该操作会同步更新关联候选装备的状态，不会删除当前方案、其他方案或实验席位里的引用。
             </>

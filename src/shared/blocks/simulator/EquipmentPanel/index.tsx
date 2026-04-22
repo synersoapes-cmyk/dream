@@ -3,23 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '@/features/simulator/store/gameStore';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
+import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
 import {
   applySimulatorCandidateEquipmentToStore,
   buildSimulatorCandidateEquipmentPayload,
 } from '@/features/simulator/utils/simulatorCandidateEquipment';
-import { applySimulatorBundleToStore } from '@/features/simulator/utils/simulatorBundle';
-import {
-  buildSimulatorArtifactConfigFromTreasure,
-  buildSimulatorArtifactSpotlightTags,
-  buildSimulatorArtifactSummary,
-  buildSimulatorArtifactTreasure,
-  SIMULATOR_ARTIFACT_PRESETS,
-  SIMULATOR_ARTIFACT_STAT_OPTIONS,
-  type SimulatorArtifactConfig,
-} from '@/shared/lib/simulator-artifact';
-import { getSimulatorNetworkErrorMessage, isNavigatorOffline } from '@/shared/lib/simulator-network';
-import { buildSimulatorEquipmentLibraryItems } from '@/shared/lib/simulator-equipment-library';
-import { mapSimulatorInventoryLibraryItemToPendingEquipment } from '@/shared/lib/simulator-inventory-library';
 import {
   Copy,
   Edit2,
@@ -34,13 +22,35 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import type {
-  SimulatorAccessoryEquipmentType,
-  SimulatorPrimaryEquipmentType,
-} from '@/shared/lib/simulator-equipment';
+import {
+  buildSimulatorArtifactConfigFromTreasure,
+  buildSimulatorArtifactSpotlightTags,
+  buildSimulatorArtifactSummary,
+  buildSimulatorArtifactTreasure,
+  SIMULATOR_ARTIFACT_PRESETS,
+  SIMULATOR_ARTIFACT_STAT_OPTIONS,
+  type SimulatorArtifactConfig,
+} from '@/shared/lib/simulator-artifact';
 import {
   SIMULATOR_PRIMARY_EQUIPMENT_TYPES,
+  type SimulatorAccessoryEquipmentType,
+  type SimulatorPrimaryEquipmentType,
 } from '@/shared/lib/simulator-equipment';
+import { buildSimulatorEquipmentLibraryItems } from '@/shared/lib/simulator-equipment-library';
+import {
+  formatEquipmentExtraAttributeSummary,
+  sumEquipmentExtraAttributeTotals,
+} from '@/shared/lib/simulator-extra-attribute-summary';
+import { mapSimulatorInventoryLibraryItemToPendingEquipment } from '@/shared/lib/simulator-inventory-library';
+import {
+  getSimulatorNetworkErrorMessage,
+  isNavigatorOffline,
+} from '@/shared/lib/simulator-network';
+import {
+  buildActiveRegularSetSummaries,
+  formatActiveRegularSetSummary,
+  parseRegularSetRulesConfig,
+} from '@/shared/lib/simulator-regular-set';
 import {
   findSimulatorSlotDefinition,
   getSimulatorSlotLabel,
@@ -48,16 +58,8 @@ import {
   SIMULATOR_PRIMARY_SLOT_DEFINITIONS,
   SIMULATOR_TRINKET_SLOT_DEFINITIONS,
 } from '@/shared/lib/simulator-slot-config';
-import {
-  formatEquipmentExtraAttributeSummary,
-  sumEquipmentExtraAttributeTotals,
-} from '@/shared/lib/simulator-extra-attribute-summary';
-import {
-  buildActiveRegularSetSummaries,
-  formatActiveRegularSetSummary,
-  parseRegularSetRulesConfig,
-} from '@/shared/lib/simulator-regular-set';
 
+import { useEquipmentExtensionConfigs } from '../use-equipment-extension-configs';
 import { EquipmentDetailModal } from './EquipmentDetailModal';
 import { EquipmentInventoryModal } from './EquipmentInventoryModal';
 import { EquipmentLibraryModal } from './EquipmentLibraryModal';
@@ -66,7 +68,6 @@ import {
   type EquipmentPanelSlotInfo,
 } from './EquipmentPanelSlot';
 import { getEquipmentRuneStoneSetInfo } from './RuneStoneHelper';
-import { useEquipmentExtensionConfigs } from '../use-equipment-extension-configs';
 
 function toDisplayText(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0
@@ -195,12 +196,19 @@ export function EquipmentPanel() {
   );
   const loadManagedInventoryItems = async () => {
     try {
-      const response = await fetch('/api/simulator/current/inventory?status=all', {
-        method: 'GET',
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        '/api/simulator/current/inventory?status=all',
+        {
+          method: 'GET',
+          cache: 'no-store',
+        }
+      );
       const payload = await response.json();
-      if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+      if (
+        !response.ok ||
+        payload?.code !== 0 ||
+        !Array.isArray(payload?.data)
+      ) {
         throw new Error(payload?.message || '读取正式库存失败');
       }
 
@@ -222,6 +230,7 @@ export function EquipmentPanel() {
         candidateLibraryItems: pendingEquipments.filter(
           (item) => item.status === 'confirmed'
         ),
+        includePlanOnlyItems: false,
       }),
     [
       activeSetIndex,
@@ -315,14 +324,21 @@ export function EquipmentPanel() {
       })
         .then(async (response) => {
           const payload = await response.json();
-          if (!response.ok || payload?.code !== 0 || !Array.isArray(payload?.data)) {
+          if (
+            !response.ok ||
+            payload?.code !== 0 ||
+            !Array.isArray(payload?.data)
+          ) {
             throw new Error(payload?.message || '读取候选装备库失败');
           }
 
           applySimulatorCandidateEquipmentToStore(payload.data);
         })
         .catch((error) => {
-          console.error('Failed to refresh simulator candidate equipment:', error);
+          console.error(
+            'Failed to refresh simulator candidate equipment:',
+            error
+          );
         }),
     ]);
   };
@@ -335,7 +351,7 @@ export function EquipmentPanel() {
         equipmentExtensionConfigs.find(
           (item) => item.configKey === 'regular_set_rules'
         )?.value
-    ),
+      ),
     [equipmentExtensionConfigs]
   );
 
@@ -349,7 +365,11 @@ export function EquipmentPanel() {
     }
 
     void loadManagedInventoryItems();
-  }, [currentCharacter?.id, showInventoryModal, syncedCloudState?.equipment?.length]);
+  }, [
+    currentCharacter?.id,
+    showInventoryModal,
+    syncedCloudState?.equipment?.length,
+  ]);
 
   // 获取装备组合名称（从state获取，或使用默认名称）
   const getSetName = (index: number) => {
@@ -1035,7 +1055,7 @@ export function EquipmentPanel() {
                       updateArtifact({ name: event.target.value.slice(0, 24) })
                     }
                     placeholder="神器加成"
-                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 outline-none transition-colors focus:border-emerald-500/60"
+                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 transition-colors outline-none focus:border-emerald-500/60"
                   />
                 </label>
 
@@ -1045,10 +1065,11 @@ export function EquipmentPanel() {
                     value={artifactConfig.statKey}
                     onChange={(event) =>
                       updateArtifact({
-                        statKey: event.target.value as SimulatorArtifactConfig['statKey'],
+                        statKey: event.target
+                          .value as SimulatorArtifactConfig['statKey'],
                       })
                     }
-                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 outline-none transition-colors focus:border-emerald-500/60"
+                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 transition-colors outline-none focus:border-emerald-500/60"
                   >
                     {SIMULATOR_ARTIFACT_STAT_OPTIONS.map((option) => (
                       <option key={option.key} value={option.key}>
@@ -1066,7 +1087,7 @@ export function EquipmentPanel() {
                     onChange={(event) =>
                       updateArtifact({ value: Number(event.target.value || 0) })
                     }
-                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 outline-none transition-colors focus:border-emerald-500/60"
+                    className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 transition-colors outline-none focus:border-emerald-500/60"
                   />
                 </label>
 
@@ -1099,7 +1120,7 @@ export function EquipmentPanel() {
                   }
                   rows={3}
                   placeholder="例如：阳玉临时加成，便于对比不同神器变量。"
-                  className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 outline-none transition-colors focus:border-emerald-500/60"
+                  className="w-full rounded-lg border border-emerald-700/30 bg-slate-950/70 px-3 py-2 text-sm text-emerald-50 transition-colors outline-none focus:border-emerald-500/60"
                 />
               </label>
 
@@ -1176,7 +1197,9 @@ export function EquipmentPanel() {
           formatPrice={formatPrice}
           onRemoveCandidateItems={handleRemoveCandidateInventoryItems}
           onRemoveCandidateItem={handleRemoveCandidateInventoryItem}
-          onRefreshInventoryLibrarySources={handleRefreshInventoryLibrarySources}
+          onRefreshInventoryLibrarySources={
+            handleRefreshInventoryLibrarySources
+          }
           onClose={() => setShowInventoryModal(false)}
         />
       )}

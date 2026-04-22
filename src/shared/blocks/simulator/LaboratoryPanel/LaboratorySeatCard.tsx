@@ -28,6 +28,7 @@ import {
 } from '@/shared/lib/simulator-artifact';
 import { SIMULATOR_PRIMARY_EQUIPMENT_TYPES } from '@/shared/lib/simulator-equipment';
 import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import {
   formatEquipmentExtraAttributeSummary,
   sumEquipmentExtraAttributeTotals,
@@ -529,6 +530,9 @@ export function LaboratorySeatCard({
                   const equipment = seatEquip.find((item) =>
                     matchesSimulatorSlotDefinition(slotDef, item)
                   );
+                  const spotlightTags = equipment
+                    ? getEquipmentSpotlightTags(equipment)
+                    : [];
                   const currentEquip = sampleEquipment.find((item) =>
                     matchesSimulatorSlotDefinition(slotDef, item)
                   );
@@ -661,10 +665,9 @@ export function LaboratorySeatCard({
                           </div>
                         )}
 
-                        {equipment.highlights &&
-                          equipment.highlights.length > 0 && (
+                        {spotlightTags.length > 0 && (
                             <div className="mt-1.5 flex flex-wrap gap-1">
-                              {equipment.highlights.map((highlight, index) => (
+                              {spotlightTags.slice(0, 4).map((highlight, index) => (
                                 <span
                                   key={index}
                                   className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"

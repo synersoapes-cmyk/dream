@@ -3,32 +3,13 @@ import type {
   RuneStone,
 } from '@/features/simulator/store/gameTypes';
 import { normalizeEquipmentRuneStoneSetNames, normalizeEquipmentRuneStoneSets } from '@/shared/lib/simulator-equipment-meta';
+import {
+  applySimulatorRuneSetSelection as applyPrdRuneSetSelection,
+  getSimulatorRuneSetOptions as getPrdRuneSetOptions,
+  type SimulatorRuneComboRule,
+} from '@/shared/lib/simulator-rune-star-rules';
 
 import { SIMULATOR_PRIMARY_EQUIPMENT_TYPES } from '@/shared/lib/simulator-equipment';
-
-const DEFAULT_RUNE_SET_OPTIONS = [
-  '九龙诀',
-  '呼风唤雨',
-  '破浪诀',
-  '逆鳞',
-  '龙腾',
-  '招云',
-  '腾蛟',
-  '百步穿杨',
-  '心印',
-  '仙骨',
-  '全能',
-  '法门',
-  '逐兽',
-  '聚焦',
-  '药香',
-  '隔山打牛',
-  '回眸一笑',
-  '万丈霞光',
-  '飞檐走壁',
-  '高山流水',
-  '云随风舞',
-] as const;
 
 const RUNE_COLOR_LABELS: Record<string, string> = {
   red: '红',
@@ -122,14 +103,11 @@ function createColorRuneStone(color: RuneStone['type'], index = 0): RuneStone {
   };
 }
 
-export function getSimulatorRuneSetOptions(equipment: Equipment) {
-  const currentNames =
-    equipment.runeStoneSetsNames
-      ?.filter((item): item is string => typeof item === 'string')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0 && item !== '未配置') ?? [];
-
-  return Array.from(new Set([...currentNames, ...DEFAULT_RUNE_SET_OPTIONS]));
+export function getSimulatorRuneSetOptions(
+  equipment: Equipment,
+  rules?: SimulatorRuneComboRule[]
+) {
+  return getPrdRuneSetOptions(equipment, rules);
 }
 
 export function ensureSimulatorEquipmentRuneEditingState(equipment: Equipment) {
@@ -185,8 +163,16 @@ export function ensureSimulatorEquipmentRuneEditingState(equipment: Equipment) {
 
 export function applySimulatorRuneSetSelection(
   equipment: Equipment,
-  setName: string
+  setName: string,
+  options?: Parameters<typeof applyPrdRuneSetSelection>[2]
 ) {
+  const seededByRules = applyPrdRuneSetSelection(equipment, setName, options);
+  if (
+    seededByRules.runeStoneSets?.[seededByRules.activeRuneStoneSet ?? 0]?.length
+  ) {
+    return ensureSimulatorEquipmentRuneEditingState(seededByRules);
+  }
+
   const next = ensureSimulatorEquipmentRuneEditingState(equipment);
   const activeIndex = getSimulatorActiveRuneSetIndex(next);
   const activeSet = next.runeStoneSets?.[activeIndex] ?? [];

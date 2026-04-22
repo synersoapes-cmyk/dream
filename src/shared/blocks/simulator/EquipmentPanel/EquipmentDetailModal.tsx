@@ -30,25 +30,21 @@ import {
 import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
 import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
-import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
-
-const AVAILABLE_RUNES = [
-  { id: '1', name: '红符石', type: 'red', stats: { damage: 1.5 } },
-  { id: '1-2', name: '红符石(精)', type: 'red', stats: { damage: 2 } },
-  { id: '2', name: '蓝符石', type: 'blue', stats: { speed: 1.5 } },
-  { id: '2-2', name: '蓝符石(精)', type: 'blue', stats: { speed: 2 } },
-  { id: '3', name: '绿符石', type: 'green', stats: { defense: 1.5 } },
-  { id: '3-2', name: '绿符石(精)', type: 'green', stats: { defense: 2 } },
-  { id: '4', name: '黄符石', type: 'yellow', stats: { hit: 2 } },
-  { id: '4-2', name: '黄符石(精)', type: 'yellow', stats: { hit: 3 } },
-  { id: '5', name: '白符石', type: 'white', stats: { magic: 2 } },
-  { id: '6', name: '黑符石', type: 'black', stats: { magicDamage: 1.5 } },
-  { id: '7', name: '紫符石', type: 'purple', stats: { dodge: 2 } },
-];
+import {
+  applySimulatorRecommendedRunePlan,
+  buildSimulatorRecommendedRunePlan,
+  getSimulatorRuneStoneOptions,
+  getSimulatorStarPositionOptions,
+  parseRuneComboRulesConfig,
+  parseRuneOptimizerProfilesConfig,
+  parseRuneStoneRulesConfig,
+  parseStarStoneRulesConfig,
+  shouldAutoApplySimulatorRecommendedRunePlan,
+} from '@/shared/lib/simulator-rune-star-rules';
 
 const AVAILABLE_RUNE_SET_EFFECTS = ['锐不可当', '破血狂攻', '弱点击破'];
 const inputClassName =
@@ -152,12 +148,15 @@ export function EquipmentDetailModal({
   const activeRuneSetIndex = getSimulatorActiveRuneSetIndex(simulatedLibEquip);
   const activeRuneSet =
     simulatedLibEquip.runeStoneSets?.[activeRuneSetIndex] ?? [];
-  const runeSetOptions = getSimulatorRuneSetOptions(simulatedLibEquip);
   const isAccessory = isAccessoryEquipment(simulatedLibEquip.type);
   const accessoryType = getAccessoryType(simulatedLibEquip.type);
   const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
     'jade_attribute_pool',
     'regular_set_rules',
+    'rune_stone_rules',
+    'star_stone_rules',
+    'rune_combo_rules',
+    'rune_optimizer_profiles',
   ]);
   const regularSetRules = useMemo(
     () =>
@@ -167,6 +166,71 @@ export function EquipmentDetailModal({
         )?.value
       ),
     [equipmentExtensionConfigs]
+  );
+  const runeStoneRules = useMemo(
+    () =>
+      parseRuneStoneRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_stone_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const starStoneRules = useMemo(
+    () =>
+      parseStarStoneRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'star_stone_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeComboRules = useMemo(
+    () =>
+      parseRuneComboRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_combo_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeOptimizerProfiles = useMemo(
+    () =>
+      parseRuneOptimizerProfilesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_optimizer_profiles'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeStoneOptions = useMemo(
+    () => getSimulatorRuneStoneOptions(runeStoneRules),
+    [runeStoneRules]
+  );
+  const starPositionOptions = useMemo(
+    () => getSimulatorStarPositionOptions(starStoneRules),
+    [starStoneRules]
+  );
+  const resolvedRuneSetOptions = useMemo(
+    () => getSimulatorRuneSetOptions(simulatedLibEquip, runeComboRules),
+    [simulatedLibEquip, runeComboRules]
+  );
+  const recommendedRunePlan = useMemo(
+    () =>
+      isPrimaryEquipment
+        ? buildSimulatorRecommendedRunePlan(simulatedLibEquip, {
+            runeStoneRules,
+            runeComboRules,
+            optimizerProfiles: runeOptimizerProfiles,
+          })
+        : null,
+    [
+      isPrimaryEquipment,
+      runeComboRules,
+      runeOptimizerProfiles,
+      runeStoneRules,
+      simulatedLibEquip,
+    ]
   );
   const jadeAttributePool = useMemo(
     () =>
@@ -232,6 +296,19 @@ export function EquipmentDetailModal({
     setSimulatedLibEquip(ensureSimulatorEquipmentRuneEditingState(equipment));
     setRunePopover(null);
   }, [equipment]);
+
+  useEffect(() => {
+    if (
+      !recommendedRunePlan ||
+      !shouldAutoApplySimulatorRecommendedRunePlan(simulatedLibEquip)
+    ) {
+      return;
+    }
+
+    setSimulatedLibEquip((current) =>
+      applySimulatorRecommendedRunePlan(current, recommendedRunePlan)
+    );
+  }, [recommendedRunePlan, simulatedLibEquip]);
 
   const updateAccessoryField = (patch: Partial<Equipment>) => {
     setSimulatedLibEquip((current) => ({
@@ -690,6 +767,44 @@ export function EquipmentDetailModal({
 
             {isPrimaryEquipment && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
+                {recommendedRunePlan && (
+                  <div className="rounded-lg border border-cyan-700/40 bg-cyan-950/20 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-cyan-100">
+                          默认最优符石
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-200/90">
+                          推荐组合：{recommendedRunePlan.comboName}
+                          {recommendedRunePlan.tier
+                            ? ` · ${recommendedRunePlan.tier}级`
+                            : ''}
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-300/80">
+                          {recommendedRunePlan.expectedDeltaLabel}
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-300/70">
+                          {recommendedRunePlan.reason}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-md border border-cyan-500/40 px-3 py-1 text-xs text-cyan-100 transition-colors hover:bg-cyan-500/10"
+                        onClick={() =>
+                          setSimulatedLibEquip((current) =>
+                            applySimulatorRecommendedRunePlan(
+                              current,
+                              recommendedRunePlan
+                            )
+                          )
+                        }
+                      >
+                        重新推荐
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <GemstoneEditor
                   equipment={simulatedLibEquip}
                   onChange={setSimulatedLibEquip}
@@ -806,7 +921,7 @@ export function EquipmentDetailModal({
                             <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                               选择要替换的符石
                             </div>
-                            {AVAILABLE_RUNES.map((r) => (
+                            {runeStoneOptions.map((r) => (
                               <div
                                 key={r.id}
                                 className="flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm transition-colors hover:bg-slate-700"
@@ -873,7 +988,7 @@ export function EquipmentDetailModal({
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                           选择星位属性
                         </div>
-                        {STAR_POSITION_OPTIONS.map((option) => (
+                        {starPositionOptions.map((option) => (
                           <div
                             key={option.id}
                             className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
@@ -1006,7 +1121,7 @@ export function EquipmentDetailModal({
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                           选择符石组合
                         </div>
-                        {runeSetOptions.map((rsName) => (
+                        {resolvedRuneSetOptions.map((rsName) => (
                           <div
                             key={rsName}
                             className="cursor-pointer rounded px-3 py-2 text-sm text-purple-400 transition-colors hover:bg-slate-700"
@@ -1014,7 +1129,12 @@ export function EquipmentDetailModal({
                               setSimulatedLibEquip(
                                 applySimulatorRuneSetSelection(
                                   simulatedLibEquip,
-                                  rsName
+                                  rsName,
+                                  {
+                                    runeStoneRules,
+                                    runeComboRules,
+                                    optimizerProfiles: runeOptimizerProfiles,
+                                  }
                                 )
                               );
                               setRunePopover(null);

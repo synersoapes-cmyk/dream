@@ -16,8 +16,6 @@ import {
   ChevronDown,
   ChevronUp,
   Compass,
-  Crosshair,
-  Heart,
   LogIn,
   MessageSquare,
   Shield,
@@ -25,7 +23,6 @@ import {
   Swords,
   TrendingUp,
   UserPlus,
-  Wind,
   X,
   Zap,
 } from 'lucide-react';
@@ -58,66 +55,23 @@ const BOOTSTRAP_TIMEOUT_MS = 15_000;
 const DEV_BOOTSTRAP_TIMEOUT_MS = 30_000;
 const BOOTSTRAP_RETRY_COUNT = 2;
 
-const FINAL_PANEL_FOCUS_STATS = [
-  {
-    key: 'magicDamage',
-    label: '法伤',
-    sublabel: '龙宫输出核心',
-    accent: 'amber',
-  },
-  {
-    key: 'speed',
-    label: '速度',
-    sublabel: '出手节奏',
-    accent: 'emerald',
-  },
-  {
-    key: 'hp',
-    label: '气血',
-    sublabel: '站场生存',
-    accent: 'rose',
-  },
+const FINAL_PANEL_PRIMARY_STATS = [
+  { key: 'hp', label: '气血', accent: 'rose' },
+  { key: 'magic', label: '魔法', accent: 'sky' },
+  { key: 'damage', label: '伤害', accent: 'amber' },
+  { key: 'defense', label: '防御', accent: 'cyan' },
+  { key: 'speed', label: '速度', accent: 'emerald' },
+  { key: 'magicDamage', label: '法术伤害', accent: 'amber' },
+  { key: 'magicDefense', label: '法术防御', accent: 'cyan' },
 ] as const;
 
-const FINAL_PANEL_SECTIONS = [
-  {
-    title: '输出面板',
-    description: '先看法系伤害、命中和补充输出词条',
-    accent: 'amber',
-    stats: [
-      { key: 'magicDamage', label: '法伤' },
-      { key: 'spiritualPower', label: '灵力' },
-      { key: 'magicCritLevel', label: '法爆等级' },
-      { key: 'fixedDamage', label: '固伤' },
-      { key: 'pierceLevel', label: '穿刺' },
-      { key: 'hit', label: '命中' },
-      { key: 'damage', label: '伤害' },
-    ],
-  },
-  {
-    title: '生存面板',
-    description: '再看气血、防御、法防和承伤词条',
-    accent: 'cyan',
-    stats: [
-      { key: 'hp', label: '气血' },
-      { key: 'magicDefense', label: '法防' },
-      { key: 'defense', label: '物防' },
-      { key: 'block', label: '格挡' },
-      { key: 'antiCritLevel', label: '抗暴' },
-      { key: 'sealResistLevel', label: '抗封等级' },
-      { key: 'dodge', label: '躲避' },
-    ],
-  },
-  {
-    title: '辅助面板',
-    description: '最后看蓝量、速度和环境向补充属性',
-    accent: 'sky',
-    stats: [
-      { key: 'speed', label: '速度' },
-      { key: 'magic', label: '魔法' },
-      { key: 'elementalMastery', label: '五行克制' },
-    ],
-  },
+const FINAL_PANEL_ADVANCED_STATS = [
+  { key: 'magicCritRate', label: '法暴率', accent: 'amber' },
+  { key: 'spiritualPower', label: '灵力', accent: 'sky' },
+  { key: 'fixedDamage', label: '法伤结果', accent: 'amber' },
+  { key: 'sealResistLevel', label: '抵抗封印', accent: 'cyan' },
+  { key: 'pierceLevel', label: '穿刺等级', accent: 'fuchsia' },
+  { key: 'hit', label: '命中', accent: 'yellow' },
 ] as const;
 
 const ACCENT_CLASS_MAP = {
@@ -129,24 +83,6 @@ const ACCENT_CLASS_MAP = {
   cyan: 'border-cyan-500/35 bg-cyan-500/10 text-cyan-100',
   indigo: 'border-indigo-500/35 bg-indigo-500/10 text-indigo-100',
   yellow: 'border-yellow-500/35 bg-yellow-500/10 text-yellow-100',
-} as const;
-
-const SECTION_ACCENT_CLASS_MAP = {
-  amber: {
-    icon: 'border-amber-700/40 bg-amber-500/10 text-amber-100',
-    card: 'border-amber-800/30 bg-amber-950/10',
-    text: 'text-amber-200/75',
-  },
-  cyan: {
-    icon: 'border-cyan-700/40 bg-cyan-500/10 text-cyan-100',
-    card: 'border-cyan-800/30 bg-cyan-950/10',
-    text: 'text-cyan-200/75',
-  },
-  sky: {
-    icon: 'border-sky-700/40 bg-sky-500/10 text-sky-100',
-    card: 'border-sky-800/30 bg-sky-950/10',
-    text: 'text-sky-200/75',
-  },
 } as const;
 
 type AuthViewState =
@@ -166,6 +102,20 @@ function shouldRetryBootstrapRequest(error: unknown) {
   }
 
   return /status:\s*5\d{2}/i.test(error.message);
+}
+
+function formatFinalPanelNumber(value: number | undefined) {
+  return Math.round(Number(value ?? 0)).toLocaleString('zh-CN');
+}
+
+function formatPercentFromLevel(
+  level: number | undefined,
+  divisor: number,
+  capPercent: number
+) {
+  const safeLevel = Math.max(0, Number(level ?? 0));
+  const percent = Math.min(capPercent, (safeLevel / divisor) * 100);
+  return `${percent.toFixed(2)}%`;
 }
 
 export default function SimulatorApp() {
@@ -208,15 +158,6 @@ export default function SimulatorApp() {
   const [bootstrapNotice, setBootstrapNotice] = useState<string | null>(null);
   const isLightTheme = resolvedTheme === 'light';
   const activeEquipmentSet = equipmentSets[activeSetIndex];
-  const cultivationSummary = useMemo(
-    () => [
-      { label: '法修', value: cultivation.magicAttack ?? 0 },
-      { label: '法抗', value: cultivation.magicDefense ?? 0 },
-      { label: '物抗', value: cultivation.physicalDefense ?? 0 },
-      { label: '强身', value: cultivation.bodyStrength ?? 0 },
-    ],
-    [cultivation]
-  );
   const panelSummaryBadges = useMemo(
     () => [
       {
@@ -302,16 +243,67 @@ export default function SimulatorApp() {
       syncedCloudState?.battleContext?.targetMagicDefenseResult,
     ]
   );
-  const finalPanelSectionStats = useMemo(
+  const finalPanelPrimaryStats = useMemo(
     () =>
-      FINAL_PANEL_SECTIONS.map((section) => ({
-        ...section,
-        stats: section.stats.map((item) => ({
-          ...item,
-          value: combatStats[item.key] ?? 0,
-        })),
+      FINAL_PANEL_PRIMARY_STATS.map((item) => ({
+        ...item,
+        value: combatStats[item.key] ?? 0,
       })),
     [combatStats]
+  );
+  const finalPanelAdvancedStats = useMemo(
+    () => [
+      {
+        key: 'magicCritRate',
+        label: '法暴率',
+        accent: 'amber' as const,
+        value: formatPercentFromLevel(combatStats.magicCritLevel, 1750, 95),
+        note: `法爆等级 ${formatFinalPanelNumber(combatStats.magicCritLevel)}`,
+      },
+      {
+        key: 'spiritualPower',
+        label: '灵力',
+        accent: 'sky' as const,
+        value: formatFinalPanelNumber(combatStats.spiritualPower),
+        note: '同步联动法伤 / 法防',
+      },
+      {
+        key: 'fixedDamage',
+        label: '法伤结果',
+        accent: 'amber' as const,
+        value: formatFinalPanelNumber(combatStats.fixedDamage),
+        note: '结果区固定加成',
+      },
+      {
+        key: 'sealResistLevel',
+        label: '抵抗封印',
+        accent: 'cyan' as const,
+        value: formatFinalPanelNumber(combatStats.sealResistLevel),
+        note: '当前以等级口径展示',
+      },
+      {
+        key: 'pierceLevel',
+        label: '穿刺等级',
+        accent: 'fuchsia' as const,
+        value: formatFinalPanelNumber(combatStats.pierceLevel),
+        note: '当前以等级口径展示',
+      },
+      {
+        key: 'hit',
+        label: '命中',
+        accent: 'yellow' as const,
+        value: formatFinalPanelNumber(combatStats.hit),
+        note: '武器 / 力量联动',
+      },
+    ],
+    [
+      combatStats.fixedDamage,
+      combatStats.hit,
+      combatStats.magicCritLevel,
+      combatStats.pierceLevel,
+      combatStats.sealResistLevel,
+      combatStats.spiritualPower,
+    ]
   );
   const panelSourceBreakdowns = useMemo(
     () =>
@@ -876,25 +868,83 @@ export default function SimulatorApp() {
                       })}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      {FINAL_PANEL_FOCUS_STATS.map((item) => (
-                        <div
-                          key={item.key}
-                          className={`rounded-xl border px-3 py-3 ${
-                            ACCENT_CLASS_MAP[item.accent]
-                          }`}
-                        >
-                          <div className="text-[11px] opacity-75">
-                            {item.label}
+                    <div className="rounded-xl border border-yellow-800/30 bg-yellow-950/10 p-3">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-yellow-100">
+                            核心面板属性
                           </div>
-                          <div className="mt-1 text-2xl leading-none font-bold">
-                            {combatStats[item.key] ?? 0}
-                          </div>
-                          <div className="mt-2 text-[10px] opacity-70">
-                            {item.sublabel}
+                          <div className="mt-1 text-[11px] leading-5 text-yellow-200/70">
+                            先直接看梦幻角色面板里最常核对的 7 项主属性
                           </div>
                         </div>
-                      ))}
+                        <div className="rounded-md border border-yellow-700/30 bg-slate-950/60 px-2 py-1 text-[10px] text-yellow-100/80">
+                          实时面板总览
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {finalPanelPrimaryStats.map((item) => (
+                          <div
+                            key={item.key}
+                            className="flex items-center justify-between rounded-lg border border-slate-800/80 bg-slate-950/55 px-3 py-2"
+                          >
+                            <div className="text-sm text-slate-300">
+                              {item.label}
+                            </div>
+                            <div
+                              className={`text-lg font-semibold ${
+                                ACCENT_CLASS_MAP[item.accent]
+                                  .split(' ')
+                                  .at(-1) ?? 'text-slate-100'
+                              }`}
+                            >
+                              {formatFinalPanelNumber(item.value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-fuchsia-800/30 bg-fuchsia-950/10 p-3">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-fuchsia-100">
+                            进阶战斗指标
+                          </div>
+                          <div className="mt-1 text-[11px] leading-5 text-fuchsia-200/70">
+                            补充法暴、灵力、法伤结果、抗封和穿刺这些实战判断项
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-fuchsia-700/30 bg-slate-950/60 px-2 py-1 text-[10px] text-fuchsia-100/80">
+                          优先展示可稳定解释的口径
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {finalPanelAdvancedStats.map((item) => (
+                          <div
+                            key={item.key}
+                            className="rounded-lg border border-slate-800/80 bg-slate-950/55 px-3 py-2"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] text-slate-400">
+                                {item.label}
+                              </div>
+                              <div
+                                className={`text-sm font-semibold ${
+                                  ACCENT_CLASS_MAP[item.accent]
+                                    .split(' ')
+                                    .at(-1) ?? 'text-slate-100'
+                                }`}
+                              >
+                                {item.value}
+                              </div>
+                            </div>
+                            <div className="mt-1 text-[10px] leading-4 text-slate-500">
+                              {item.note}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="rounded-xl border border-indigo-800/30 bg-indigo-950/10 p-3">
@@ -933,63 +983,6 @@ export default function SimulatorApp() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3">
-                      {finalPanelSectionStats.map((section, index) => {
-                        const accent =
-                          SECTION_ACCENT_CLASS_MAP[
-                            section.accent as keyof typeof SECTION_ACCENT_CLASS_MAP
-                          ];
-                        const Icon =
-                          index === 0
-                            ? Crosshair
-                            : index === 1
-                              ? Heart
-                              : Wind;
-
-                        return (
-                          <div
-                            key={section.title}
-                            className={`rounded-xl border p-3 ${accent.card}`}
-                          >
-                            <div className="mb-3 flex items-start justify-between gap-3">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border ${accent.icon}`}
-                                >
-                                  <Icon className="h-4 w-4" />
-                                </div>
-                                <div>
-                                  <div className="text-sm font-semibold text-slate-100">
-                                    {section.title}
-                                  </div>
-                                  <div
-                                    className={`text-[11px] leading-5 ${accent.text}`}
-                                  >
-                                    {section.description}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
-                              {section.stats.map((item) => (
-                                <div
-                                  key={item.key}
-                                  className="rounded-lg border border-slate-800/70 bg-slate-950/55 px-3 py-2"
-                                >
-                                  <div className="text-[11px] text-slate-400">
-                                    {item.label}
-                                  </div>
-                                  <div className="mt-1 text-lg font-semibold text-slate-100">
-                                    {item.value}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
                     <div className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 p-3">
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <div>
@@ -997,7 +990,8 @@ export default function SimulatorApp() {
                             关键字段来源
                           </div>
                           <div className="mt-1 text-[11px] text-cyan-200/70">
-                            当前只展开最关键的 6 项，方便快速判断这轮提升来自哪里
+                            当前只展开最关键的 6
+                            项，方便快速判断这轮提升来自哪里
                           </div>
                         </div>
                         <div className="rounded-md border border-cyan-800/40 bg-slate-950/50 px-2 py-1 text-[10px] text-cyan-100/80">
@@ -1005,136 +999,149 @@ export default function SimulatorApp() {
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        {panelSourceBreakdowns.map((item) => (
-                          <div
-                            key={item.key}
-                            className="rounded-lg border border-cyan-900/40 bg-slate-950/40 px-3 py-2"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-slate-300">
-                                {item.label}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-cyan-100">
-                                  {item.total}
+                        {panelSourceBreakdowns.map((item) => {
+                          const summary = buildPanelSourceBreakdownSummary(
+                            item,
+                            1
+                          );
+
+                          return (
+                            <div
+                              key={item.key}
+                              className="rounded-lg border border-cyan-900/40 bg-slate-950/40 px-3 py-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-300">
+                                  {item.label}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedFinalSourceKey((current) =>
-                                      current === item.key ? null : item.key
-                                    )
-                                  }
-                                  className="rounded border border-cyan-700/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-100 transition-colors hover:border-cyan-500/50 hover:bg-cyan-500/15"
-                                >
-                                  {expandedFinalSourceKey === item.key ? (
-                                    <ChevronUp className="h-3 w-3" />
-                                  ) : (
-                                    <ChevronDown className="h-3 w-3" />
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                            <div className="mt-1 text-[10px] text-slate-500">
-                              基线 {item.baseline}
-                            </div>
-                            <div className="mt-1 text-[10px] leading-5 text-cyan-100/75">
-                              {buildPanelSourceBreakdownSummary(item, 1)}
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {item.sources.length > 0 ? (
-                                item.sources.slice(0, 2).map((source) => (
-                                  <span
-                                    key={`${item.key}-${source.label}`}
-                                    className={`rounded border px-1.5 py-0.5 text-[10px] ${
-                                      source.value > 0
-                                        ? 'border-emerald-700/30 bg-emerald-500/10 text-emerald-200'
-                                        : 'border-red-700/30 bg-red-500/10 text-red-200'
-                                    }`}
-                                  >
-                                    {source.label}
-                                    {source.value > 0 ? ' +' : ' '}
-                                    {source.value}
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-cyan-100">
+                                    {item.total}
                                   </span>
-                                ))
-                              ) : (
-                                <span className="text-[10px] text-slate-500">
-                                  无增量
-                                </span>
-                              )}
-                            </div>
-                            {expandedFinalSourceKey === item.key && (
-                              <div className="mt-2 rounded-md border border-cyan-900/30 bg-cyan-950/10 p-2 text-[10px]">
-                                <div className="flex items-center justify-between text-slate-400">
-                                  <span>总增量</span>
-                                  <span
-                                    className={
-                                      item.delta > 0
-                                        ? 'text-emerald-300'
-                                        : item.delta < 0
-                                          ? 'text-red-300'
-                                          : 'text-slate-200'
-                                    }
-                                  >
-                                    {formatPanelSourceSignedValue(item.delta)}
-                                  </span>
-                                </div>
-                                <div className="mt-2 space-y-1">
-                                  {item.sourceDetails.length > 0 ? (
-                                    item.sourceDetails.map(
-                                      (group, groupIndex) => (
-                                        <div
-                                          key={`${item.key}-final-group-${group.label}`}
-                                          className="rounded border border-slate-800/80 bg-slate-950/55 p-1.5"
-                                        >
-                                          <div className="mb-1 flex items-center justify-between text-[10px] text-slate-400">
-                                            <span className="text-cyan-100/80">
-                                              {groupIndex === 0
-                                                ? `主因来源 · ${group.label}`
-                                                : groupIndex === 1
-                                                  ? `次因来源 · ${group.label}`
-                                                  : group.label}
-                                            </span>
-                                            <span>{group.items.length} 项</span>
-                                          </div>
-                                          <div className="space-y-1">
-                                            {sortPanelSourceValueItems(
-                                              group.items
-                                            ).map((source) => (
-                                              <div
-                                                key={`${item.key}-final-${group.label}-${source.label}`}
-                                                className="rounded border border-slate-800/80 bg-slate-950/70 px-2 py-1"
-                                              >
-                                                <div className="flex items-center justify-between gap-2">
-                                                  <span className="text-slate-300">
-                                                    {source.label}
-                                                  </span>
-                                                  <span
-                                                    className={
-                                                      source.value > 0
-                                                        ? 'text-emerald-300'
-                                                        : 'text-red-300'
-                                                    }
-                                                  >
-                                                    {formatPanelSourceSignedValue(
-                                                      source.value
-                                                    )}
-                                                  </span>
-                                                </div>
-                                                {source.note ? (
-                                                  <div className="mt-1 text-[9px] leading-4 text-slate-500">
-                                                    {source.note}
-                                                  </div>
-                                                ) : null}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedFinalSourceKey((current) =>
+                                        current === item.key ? null : item.key
                                       )
-                                    )
-                                  ) : item.sources.length > 0 ? (
-                                    sortPanelSourceValueItems(item.sources).map(
-                                      (source, index) => (
+                                    }
+                                    className="rounded border border-cyan-700/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-100 transition-colors hover:border-cyan-500/50 hover:bg-cyan-500/15"
+                                  >
+                                    {expandedFinalSourceKey === item.key ? (
+                                      <ChevronUp className="h-3 w-3" />
+                                    ) : (
+                                      <ChevronDown className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-1 text-[10px] text-slate-500">
+                                基线 {item.baseline}
+                              </div>
+                              {summary ? (
+                                <div className="mt-1 text-[10px] leading-5 text-cyan-100/75">
+                                  {summary}
+                                </div>
+                              ) : null}
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {item.sources.length > 0 ? (
+                                  item.sources.slice(0, 2).map((source) => (
+                                    <span
+                                      key={`${item.key}-${source.label}`}
+                                      className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                                        source.value > 0
+                                          ? 'border-emerald-700/30 bg-emerald-500/10 text-emerald-200'
+                                          : 'border-red-700/30 bg-red-500/10 text-red-200'
+                                      }`}
+                                    >
+                                      {source.label}
+                                      {source.value > 0 ? ' +' : ' '}
+                                      {source.value}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-500">
+                                    {item.hasBaseline
+                                      ? '无增量'
+                                      : '暂无 OCR 基线'}
+                                  </span>
+                                )}
+                              </div>
+                              {expandedFinalSourceKey === item.key && (
+                                <div className="mt-2 rounded-md border border-cyan-900/30 bg-cyan-950/10 p-2 text-[10px]">
+                                  <div className="flex items-center justify-between text-slate-400">
+                                    <span>总增量</span>
+                                    <span
+                                      className={
+                                        item.delta > 0
+                                          ? 'text-emerald-300'
+                                          : item.delta < 0
+                                            ? 'text-red-300'
+                                            : 'text-slate-200'
+                                      }
+                                    >
+                                      {formatPanelSourceSignedValue(item.delta)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 space-y-1">
+                                    {item.sourceDetails.length > 0 ? (
+                                      item.sourceDetails.map(
+                                        (group, groupIndex) => (
+                                          <div
+                                            key={`${item.key}-final-group-${group.label}`}
+                                            className="rounded border border-slate-800/80 bg-slate-950/55 p-1.5"
+                                          >
+                                            <div className="mb-1 flex items-center justify-between text-[10px] text-slate-400">
+                                              <span className="text-cyan-100/80">
+                                                {groupIndex === 0
+                                                  ? `主因来源 · ${group.label}`
+                                                  : groupIndex === 1
+                                                    ? `次因来源 · ${group.label}`
+                                                    : group.label}
+                                              </span>
+                                              <span>
+                                                {group.items.length} 项
+                                              </span>
+                                            </div>
+                                            <div className="space-y-1">
+                                              {sortPanelSourceValueItems(
+                                                group.items
+                                              ).map((source) => (
+                                                <div
+                                                  key={`${item.key}-final-${group.label}-${source.label}`}
+                                                  className="rounded border border-slate-800/80 bg-slate-950/70 px-2 py-1"
+                                                >
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-slate-300">
+                                                      {source.label}
+                                                    </span>
+                                                    <span
+                                                      className={
+                                                        source.value > 0
+                                                          ? 'text-emerald-300'
+                                                          : 'text-red-300'
+                                                      }
+                                                    >
+                                                      {formatPanelSourceSignedValue(
+                                                        source.value
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                  {source.note ? (
+                                                    <div className="mt-1 text-[9px] leading-4 text-slate-500">
+                                                      {source.note}
+                                                    </div>
+                                                  ) : null}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )
+                                      )
+                                    ) : item.sources.length > 0 ? (
+                                      sortPanelSourceValueItems(
+                                        item.sources
+                                      ).map((source, index) => (
                                         <div
                                           key={`${item.key}-final-${source.label}`}
                                           className="flex items-center justify-between rounded border border-slate-800/80 bg-slate-950/60 px-2 py-1"
@@ -1158,36 +1165,21 @@ export default function SimulatorApp() {
                                             )}
                                           </span>
                                         </div>
-                                      )
-                                    )
-                                  ) : (
-                                    <div className="text-slate-500">
-                                      当前没有更多来源明细
-                                    </div>
-                                  )}
+                                      ))
+                                    ) : (
+                                      <div className="text-slate-500">
+                                        当前没有更多来源明细
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2">
-                      {cultivationSummary.map((item) => (
-                        <div
-                          key={item.label}
-                          className="rounded-xl border border-cyan-800/30 bg-cyan-950/10 px-3 py-2"
-                        >
-                          <div className="text-[11px] text-cyan-200/70">
-                            {item.label}
-                          </div>
-                          <div className="mt-1 text-lg font-semibold text-cyan-100">
-                            {item.value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
                 </div>
 
@@ -1315,7 +1307,6 @@ export default function SimulatorApp() {
           </>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

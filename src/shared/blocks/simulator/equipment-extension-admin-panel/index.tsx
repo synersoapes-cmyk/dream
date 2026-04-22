@@ -49,6 +49,31 @@ const EDITABLE_CONFIG_SPECS = [
     title: '玉魄百分比语义',
     description: '维护百分比词条在公式中的实际含义、生效时机与展示说明。',
   },
+  {
+    key: 'rune_stone_rules',
+    title: 'PRD 符石基础属性',
+    description: '维护 1-3 级符石颜色、名称和属性载荷。',
+  },
+  {
+    key: 'star_stone_rules',
+    title: 'PRD 星石基础属性',
+    description: '维护星石类型、属性值和可翻转颜色。',
+  },
+  {
+    key: 'rune_combo_rules',
+    title: 'PRD 符石组合规则',
+    description: '维护组合名称、颜色顺序、允许部位、效果和全身生效上限。',
+  },
+  {
+    key: 'star_full_color_rules',
+    title: 'PRD 星石全套同色奖励',
+    description: '维护 6 件星位同色后的全套颜色奖励。',
+  },
+  {
+    key: 'rune_optimizer_profiles',
+    title: '符石默认最优解配置',
+    description: '维护龙宫总伤目标、部位优先组合和符石属性权重。',
+  },
 ] as const;
 
 function formatDate(value: Date | number | string | null | undefined) {

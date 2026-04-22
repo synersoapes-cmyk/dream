@@ -1,52 +1,81 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeEquipmentArtworkName } from '@/shared/lib/simulator-equipment-artwork';
+import {
+  getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath,
+  normalizeEquipmentArtworkName,
+} from '@/shared/lib/simulator-equipment-artwork';
 
 import { getEquipmentDefaultImage } from './equipmentImage';
 
-test('getEquipmentDefaultImage falls back to local default artwork when weapon name does not hit manifest', () => {
-  assert.equal(
+function expectArtworkResolverUrl(
+  actualUrl: string,
+  type: string,
+  expectedName?: string
+) {
+  const url = new URL(actualUrl, 'https://dream.local');
+  assert.equal(url.pathname, '/api/simulator/equipment-art');
+  assert.equal(url.searchParams.get('type'), type);
+  assert.equal(url.searchParams.get('name'), expectedName ?? null);
+}
+
+test('getEquipmentDefaultImage falls back through artwork resolver when weapon name does not hit manifest', () => {
+  expectArtworkResolverUrl(
     getEquipmentDefaultImage('weapon', '沧海灵杖'),
-    '/simulator/equipment-art/weapon/折扇.jpg'
+    'weapon',
+    '沧海灵杖'
   );
 });
 
-test('getEquipmentDefaultImage returns static local artwork when manifest already contains the asset', () => {
-  assert.equal(
+test('getEquipmentDefaultImage routes known manifest names through artwork resolver', () => {
+  expectArtworkResolverUrl(
     getEquipmentDefaultImage('shoes', '踏雪无痕'),
-    '/simulator/equipment-art/shoes/踏雪无痕.jpg'
+    'shoes',
+    '踏雪无痕'
   );
 });
 
-test('getEquipmentDefaultImage falls back to local default artwork for unknown equipment name', () => {
-  assert.equal(
+test('getEquipmentDefaultImage routes unknown equipment name through artwork resolver', () => {
+  expectArtworkResolverUrl(
     getEquipmentDefaultImage('helmet', '测试头盔'),
-    '/simulator/equipment-art/helmet/布帽.jpg'
+    'helmet',
+    '测试头盔'
   );
 });
 
-test('getEquipmentDefaultImage normalizes aliases and still falls back to local default artwork when alias is not in manifest', () => {
-  assert.equal(
+test('getEquipmentDefaultImage normalizes aliases before building resolver url', () => {
+  expectArtworkResolverUrl(
     getEquipmentDefaultImage('trinket', '【珍品】灵符 潮声'),
-    '/simulator/equipment-art/trinket/碧木镯.jpg'
+    'trinket',
+    '灵符·潮声'
   );
 });
 
-test('getEquipmentDefaultImage returns local default artwork when name is empty', () => {
-  assert.equal(
-    getEquipmentDefaultImage('jade'),
-    '/simulator/equipment-art/jade/上古玉魄·阳.jpg'
-  );
+test('getEquipmentDefaultImage uses artwork resolver without name when input is empty', () => {
+  expectArtworkResolverUrl(getEquipmentDefaultImage('jade'), 'jade');
 });
 
 test('normalizeEquipmentArtworkName strips quality wrappers and keeps canonical punctuation', () => {
   assert.equal(normalizeEquipmentArtworkName('【珍品】灵玉 映月'), '灵玉·映月');
 });
 
-test('getEquipmentDefaultImage can resolve parenthetical local artwork by stripped base name', () => {
-  assert.equal(
+test('normalizeEquipmentArtworkName strips generic level and screenshot labels', () => {
+  assert.equal(normalizeEquipmentArtworkName('100级 踏雪无痕 展示图'), '踏雪无痕');
+});
+
+test('getEquipmentDefaultImage keeps stripped base name for parenthetical artwork lookup', () => {
+  expectArtworkResolverUrl(
     getEquipmentDefaultImage('weapon', '罗喉计都'),
-    '/simulator/equipment-art/weapon/罗喉计都（乾坤）.png'
+    'weapon',
+    '罗喉计都'
+  );
+});
+
+test('getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath maps local artwork asset paths into R2 keys', () => {
+  assert.equal(
+    getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath(
+      '/simulator/equipment-art/weapon/罗喉计都（乾坤）.png'
+    ),
+    'equipment-art/weapon/罗喉计都（乾坤）.png'
   );
 });

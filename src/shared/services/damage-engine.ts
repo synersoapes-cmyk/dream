@@ -32,6 +32,7 @@ import {
   parseRegularSetRulesConfig,
   resolveRegularSetAttributeBonuses,
 } from '@/shared/lib/simulator-regular-set';
+import { parseStarFullColorRulesConfig } from '@/shared/lib/simulator-rune-star-rules';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 import {
   computeMagicSkillBaseTerm,
@@ -383,12 +384,20 @@ type StarBonusResolution = {
   attributeSourceBonuses: Record<string, number>;
   fullSetActive: boolean;
   fullSetAttributeBonus: number;
+  fullColorSetRule: {
+    color: string;
+    label: string;
+    targetKey: string;
+    value: number;
+    bonusType: 'panel_stat' | 'attribute_source';
+  } | null;
   starPositionBonuses: Array<{
     equipmentId: string;
     slot: string;
     label: string;
     targetKey: string;
     value: number;
+    color?: string;
   }>;
   starAlignmentBonuses: Array<{
     equipmentId: string;
@@ -500,9 +509,10 @@ function resolveStarPositionBonus(value: unknown) {
         ? record.attrType.trim()
         : '';
     const parsedValue = toFiniteNumber(record.attrValue, Number.NaN);
+    const color = normalizeRuneColor(record.color) || undefined;
 
     if (label && targetKey && Number.isFinite(parsedValue)) {
-      return { label, targetKey, value: parsedValue };
+      return { label, targetKey, value: parsedValue, color };
     }
   }
 
@@ -518,7 +528,7 @@ function resolveStarPositionBonus(value: unknown) {
 
   for (const [alias, targetKey] of STAR_POSITION_STAT_ALIAS) {
     if (label.includes(alias)) {
-      return { label, targetKey, value: parsedValue };
+      return { label, targetKey, value: parsedValue, color: undefined };
     }
   }
 
@@ -573,12 +583,21 @@ function resolveStarAlignmentBonus(params: {
   return null;
 }
 
-function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResolution {
+function resolveStarBonuses(
+  domain: SimulatorCharacterDomain,
+  ruleSet: DamageRuleSet
+): StarBonusResolution {
   const panelStatBonuses: Record<string, number> = {};
   const attributeSourceBonuses: Record<string, number> = {};
   const starPositionBonuses: StarBonusResolution['starPositionBonuses'] = [];
   const starAlignmentBonuses: StarBonusResolution['starAlignmentBonuses'] = [];
   const alignedPrimarySlots = new Set<string>();
+  const fullColorRules = parseStarFullColorRulesConfig(
+    ruleSet.equipmentExtensionConfigs.find(
+      (item) => item.configKey === 'star_full_color_rules'
+    )?.value
+  );
+  const primaryStarColors = new Map<string, string>();
 
   for (const equipment of domain.equipment) {
     if (!PRIMARY_EQUIPMENT_SLOTS.has(equipment.slot)) {
@@ -598,6 +617,9 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
         slot: equipment.slot,
         ...starPositionBonus,
       });
+      if (starPositionBonus.color) {
+        primaryStarColors.set(equipment.slot, starPositionBonus.color);
+      }
     }
 
     const starAlignmentBonus = resolveStarAlignmentBonus({
@@ -622,6 +644,16 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
 
   const fullSetActive = PRIMARY_EQUIPMENT_SLOTS.size === alignedPrimarySlots.size;
   const fullSetAttributeBonus = fullSetActive ? 2 : 0;
+  const allPrimaryStarColors =
+    primaryStarColors.size === PRIMARY_EQUIPMENT_SLOTS.size
+      ? Array.from(primaryStarColors.values())
+      : [];
+  const matchedFullColorRule =
+    allPrimaryStarColors.length === PRIMARY_EQUIPMENT_SLOTS.size &&
+    allPrimaryStarColors.every((color) => color === allPrimaryStarColors[0])
+      ? fullColorRules.find((rule) => rule.color === allPrimaryStarColors[0]) ??
+        null
+      : null;
 
   if (fullSetAttributeBonus > 0) {
     for (const [, targetKey] of STAR_ALIGNMENT_ATTR_ALIAS) {
@@ -630,11 +662,24 @@ function resolveStarBonuses(domain: SimulatorCharacterDomain): StarBonusResoluti
     }
   }
 
+  if (matchedFullColorRule) {
+    if (matchedFullColorRule.bonusType === 'panel_stat') {
+      panelStatBonuses[matchedFullColorRule.targetKey] =
+        (panelStatBonuses[matchedFullColorRule.targetKey] ?? 0) +
+        matchedFullColorRule.value;
+    } else {
+      attributeSourceBonuses[matchedFullColorRule.targetKey] =
+        (attributeSourceBonuses[matchedFullColorRule.targetKey] ?? 0) +
+        matchedFullColorRule.value;
+    }
+  }
+
   return {
     panelStatBonuses,
     attributeSourceBonuses,
     fullSetActive,
     fullSetAttributeBonus,
+    fullColorSetRule: matchedFullColorRule,
     starPositionBonuses,
     starAlignmentBonuses,
   };
@@ -1521,7 +1566,7 @@ export function calculateDamageFromRuleSet({
     skillCode: skill.skillCode,
     domain,
   };
-  const starBonuses = resolveStarBonuses(domain);
+  const starBonuses = resolveStarBonuses(domain, ruleSet);
   const ornamentSetBonuses = resolveOrnamentSetBonuses(domain, ruleSet);
   const regularSetBonuses = resolveRegularSetBonuses(domain, ruleSet);
   const equipmentEffectModifiers = resolveEquipmentEffectModifiers(domain);
@@ -2132,6 +2177,12 @@ export function calculateDamageFromRuleSet({
           ),
           fullSetActive: starBonuses.fullSetActive,
           fullSetAttributeBonus: starBonuses.fullSetAttributeBonus,
+          fullColorSetRule: starBonuses.fullColorSetRule
+            ? {
+                ...starBonuses.fullColorSetRule,
+                value: roundForBreakdown(starBonuses.fullColorSetRule.value, 4),
+              }
+            : null,
           starPositionBonuses: starBonuses.starPositionBonuses.map((item) => ({
             ...item,
             value: roundForBreakdown(item.value, 4),

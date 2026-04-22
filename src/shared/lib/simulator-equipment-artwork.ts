@@ -12,6 +12,10 @@ const EQUIPMENT_ARTWORK_CANONICAL_ALIASES: Record<string, string> = {
 
 const QUALITY_PREFIX_PATTERN =
   /(珍品|稀有|极品|神品|白板|金色|紫色|蓝色|白色|红色|绿色|黄色|橙色)/g;
+const LEVEL_PREFIX_PATTERN =
+  /(?:^|\s)(?:\d{1,3}\s*级|等级\s*\d{1,3}|Lv\.?\s*\d{1,3})/gi;
+const GENERIC_LABEL_PATTERN =
+  /(装备名称|角色装备|当前装备|藏宝阁|预览图|详情图|展示图)/g;
 const DECORATION_PATTERN = /[【】\[\]（）()<>《》「」『』]/g;
 const CONNECTOR_PATTERN = /[·•・‧]/g;
 const TRAILING_VARIANT_PATTERN = /^(.+?)[（(][^()（）]+[）)]$/;
@@ -28,8 +32,12 @@ function buildEquipmentArtUrl(
   return `/api/simulator/equipment-art?${search.toString()}`;
 }
 
+const LOCAL_ARTWORK_PREFIX = '/simulator/equipment-art/';
+
 export function compactEquipmentArtworkName(name: string) {
   return name
+    .replace(LEVEL_PREFIX_PATTERN, '')
+    .replace(GENERIC_LABEL_PATTERN, '')
     .replace(/\s+/g, '')
     .replace(DECORATION_PATTERN, '')
     .replace(CONNECTOR_PATTERN, '')
@@ -50,7 +58,7 @@ export function normalizeEquipmentArtworkName(name?: string) {
   const compact = compactEquipmentArtworkName(trimmed);
   return (
     EQUIPMENT_ARTWORK_CANONICAL_ALIASES[compact] ??
-    trimmed.replace(/\s+/g, '').trim()
+    compact
   );
 }
 
@@ -131,22 +139,29 @@ export function getSimulatorEquipmentDefaultArtworkAssetPath(
   return DEFAULT_ARTWORK_BY_TYPE[type];
 }
 
+export function getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath(
+  assetPath?: string
+) {
+  if (!assetPath?.startsWith(LOCAL_ARTWORK_PREFIX)) {
+    return null;
+  }
+
+  const relativePath = assetPath.slice(LOCAL_ARTWORK_PREFIX.length);
+  if (!relativePath) {
+    return null;
+  }
+
+  return `equipment-art/${relativePath}`;
+}
+
 export function getSimulatorEquipmentArtworkUrl(
   type: SimulatorEquipmentType,
   name?: string
 ) {
-  const assetPath = getSimulatorEquipmentArtworkAssetPath(type, name);
-  if (assetPath) {
-    return assetPath;
-  }
-
-  const defaultAssetPath = getSimulatorEquipmentDefaultArtworkAssetPath(type);
-  if (defaultAssetPath) {
-    return defaultAssetPath;
-  }
-
   const normalizedName = normalizeEquipmentArtworkName(name);
-  return normalizedName ? buildEquipmentArtUrl(type, normalizedName) : buildEquipmentArtUrl(type);
+  return normalizedName
+    ? buildEquipmentArtUrl(type, normalizedName)
+    : buildEquipmentArtUrl(type);
 }
 
 export function getSimulatorEquipmentDisplayImageUrl(equipment: Equipment) {

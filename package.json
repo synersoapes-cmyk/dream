@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "dev": "env -u CLOUDFLARE_API_TOKEN -u CF_API_TOKEN next dev --turbopack",
-    "build": "next build",
+    "build": "next build --webpack",
     "build:fast": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "test:simulator": "node --import tsx --test src/shared/models/simulator-domain.test.ts src/shared/models/simulator-equipment-save.test.ts src/shared/services/damage-engine.test.ts src/shared/services/simulator-ocr.test.ts src/features/simulator/store/gameStore.test.ts src/features/simulator/utils/simulatorBundle.test.ts src/features/simulator/utils/simulatorLabSession.test.ts src/features/simulator/utils/simulatorCandidateEquipment.test.ts src/features/simulator/utils/simulatorAdvisorContext.test.ts",
@@ -42,7 +42,7 @@
     "auth:generate": "tsx scripts/with-env.ts npx @better-auth/cli generate --config=src/core/auth/index.ts",
     "rbac:init": "tsx scripts/with-env.ts npx tsx scripts/init-rbac.ts",
     "rbac:assign": "tsx scripts/with-env.ts npx tsx scripts/assign-role.ts",
-    "postinstall": "fumadocs-mdx",
+    "postinstall": "node scripts/patch-opennext-load-manifest.mjs && fumadocs-mdx",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf:upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",

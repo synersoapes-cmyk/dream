@@ -2,10 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import type { Equipment } from '@/features/simulator/store/gameTypes';
-import { X, Trash2 } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
-import type { SimulatorEquipmentLibraryItem } from '@/shared/lib/simulator-equipment-library';
+import {
+  buildSimulatorEquipmentSelectorHelperText,
+  sortSimulatorEquipmentSelectorItems,
+  type SimulatorEquipmentLibraryItem,
+} from '@/shared/lib/simulator-equipment-library';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { buildSimulatorInventorySelectorStatusLabels } from '@/shared/lib/simulator-inventory-status';
 
 import { mergeEquipmentWithInheritance } from './laboratory-utils';
@@ -67,16 +72,18 @@ export function LaboratorySlotSelectorModal({
     selectedSlot.slotType,
   ]);
 
-  const availableItems = libraryItems.filter((item) => {
-    if (item.equipment.type !== selectedSlot.slotType) return false;
-    if (
-      selectedSlot.slotSlot !== undefined &&
-      item.equipment.slot !== selectedSlot.slotSlot
-    ) {
-      return false;
-    }
-    return true;
-  });
+  const availableItems = sortSimulatorEquipmentSelectorItems(
+    libraryItems.filter((item) => {
+      if (item.equipment.type !== selectedSlot.slotType) return false;
+      if (
+        selectedSlot.slotSlot !== undefined &&
+        item.equipment.slot !== selectedSlot.slotSlot
+      ) {
+        return false;
+      }
+      return true;
+    })
+  );
 
   const hasOverride = Boolean(selectedSlot.currentEquip);
   const canRestoreCurrent =
@@ -119,9 +126,7 @@ export function LaboratorySlotSelectorModal({
               <input
                 type="checkbox"
                 checked={inheritRuneStones}
-                onChange={(event) =>
-                  setInheritRuneStones(event.target.checked)
-                }
+                onChange={(event) => setInheritRuneStones(event.target.checked)}
                 className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-yellow-500"
               />
               <span>继承旧符石</span>
@@ -133,8 +138,10 @@ export function LaboratorySlotSelectorModal({
         </div>
 
         <div className="mb-4 rounded-lg border border-sky-800/30 bg-sky-950/10 px-3 py-2 text-[11px] leading-5 text-sky-100/85">
-          这里默认只展示当前可直接参与换装的装备来源，包括当前方案、其他方案、候选装备库和
-          `库存待用` 的正式库存。已经标记为 `已售出 / 已作废` 的正式库存不会出现在这里；如果要继续使用，先到装备总库里执行“恢复待用”。
+          这里优先展示这个部位可直接参与实验的真实库存来源，包括 `库存待用`
+          的正式库存和候选装备库。方案关系只作为辅助说明展示，已经标记为 `已售出
+          / 已作废`
+          的正式库存不会出现在这里；如果要继续使用，先到装备总库里执行“恢复待用”。
         </div>
 
         {canRestoreCurrent && (
@@ -190,13 +197,17 @@ export function LaboratorySlotSelectorModal({
           <div className="grid grid-cols-3 gap-2">
             {availableItems.map((item) => {
               const equipment = item.equipment;
+              const spotlightTags = getEquipmentSpotlightTags(equipment);
               const totalPrice =
                 (equipment.price || 0) + (equipment.crossServerFee || 0);
               const inventoryStatusLabels =
                 buildSimulatorInventorySelectorStatusLabels(item);
+              const helperText =
+                buildSimulatorEquipmentSelectorHelperText(item);
               const isCurrentlyEquipped =
                 selectedSlot.currentEquip?.id === equipment.id &&
-                inheritGemstones === (selectedSlot.inheritGemstones !== false) &&
+                inheritGemstones ===
+                  (selectedSlot.inheritGemstones !== false) &&
                 inheritRuneStones ===
                   (selectedSlot.inheritRuneStones !== false);
 
@@ -265,23 +276,31 @@ export function LaboratorySlotSelectorModal({
                         </div>
                       )}
 
-                      {item.sourceLabels.length > 0 && (
+                      {(item.primarySourceLabels?.length ?? 0) > 0 && (
                         <div className="mb-1.5 flex flex-wrap gap-1">
-                          {item.sourceLabels.slice(0, 3).map((sourceLabel) => (
-                            <span
-                              key={`${item.id}-${sourceLabel}`}
-                              className="rounded border border-sky-700/40 bg-sky-950/30 px-1.5 py-0.5 text-[10px] text-sky-200"
-                            >
-                              {sourceLabel}
-                            </span>
-                          ))}
-                          {item.sourceLabels.length > 3 && (
+                          {(item.primarySourceLabels ?? [])
+                            .slice(0, 3)
+                            .map((sourceLabel) => (
+                              <span
+                                key={`${item.id}-${sourceLabel}`}
+                                className="rounded border border-sky-700/40 bg-sky-950/30 px-1.5 py-0.5 text-[10px] text-sky-200"
+                              >
+                                {sourceLabel}
+                              </span>
+                            ))}
+                          {(item.primarySourceLabels?.length ?? 0) > 3 && (
                             <span className="rounded border border-slate-700/60 bg-slate-900/70 px-1.5 py-0.5 text-[10px] text-slate-300">
-                              +{item.sourceLabels.length - 3}
+                              +{(item.primarySourceLabels?.length ?? 0) - 3}
                             </span>
                           )}
                         </div>
                       )}
+
+                      {helperText ? (
+                        <div className="mb-1 text-[11px] text-slate-400">
+                          {helperText}
+                        </div>
+                      ) : null}
 
                       {equipment.mainStat && (
                         <div className="text-xs leading-snug text-slate-300">
@@ -295,18 +314,18 @@ export function LaboratorySlotSelectorModal({
                         </div>
                       )}
 
-                      {equipment.highlights && equipment.highlights.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {equipment.highlights.map((highlight, index) => (
-                            <span
-                              key={index}
-                              className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
-                            >
-                              {highlight}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {spotlightTags.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {spotlightTags.slice(0, 4).map((highlight, index) => (
+                              <span
+                                key={index}
+                                className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
+                              >
+                                {highlight}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                     </div>
 
                     <div className="shrink-0 text-right">
@@ -323,8 +342,13 @@ export function LaboratorySlotSelectorModal({
             })}
           </div>
         ) : (
-          <div className="py-8 text-center text-slate-500">
-            装备库中没有可用的{selectedSlot.slotLabel}
+          <div className="rounded-lg border border-dashed border-slate-700/80 px-4 py-8 text-center">
+            <div className="text-sm text-slate-300">
+              这个部位还没有可直接参与实验的装备
+            </div>
+            <div className="mt-2 text-xs leading-5 text-slate-500">
+              当前正式库存待用和候选装备库里都没有命中这个部位。可以先上传候选装备、确认入库，或到装备总库恢复待用。
+            </div>
           </div>
         )}
       </div>

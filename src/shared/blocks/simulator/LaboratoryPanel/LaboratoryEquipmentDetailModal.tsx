@@ -12,7 +12,6 @@ import { usePopper } from 'react-popper';
 
 import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
 import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
-import { STAR_POSITION_OPTIONS } from '@/shared/blocks/simulator/star-position-options';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
 import { getSimulatorEquipmentDisplayImageUrl } from '@/shared/lib/simulator-equipment-artwork';
@@ -21,15 +20,30 @@ import {
   getSimulatorEquipmentInitialValueEntries,
 } from '@/shared/lib/simulator-equipment-editor';
 import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
 import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
-import { isSimulatorPrimaryEquipment } from '@/shared/lib/simulator-rune-editor';
+import {
+  applySimulatorRuneSetSelection,
+  ensureSimulatorEquipmentRuneEditingState,
+  getSimulatorRuneSetOptions,
+  isSimulatorPrimaryEquipment,
+} from '@/shared/lib/simulator-rune-editor';
+import {
+  applySimulatorRecommendedRunePlan,
+  buildSimulatorRecommendedRunePlan,
+  getSimulatorRuneStoneOptions,
+  getSimulatorStarPositionOptions,
+  parseRuneComboRulesConfig,
+  parseRuneOptimizerProfilesConfig,
+  parseRuneStoneRulesConfig,
+  parseStarStoneRulesConfig,
+  shouldAutoApplySimulatorRecommendedRunePlan,
+} from '@/shared/lib/simulator-rune-star-rules';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
 import type { SimulatorEquipmentLibrarySourceKind } from '@/shared/lib/simulator-equipment-library';
 
 import {
-  AVAILABLE_RUNE_SETS,
-  AVAILABLE_RUNES,
   cloneEquipmentForEditor,
   getSeatDisplayName,
 } from './laboratory-utils';
@@ -67,7 +81,7 @@ export function LaboratoryEquipmentDetailModal({
   onApplyToSeat,
 }: Props) {
   const [draftEquipment, setDraftEquipment] = useState<Equipment>(
-    cloneEquipmentForEditor(equipment)
+    ensureSimulatorEquipmentRuneEditingState(cloneEquipmentForEditor(equipment))
   );
   const [runePopover, setRunePopover] = useState<{
     type: 'rune' | 'starPosition' | 'starAlignment' | 'luckyHoles' | 'runeSet';
@@ -89,6 +103,10 @@ export function LaboratoryEquipmentDetailModal({
   const { configs: equipmentExtensionConfigs } = useEquipmentExtensionConfigs([
     'regular_set_rules',
     'jade_attribute_pool',
+    'rune_stone_rules',
+    'star_stone_rules',
+    'rune_combo_rules',
+    'rune_optimizer_profiles',
   ]);
   const regularSetRules = useMemo(
     () =>
@@ -98,6 +116,65 @@ export function LaboratoryEquipmentDetailModal({
         )?.value
       ),
     [equipmentExtensionConfigs]
+  );
+  const runeStoneRules = useMemo(
+    () =>
+      parseRuneStoneRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_stone_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const starStoneRules = useMemo(
+    () =>
+      parseStarStoneRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'star_stone_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeComboRules = useMemo(
+    () =>
+      parseRuneComboRulesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_combo_rules'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeOptimizerProfiles = useMemo(
+    () =>
+      parseRuneOptimizerProfilesConfig(
+        equipmentExtensionConfigs.find(
+          (item) => item.configKey === 'rune_optimizer_profiles'
+        )?.value
+      ),
+    [equipmentExtensionConfigs]
+  );
+  const runeStoneOptions = useMemo(
+    () => getSimulatorRuneStoneOptions(runeStoneRules),
+    [runeStoneRules]
+  );
+  const starPositionOptions = useMemo(
+    () => getSimulatorStarPositionOptions(starStoneRules),
+    [starStoneRules]
+  );
+  const runeSetOptions = useMemo(
+    () => getSimulatorRuneSetOptions(draftEquipment, runeComboRules),
+    [draftEquipment, runeComboRules]
+  );
+  const recommendedRunePlan = useMemo(
+    () =>
+      isSimulatorPrimaryEquipment(draftEquipment.type)
+        ? buildSimulatorRecommendedRunePlan(draftEquipment, {
+            runeStoneRules,
+            runeComboRules,
+            optimizerProfiles: runeOptimizerProfiles,
+          })
+        : null,
+    [draftEquipment, runeComboRules, runeOptimizerProfiles, runeStoneRules]
   );
   const jadeAttributePool = useMemo(
     () =>
@@ -127,9 +204,21 @@ export function LaboratoryEquipmentDetailModal({
   });
 
   useEffect(() => {
-    setDraftEquipment(cloneEquipmentForEditor(equipment));
+    setDraftEquipment(
+      ensureSimulatorEquipmentRuneEditingState(cloneEquipmentForEditor(equipment))
+    );
     setRunePopover(null);
   }, [equipment]);
+
+  useEffect(() => {
+    if (!recommendedRunePlan || !shouldAutoApplySimulatorRecommendedRunePlan(draftEquipment)) {
+      return;
+    }
+
+    setDraftEquipment((current) =>
+      applySimulatorRecommendedRunePlan(current, recommendedRunePlan)
+    );
+  }, [draftEquipment, recommendedRunePlan]);
 
   const visibleCompareSeats = useMemo(
     () => getVisibleCompareExperimentSeats(experimentSeats),
@@ -145,6 +234,10 @@ export function LaboratoryEquipmentDetailModal({
         regularSetRules,
       }),
     [draftEquipment, regularSetRules]
+  );
+  const spotlightTags = useMemo(
+    () => getEquipmentSpotlightTags(draftEquipment),
+    [draftEquipment]
   );
   const sourceKindLabels = useMemo(() => {
     return sourceKinds.map((sourceKind) => {
@@ -195,10 +288,9 @@ export function LaboratoryEquipmentDetailModal({
                   </div>
                 </div>
 
-                {draftEquipment.highlights &&
-                  draftEquipment.highlights.length > 0 && (
+                {spotlightTags.length > 0 && (
                     <div className="mb-3 flex flex-wrap gap-1.5">
-                      {draftEquipment.highlights.map((highlight, index) => (
+                      {spotlightTags.map((highlight, index) => (
                         <span
                           key={index}
                           className="rounded border border-red-500/50 px-2 py-0.5 text-xs font-medium text-red-400"
@@ -539,6 +631,44 @@ export function LaboratoryEquipmentDetailModal({
             draftEquipment.runeStoneSets &&
             draftEquipment.runeStoneSets.length > 0 && (
               <div className="space-y-2 rounded-xl border border-yellow-800/40 bg-slate-900 p-4">
+                {recommendedRunePlan && (
+                  <div className="rounded-lg border border-cyan-700/40 bg-cyan-950/20 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-cyan-100">
+                          默认最优符石
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-200/90">
+                          推荐组合：{recommendedRunePlan.comboName}
+                          {recommendedRunePlan.tier
+                            ? ` · ${recommendedRunePlan.tier}级`
+                            : ''}
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-300/80">
+                          {recommendedRunePlan.expectedDeltaLabel}
+                        </div>
+                        <div className="mt-1 text-xs text-cyan-300/70">
+                          {recommendedRunePlan.reason}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-md border border-cyan-500/40 px-3 py-1 text-xs text-cyan-100 transition-colors hover:bg-cyan-500/10"
+                        onClick={() =>
+                          setDraftEquipment((current) =>
+                            applySimulatorRecommendedRunePlan(
+                              current,
+                              recommendedRunePlan
+                            )
+                          )
+                        }
+                      >
+                        重新推荐
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="relative">
                   <div
                     ref={
@@ -658,7 +788,7 @@ export function LaboratoryEquipmentDetailModal({
                               <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                                 选择要替换的符石
                               </div>
-                              {AVAILABLE_RUNES.map((rune) => (
+                              {runeStoneOptions.map((rune) => (
                                 <div
                                   key={rune.id}
                                   className="flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm transition-colors hover:bg-slate-700"
@@ -724,7 +854,7 @@ export function LaboratoryEquipmentDetailModal({
                         <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                           选择星位属性
                         </div>
-                        {STAR_POSITION_OPTIONS.map((option) => (
+                        {starPositionOptions.map((option) => (
                           <div
                             key={option.id}
                             className="cursor-pointer rounded px-3 py-2 transition-colors hover:bg-slate-700"
@@ -855,19 +985,25 @@ export function LaboratoryEquipmentDetailModal({
                             <div className="mb-1 border-b border-yellow-900/30 px-2 py-1.5 text-xs text-yellow-500/80">
                               选择符石组合
                             </div>
-                            {AVAILABLE_RUNE_SETS.map((runeSetName, index) => (
+                            {runeSetOptions.map((runeSetName, index) => (
                               <div
                                 key={index}
                                 className="cursor-pointer rounded px-3 py-2 text-sm text-purple-400 transition-colors hover:bg-slate-700"
                                 onClick={() => {
-                                  const nextEquipment = { ...draftEquipment };
-                                  nextEquipment.runeStoneSetsNames = [
-                                    runeSetName,
-                                    ...(nextEquipment.runeStoneSetsNames?.slice(
-                                      1
-                                    ) || []),
-                                  ];
-                                  setDraftEquipment(nextEquipment);
+                                  setDraftEquipment((current) =>
+                                    ensureSimulatorEquipmentRuneEditingState(
+                                      applySimulatorRuneSetSelection(
+                                        current,
+                                        runeSetName,
+                                        {
+                                          runeStoneRules,
+                                          runeComboRules,
+                                          optimizerProfiles:
+                                            runeOptimizerProfiles,
+                                        }
+                                      )
+                                    )
+                                  );
                                   setRunePopover(null);
                                 }}
                               >

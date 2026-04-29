@@ -122,11 +122,13 @@ export type DamageEngineResult = {
     hit: number;
     damage: number;
     magicDamage: number;
+    spellDamageLevel: number;
     defense: number;
     magicDefense: number;
     speed: number;
     dodge: number;
     spirit: number;
+    magicCritLevel: number;
   };
   targets: DamageEngineTargetResult[];
 };
@@ -165,6 +167,11 @@ function clampRatio(value: unknown, fallback: number) {
     return 1;
   }
   return parsed;
+}
+
+function resolveMagicCritChanceFromLevel(level: unknown) {
+  const normalizedLevel = Math.max(0, toFiniteNumber(level, 0));
+  return Math.min(0.95, normalizedLevel / 1750);
 }
 
 function resolveWeatherFactor(params: {
@@ -1755,10 +1762,30 @@ export function calculateDamageFromRuleSet({
     equipmentTotals.damage
   );
   const equipmentMagicDamageFlat = toFiniteNumber(equipmentTotals.magicDamage);
+  const spellDamageLevel = clampMin(
+    toFiniteNumber(domain.rawProfile.spellDamageLevel) +
+      toFiniteNumber(equipmentTotals.spellDamageLevel) +
+      toFiniteNumber(panelStatBonuses.spellDamageLevel),
+    0,
+    0
+  );
+  const magicCritLevel = clampMin(
+    toFiniteNumber(domain.rawProfile.magicCritLevel) +
+      toFiniteNumber(equipmentTotals.magicCritLevel) +
+      toFiniteNumber(panelStatBonuses.magicCritLevel),
+    0,
+    0
+  );
+  const resolvedCriticalChance =
+    typeof request.criticalChance === 'number' &&
+    Number.isFinite(request.criticalChance)
+      ? criticalChance
+      : resolveMagicCritChanceFromLevel(magicCritLevel);
   const panelMagicDamageBeforePercent =
     ruleDerivedMagicDamage +
     weaponDamageMagicDamageBonus +
     equipmentMagicDamageFlat +
+    spellDamageLevel +
     toFiniteNumber(panelStatBonuses.spirit) +
     toFiniteNumber(panelStatBonuses.magicDamage);
   const panelMagicDamageAfterPercent =
@@ -1804,6 +1831,7 @@ export function calculateDamageFromRuleSet({
       4
     ),
     equipmentMagicDamageFlat: roundForBreakdown(equipmentMagicDamageFlat, 4),
+    spellDamageLevel: roundForBreakdown(spellDamageLevel, 4),
     panelStatBonusMagicDamage: roundForBreakdown(
       toFiniteNumber(panelStatBonuses.magicDamage),
       4
@@ -2003,9 +2031,13 @@ export function calculateDamageFromRuleSet({
     const damage = Math.max(1, Math.round(rawDamage));
     const critDamage = Math.max(1, Math.round(damage * 1.5));
     const expectedDamage =
-      criticalChance > 0
+      resolvedCriticalChance > 0
         ? Number(
-            (damage * (1 + criticalChance * (criticalExpectationMultiplier - 1))).toFixed(2)
+            (
+              damage *
+              (1 +
+                resolvedCriticalChance * (criticalExpectationMultiplier - 1))
+            ).toFixed(2)
           )
         : undefined;
 
@@ -2084,7 +2116,8 @@ export function calculateDamageFromRuleSet({
         targetDefenseState,
         targetDefenseFactor,
         specialMagicDamageReductionFactor,
-        criticalChance: roundForBreakdown(criticalChance, 4),
+        criticalChance: roundForBreakdown(resolvedCriticalChance, 4),
+        magicCritLevel: roundForBreakdown(magicCritLevel, 4),
         criticalExpectationMultiplier: roundForBreakdown(
           criticalExpectationMultiplier,
           4
@@ -2139,11 +2172,13 @@ export function calculateDamageFromRuleSet({
           hit: roundForBreakdown(resolvedHit),
           damage: roundForBreakdown(resolvedDamage),
           magicDamage: roundForBreakdown(panelMagicDamage, 4),
+          spellDamageLevel: roundForBreakdown(spellDamageLevel, 4),
           defense: roundForBreakdown(resolvedDefense),
           magicDefense: roundForBreakdown(resolvedMagicDefense),
           speed: roundForBreakdown(resolvedSpeed),
           speedBeforeFormation: roundForBreakdown(resolvedSpeedBeforeFormation),
           dodge: roundForBreakdown(resolvedDodge),
+          magicCritLevel: roundForBreakdown(magicCritLevel, 4),
         },
         activePanelStatBonusModifiers: activePanelStatBonusModifiers.map(
           (modifier) => ({
@@ -2266,11 +2301,13 @@ export function calculateDamageFromRuleSet({
       hit: resolvedHit,
       damage: resolvedDamage,
       magicDamage: panelMagicDamage,
+      spellDamageLevel: roundForBreakdown(spellDamageLevel, 4),
       defense: resolvedDefense,
       magicDefense: resolvedMagicDefense,
       speed: resolvedSpeed,
       dodge: resolvedDodge,
       spirit: roundForBreakdown(spiritAfterRules, 4),
+      magicCritLevel: roundForBreakdown(magicCritLevel, 4),
     },
     targets,
   };

@@ -398,10 +398,10 @@ export function UploadPopover({ type, trigger }: UploadPopoverProps) {
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
                     <div>
                       <h3 className="text-xs font-bold text-amber-100">
-                        人物属性 OCR 已接入云端链路
+                        识别后会先确认变更
                       </h3>
                       <p className="mt-1 text-[10px] leading-relaxed text-amber-200/80">
-                        识别成功后会先展示变更确认，再决定是否同步到当前角色属性。未识别出的字段会保留原值。
+                        识别成功后会先展示变更确认；未识别出的字段会保留原值。
                       </p>
                     </div>
                   </div>

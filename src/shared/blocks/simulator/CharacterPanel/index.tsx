@@ -159,6 +159,8 @@ export function CharacterPanel() {
           agility: baseAttributes.agility,
           magicPower: baseAttributes.magicPower || 0,
           spiritualPower: combatStats.spiritualPower || 0,
+          magicCritLevel: combatStats.magicCritLevel || 0,
+          spellDamageLevel: combatStats.spellDamageLevel || 0,
           hp: combatStats.hp || 0,
           mp: combatStats.magic || 0,
           damage: combatStats.damage || 0,
@@ -168,6 +170,13 @@ export function CharacterPanel() {
           speed: combatStats.speed || 0,
           hit: combatStats.hit || 0,
           dodge: combatStats.dodge || 0,
+          fixedDamage: combatStats.fixedDamage || 0,
+          pierceLevel: combatStats.pierceLevel || 0,
+          elementalMastery: combatStats.elementalMastery || 0,
+          block: combatStats.block || 0,
+          antiCritLevel: combatStats.antiCritLevel || 0,
+          sealResistLevel: combatStats.sealResistLevel || 0,
+          elementalResistance: combatStats.elementalResistance || 0,
           meridianConfig: meridian,
           ...(combatStats.sealHit !== undefined
             ? { sealHit: combatStats.sealHit }
@@ -841,6 +850,14 @@ export function CharacterPanel() {
                     value={combatStats.magicDamage || 0}
                     statKey="magicDamage"
                     onValueChange={(v) => updateCombatStat('magicDamage', v)}
+                  />
+                  <AttributeDisplay
+                    label="法术伤害等级"
+                    value={combatStats.spellDamageLevel || 0}
+                    statKey="spellDamageLevel"
+                    onValueChange={(v) =>
+                      updateCombatStat('spellDamageLevel', v)
+                    }
                   />
                   <AttributeDisplay
                     label="灵力"

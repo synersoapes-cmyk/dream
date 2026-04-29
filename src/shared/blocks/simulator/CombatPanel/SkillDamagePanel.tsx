@@ -472,6 +472,7 @@ export function SkillDamagePanel({
   onClose?: () => void;
 }) {
   const combatTarget = useGameStore((state) => state.combatTarget);
+  const combatStats = useGameStore((state) => state.combatStats);
   const equipment = useGameStore((state) => state.equipment);
   const manualTargets = useGameStore((state) => state.manualTargets);
   const skills = useGameStore((state) => state.skills);
@@ -707,7 +708,16 @@ export function SkillDamagePanel({
     setSpecialMagicDamageReductionFactor(
       persistedBattleContext?.specialMagicDamageReductionFactor ?? 1
     );
+    setCriticalChancePercent(
+      Number(
+        Math.min(
+          95,
+          ((Number(combatStats.magicCritLevel ?? 0) || 0) / 1750) * 100
+        ).toFixed(2)
+      )
+    );
   }, [
+    combatStats.magicCritLevel,
     isOpen,
     syncedCloudState?.battleContext,
     playerSetup.element,

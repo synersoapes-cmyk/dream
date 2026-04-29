@@ -37,10 +37,20 @@ export type LabValuationCombatStats = {
   hit: number;
   damage: number;
   magicDamage: number;
+  spellDamageLevel?: number;
   defense: number;
   magicDefense: number;
   speed: number;
   dodge: number;
+  spiritualPower?: number;
+  magicCritLevel?: number;
+  fixedDamage?: number;
+  pierceLevel?: number;
+  elementalMastery?: number;
+  block?: number;
+  antiCritLevel?: number;
+  sealResistLevel?: number;
+  elementalResistance?: number;
 };
 
 export type LabValuationSeatInput = {
@@ -424,6 +434,16 @@ function buildLabProfile(
       endurance: request.baseAttributes.endurance,
       agility: request.baseAttributes.agility,
       magicPower: request.baseAttributes.magicPower,
+      spiritualPower: request.combatStats.spiritualPower,
+      magicCritLevel: request.combatStats.magicCritLevel,
+      spellDamageLevel: request.combatStats.spellDamageLevel,
+      fixedDamage: request.combatStats.fixedDamage,
+      pierceLevel: request.combatStats.pierceLevel,
+      elementalMastery: request.combatStats.elementalMastery,
+      block: request.combatStats.block,
+      antiCritLevel: request.combatStats.antiCritLevel,
+      sealResistLevel: request.combatStats.sealResistLevel,
+      elementalResistance: request.combatStats.elementalResistance,
       dodge: request.combatStats.dodge,
     }),
   };

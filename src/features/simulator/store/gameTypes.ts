@@ -45,6 +45,7 @@ export interface CombatStats {
   hit: number;
   damage: number;
   magicDamage: number;
+  spellDamageLevel?: number;
   defense: number;
   magicDefense: number;
   speed: number;

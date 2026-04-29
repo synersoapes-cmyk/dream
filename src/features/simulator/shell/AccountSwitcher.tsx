@@ -1053,7 +1053,7 @@ export function AccountSwitcher() {
                 <div className="text-[11px] text-slate-400">
                   {activeCharacter
                     ? `${activeCharacter.school} · ${activeCharacter.level}级`
-                    : 'Synced from Cloudflare D1'}
+                    : '当前未选择角色'}
                 </div>
               </div>
 
@@ -1083,7 +1083,7 @@ export function AccountSwitcher() {
               {sessionUser?.name || '当前账号'}
             </div>
             <div className="truncate text-xs font-normal text-slate-400">
-              {sessionUser?.email || '已连接 Cloudflare D1'}
+              {sessionUser?.email || '已登录账号'}
             </div>
           </DropdownMenuLabel>
 

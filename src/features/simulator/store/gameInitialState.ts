@@ -24,6 +24,7 @@ export const initialCombatStats: CombatStats = {
   hit: 1450,
   damage: 1850,
   magicDamage: 1350,
+  spellDamageLevel: 0,
   defense: 1280,
   magicDefense: 1180,
   speed: 620,

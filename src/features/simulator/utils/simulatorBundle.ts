@@ -477,6 +477,7 @@ function mapCombatStats(bundle: SimulatorCharacterBundle): CombatStats {
     hit: Math.round(bundle.profile?.hit ?? 0),
     damage: Math.round(bundle.profile?.damage ?? 0),
     magicDamage: Math.round(bundle.profile?.magicDamage ?? 0),
+    spellDamageLevel: Math.round(toNumber(rawBody.spellDamageLevel)),
     defense: Math.round(bundle.profile?.defense ?? 0),
     magicDefense: Math.round(bundle.profile?.magicDefense ?? 0),
     speed: Math.round(bundle.profile?.speed ?? 0),

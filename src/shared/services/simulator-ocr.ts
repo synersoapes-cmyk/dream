@@ -65,6 +65,7 @@ type SimulatorProfileLike = {
   damage?: number;
   defense?: number;
   magicDamage?: number;
+  spellDamageLevel?: number;
   magicDefense?: number;
   speed?: number;
   hit?: number;
@@ -83,6 +84,7 @@ const STAT_KEYS = new Set([
   'hit',
   'damage',
   'magicDamage',
+  'spellDamageLevel',
   'defense',
   'magicDefense',
   'speed',
@@ -93,6 +95,8 @@ const STAT_KEYS = new Set([
   'strength',
   'endurance',
   'agility',
+  'magicCritLevel',
+  'magicResult',
 ]);
 const PROFILE_FACTION_ALIASES: Record<string, string> = {
   龙宫: '龙宫',
@@ -120,6 +124,7 @@ const EQUIPMENT_STAT_TEXT_ALIASES: Record<string, string[]> = {
   hit: ['命中'],
   damage: ['伤害'],
   magicDamage: ['法伤', '法术伤害'],
+  spellDamageLevel: ['法术伤害等级', '法伤等级'],
   defense: ['防御', '防御力', '物理防御'],
   magicDefense: ['法防', '法术防御', '法术防御力'],
   speed: ['速度'],
@@ -129,6 +134,8 @@ const EQUIPMENT_STAT_TEXT_ALIASES: Record<string, string[]> = {
   strength: ['力量'],
   endurance: ['耐力'],
   agility: ['敏捷'],
+  magicCritLevel: ['法术暴击等级', '法暴', '法爆'],
+  magicResult: ['法术伤害结果', '法伤结果', '法结'],
 };
 
 const OCR_ALLOWED_MIME_TYPES = new Set([
@@ -469,6 +476,13 @@ export function normalizeRecognizedProfile(
     ),
     magicDamage: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['magicDamage', '法伤', '法术伤害'])
+    ),
+    spellDamageLevel: toOptionalFiniteNumber(
+      getFirstDefinedValue(sources, [
+        'spellDamageLevel',
+        '法术伤害等级',
+        '法伤等级',
+      ])
     ),
     magicDefense: toOptionalFiniteNumber(
       getFirstDefinedValue(sources, ['magicDefense', '法防', '法术防御'])
@@ -859,7 +873,7 @@ async function callGeminiEquipmentOcr(params: {
     'name, mainStat, extraStat, level, element, durability, forgeLevel, gemstone, luckyHoles, repairFailCount, starPosition, starAlignment, factionRequirement, positionRequirement, specialEffect, manufacturer, refinementEffect, description, equippableRoles',
     'highlights: string[]',
     'price, crossServerFee: number，可缺省',
-    'stats: 对应数值对象，key 仅允许 hp, magic, hit, damage, magicDamage, defense, magicDefense, speed, dodge, physique, magicPower, potentialPoints, strength, endurance, agility',
+    'stats: 对应数值对象，key 仅允许 hp, magic, hit, damage, magicDamage, spellDamageLevel, defense, magicDefense, speed, dodge, physique, magicPower, potentialPoints, strength, endurance, agility, magicCritLevel, magicResult',
     '如果无法确认就留空，不要编造明显不在图中的字段。',
   ].join('\n');
 

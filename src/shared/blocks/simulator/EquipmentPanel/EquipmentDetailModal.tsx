@@ -11,6 +11,7 @@ import { usePopper } from 'react-popper';
 
 import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import { EquipmentImprovementSummaryCard } from '@/shared/blocks/simulator/EquipmentSummary/EquipmentImprovementSummaryCard';
 import {
   applySimulatorRuneSetSelection,
   createEmptyRuneStone,
@@ -28,6 +29,7 @@ import {
   SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS,
 } from '@/shared/lib/simulator-equipment-editor';
 import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
+import { buildEquipmentImprovementSummary } from '@/shared/lib/simulator-equipment-improvement-summary';
 import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
 import { parseRegularSetRulesConfig } from '@/shared/lib/simulator-regular-set';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
@@ -278,6 +280,10 @@ export function EquipmentDetailModal({
     () => getSimulatorEquipmentInitialValueEntries(simulatedLibEquip),
     [simulatedLibEquip]
   );
+  const improvementSummary = useMemo(
+    () => buildEquipmentImprovementSummary(simulatedLibEquip),
+    [simulatedLibEquip]
+  );
   const hiddenJadeStatEntries = useMemo(
     () =>
       simulatedLibEquip.type === 'jade' &&
@@ -515,6 +521,8 @@ export function EquipmentDetailModal({
                 </div>
               )}
             </div>
+
+            <EquipmentImprovementSummaryCard summary={improvementSummary} />
 
             {ruleInsights.length > 0 && (
               <div className="rounded-xl border border-cyan-800/40 bg-slate-900 p-4">

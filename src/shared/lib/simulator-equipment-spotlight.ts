@@ -32,6 +32,7 @@ const STAT_SPOTLIGHT_ORDER: Array<{
   priority: number;
 }> = [
   { key: 'magicDamage', label: '法伤', priority: 82 },
+  { key: 'spellDamageLevel', label: '法伤等级', priority: 81 },
   { key: 'damage', label: '伤害', priority: 80 },
   { key: 'speed', label: '速度', priority: 78 },
   { key: 'magicResult', label: '法结', priority: 76 },
@@ -176,6 +177,11 @@ function pushTextStatTags(
 
   const rules = [
     { label: '法伤', pattern: /(?:法术伤害|法伤)\s*[+＋]?\s*(\d+(?:\.\d+)?)/, priority: 82 },
+    {
+      label: '法伤等级',
+      pattern: /(?:法术伤害等级|法伤等级)\s*[+＋]?\s*(\d+(?:\.\d+)?)/,
+      priority: 81,
+    },
     { label: '伤害', pattern: /(?<!法术)伤害\s*[+＋]?\s*(\d+(?:\.\d+)?)/, priority: 80 },
     { label: '速度', pattern: /速度\s*[+＋]?\s*(\d+(?:\.\d+)?)/, priority: 78 },
     { label: '法结', pattern: /(?:法术伤害结果|法结)\s*[+＋]?\s*(\d+(?:\.\d+)?)/, priority: 76 },

@@ -67,6 +67,7 @@ const FINAL_PANEL_PRIMARY_STATS = [
 
 const FINAL_PANEL_ADVANCED_STATS = [
   { key: 'magicCritRate', label: '法暴率', accent: 'amber' },
+  { key: 'spellDamageLevel', label: '法伤等级', accent: 'indigo' },
   { key: 'spiritualPower', label: '灵力', accent: 'sky' },
   { key: 'fixedDamage', label: '法伤结果', accent: 'amber' },
   { key: 'sealResistLevel', label: '抵抗封印', accent: 'cyan' },
@@ -155,7 +156,6 @@ export default function SimulatorApp() {
   );
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [bootstrapNotice, setBootstrapNotice] = useState<string | null>(null);
   const isLightTheme = resolvedTheme === 'light';
   const activeEquipmentSet = equipmentSets[activeSetIndex];
   const panelSummaryBadges = useMemo(
@@ -261,6 +261,13 @@ export default function SimulatorApp() {
         note: `法爆等级 ${formatFinalPanelNumber(combatStats.magicCritLevel)}`,
       },
       {
+        key: 'spellDamageLevel',
+        label: '法伤等级',
+        accent: 'indigo' as const,
+        value: formatFinalPanelNumber(combatStats.spellDamageLevel),
+        note: '按梦幻口径并入面板法伤',
+      },
+      {
         key: 'spiritualPower',
         label: '灵力',
         accent: 'sky' as const,
@@ -302,6 +309,7 @@ export default function SimulatorApp() {
       combatStats.magicCritLevel,
       combatStats.pierceLevel,
       combatStats.sealResistLevel,
+      combatStats.spellDamageLevel,
       combatStats.spiritualPower,
     ]
   );
@@ -347,7 +355,6 @@ export default function SimulatorApp() {
 
     if (!session?.user?.id) {
       setBootstrapError(null);
-      setBootstrapNotice(null);
       setIsBootstrapping(false);
       return;
     }
@@ -358,7 +365,6 @@ export default function SimulatorApp() {
     const bootstrap = async () => {
       setIsBootstrapping(true);
       setBootstrapError(null);
-      setBootstrapNotice(null);
 
       let didTimeout = false;
 
@@ -452,9 +458,6 @@ export default function SimulatorApp() {
             if (cancelled) {
               return;
             }
-            setBootstrapNotice(
-              '当前展示的是云端 D1 角色数据，候选装备库也会在当前状态同步加载；实验室数据会在进入实验室后再加载'
-            );
           } catch (candidateError) {
             console.error(
               'Failed to bootstrap simulator candidate equipment:',
@@ -463,9 +466,6 @@ export default function SimulatorApp() {
             if (cancelled) {
               return;
             }
-            setBootstrapNotice(
-              '当前展示的是云端 D1 角色数据，但候选装备库这次没有同步成功；进入实验室后可再次拉取'
-            );
           }
           setBootstrapError(null);
           return;
@@ -611,7 +611,7 @@ export default function SimulatorApp() {
                 梦幻数值实验室
               </h1>
               <p className="mt-1 text-sm text-slate-400">
-                登录后即可从云端 D1 读取角色快照、装备与技能数据。
+                登录后即可开始管理角色、装备与实验室方案。
               </p>
             </div>
           </div>
@@ -623,20 +623,11 @@ export default function SimulatorApp() {
             >
               需要登录
             </Badge>
-            <Badge
-              className="border-slate-600/40 bg-slate-800/70 text-slate-200 hover:bg-slate-800/70"
-              variant="outline"
-            >
-              数据源: Cloudflare D1
-            </Badge>
           </div>
 
           <div className="mt-8 grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-300">
-            <p>这个页面已经接入真实数据库，但当前浏览器还没有登录会话。</p>
-            <p>
-              登录或注册成功后，页面会自动重新请求 ` /api/simulator/current
-              `并展示你的云端角色数据。
-            </p>
+            <p>当前浏览器还没有登录会话。</p>
+            <p>登录或注册成功后，就可以继续使用角色、装备和实验室功能。</p>
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -783,12 +774,6 @@ export default function SimulatorApp() {
           </motion.button>
         </div>
       </div>
-
-      {bootstrapNotice && (
-        <div className="border-b border-yellow-800/20 bg-slate-950/30 px-6 py-3">
-          <div className="text-xs text-yellow-200/90">{bootstrapNotice}</div>
-        </div>
-      )}
 
       <div className="flex min-h-0 flex-1 gap-6 overflow-hidden px-6 py-5">
         {mainTab === 'status' ? (

@@ -862,3 +862,12 @@
 | 伤害主链符石/星石回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/services/damage-engine.test.ts`，共 `51/51` 通过；确认符石单颗属性、门派组合上限、`隔山打牛` 双套上限、星石基础属性、星石全套同色奖励，以及现有天气/五行/分灵/玉魄/灵饰套装扩展规则均能继续叠加。 |
 | 全量模拟器回归 | 测试成功 | 已执行 `pnpm test:simulator`，共 `99/99` 通过；确认当前状态页、最终面板、实验室席位、实验室估值与服务端试算对同一套符石/星石数据保持同源。 |
 | 前台编辑器与来源拆解验证 | 测试成功 | 已确认当前装备详情和实验室详情改为规则驱动选项：星石可按颜色选择，符石组合默认按“龙宫总伤”推荐最优解；面板来源拆解中已区分“星石基础属性”“星石全套同色奖励”“星相互合”三层来源，避免混淆。 |
+
+### 3.61 2026-04-27 装备综合提升汇总层回归
+
+| 测试项 | 状态 | 备注 |
+| ------ | ---- | ---- |
+| 汇总层类型检查 | 测试成功 | 已执行 `pnpm exec tsc --noEmit`，确认新接入的 `EquipmentImprovementSummaryCard`、当前装备详情弹窗与实验室详情弹窗在接入“综合提升”解释层后无类型错误。 |
+| 汇总 helper 单测回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/lib/simulator-equipment-improvement-summary.test.ts`，覆盖 `法伤 / 法伤等级 / 法爆等级 / 法暴率 / 灵力等价 / 双加 / 特技特效 / 符石组合` 的单件摘要与差异摘要解析。 |
+| 主链兼容回归 | 测试成功 | 已执行 `node --import tsx --test src/shared/lib/simulator-equipment-improvement-summary.test.ts src/features/simulator/store/gameLogic.test.ts src/shared/services/damage-engine.test.ts`，共 `76/76` 通过；确认新解释层未回退现有前台面板、武器伤害 `/4 -> 法伤`、法爆等级折算法暴率，以及服务端伤害主链。 |
+| 浏览器详情验收 | 未执行 | 本轮先完成视图层接线、类型检查与单测沉淀，尚未单独补跑“当前装备详情 / 实验室详情”人工浏览器 QA。 |

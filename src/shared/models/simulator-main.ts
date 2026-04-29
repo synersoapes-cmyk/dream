@@ -2127,6 +2127,15 @@ export async function updateSimulatorProfile(
     agility: number;
     magicPower: number;
     spiritualPower?: number;
+    magicCritLevel?: number;
+    spellDamageLevel?: number;
+    fixedDamage?: number;
+    pierceLevel?: number;
+    elementalMastery?: number;
+    block?: number;
+    antiCritLevel?: number;
+    sealResistLevel?: number;
+    elementalResistance?: number;
     hp: number;
     mp: number;
     damage: number;
@@ -2202,6 +2211,19 @@ export async function updateSimulatorProfile(
     agility: payload.agility,
     magicPower: payload.magicPower,
     spiritualPower: payload.spiritualPower ?? currentRawBody.spiritualPower,
+    magicCritLevel: payload.magicCritLevel ?? currentRawBody.magicCritLevel,
+    spellDamageLevel:
+      payload.spellDamageLevel ?? currentRawBody.spellDamageLevel,
+    fixedDamage: payload.fixedDamage ?? currentRawBody.fixedDamage,
+    pierceLevel: payload.pierceLevel ?? currentRawBody.pierceLevel,
+    elementalMastery:
+      payload.elementalMastery ?? currentRawBody.elementalMastery,
+    block: payload.block ?? currentRawBody.block,
+    antiCritLevel: payload.antiCritLevel ?? currentRawBody.antiCritLevel,
+    sealResistLevel:
+      payload.sealResistLevel ?? currentRawBody.sealResistLevel,
+    elementalResistance:
+      payload.elementalResistance ?? currentRawBody.elementalResistance,
     dodge: payload.dodge,
     meridianConfig: nextMeridianConfig,
     artifactConfig: payload.artifactConfig ?? currentRawBody.artifactConfig ?? null,

@@ -13,6 +13,7 @@ export const SIMULATOR_EDITABLE_STAT_KEYS = [
   'hit',
   'damage',
   'magicDamage',
+  'spellDamageLevel',
   'defense',
   'magicDefense',
   'speed',
@@ -53,9 +54,9 @@ export const SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS: Record<
   SimulatorOcrEquipmentType,
   string[]
 > = {
-  weapon: ['damage', 'hit', 'magicDamage'],
+  weapon: ['damage', 'hit', 'magicDamage', 'spellDamageLevel'],
   helmet: ['defense', 'magicDefense', 'hp', 'magic'],
-  necklace: ['magicDamage', 'magic', 'speed', 'hp'],
+  necklace: ['magicDamage', 'spellDamageLevel', 'magic', 'speed', 'hp'],
   armor: ['defense', 'hp', 'physique', 'endurance'],
   belt: ['hp', 'defense', 'speed'],
   shoes: ['speed', 'defense', 'agility'],
@@ -63,6 +64,7 @@ export const SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS: Record<
     'damage',
     'defense',
     'magicDamage',
+    'spellDamageLevel',
     'magicDefense',
     'fixedDamage',
     'speed',
@@ -77,6 +79,7 @@ export const SIMULATOR_EQUIPMENT_TYPE_STAT_HINTS: Record<
   ],
   jade: [
     'magicDamage',
+    'spellDamageLevel',
     'magicCritLevel',
     'magicResult',
     'magic',

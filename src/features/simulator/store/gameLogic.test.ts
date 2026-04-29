@@ -530,6 +530,36 @@ test('computeDerivedStats applies jade flat magic crit level immediately to pane
   assert.equal(result.magicCritLevel, 88);
 });
 
+test('computeDerivedStats folds spell damage level into panel magic damage', () => {
+  const baseAttributes: BaseAttributes = {
+    level: 0,
+    hp: 0,
+    magic: 0,
+    potentialPoints: 0,
+    physique: 0,
+    magicPower: 0,
+    strength: 0,
+    endurance: 0,
+    agility: 0,
+    faction: '龙宫',
+  };
+
+  const jade: Equipment = {
+    id: 'jade_spell_damage_level_1',
+    name: '测试法伤等级玉魄',
+    type: 'jade',
+    slot: 1,
+    mainStat: '法术伤害等级 +36',
+    baseStats: { spellDamageLevel: 36 },
+    stats: { spellDamageLevel: 36 },
+  };
+
+  const result = computeDerivedStats(baseAttributes, [jade], null);
+
+  assert.equal(result.spellDamageLevel, 36);
+  assert.equal(result.magicDamage, 36);
+});
+
 test('computeDerivedStats applies three-piece regular set magic bonus', () => {
   const baseAttributes: BaseAttributes = {
     level: 0,

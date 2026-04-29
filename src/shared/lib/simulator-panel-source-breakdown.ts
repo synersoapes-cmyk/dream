@@ -21,6 +21,7 @@ import {
 
 export type PanelSourceBreakdownKey =
   | 'magicDamage'
+  | 'spellDamageLevel'
   | 'spiritualPower'
   | 'speed'
   | 'magicDefense'
@@ -79,6 +80,7 @@ type BreakdownContext = {
 
 const BREAKDOWN_KEYS: PanelSourceBreakdownKey[] = [
   'magicDamage',
+  'spellDamageLevel',
   'spiritualPower',
   'speed',
   'magicDefense',
@@ -91,6 +93,7 @@ const BREAKDOWN_KEYS: PanelSourceBreakdownKey[] = [
 
 const BREAKDOWN_LABELS: Record<PanelSourceBreakdownKey, string> = {
   magicDamage: '法伤',
+  spellDamageLevel: '法伤等级',
   spiritualPower: '灵力',
   speed: '速度',
   magicDefense: '法防',
@@ -286,6 +289,8 @@ function getTrackedEquipmentContributionFromStats(
         spiritBonus +
         (item.type === 'weapon' ? Number(totals.damage ?? 0) / 4 : 0)
       );
+    case 'spellDamageLevel':
+      return Number(totals.spellDamageLevel ?? 0);
     case 'spiritualPower':
       return spiritBonus;
     case 'speed':
@@ -536,6 +541,7 @@ function buildAttributeDetailItems(
         '仙族力量按 1.7 命中折算'
       );
       break;
+    case 'spellDamageLevel':
     case 'magicCritLevel':
     case 'fixedDamage':
     case 'pierceLevel':
@@ -636,6 +642,7 @@ function buildMeridianDetailItems(
         '经脉力量按 1.7 命中折算'
       );
       break;
+    case 'spellDamageLevel':
     case 'magicCritLevel':
     case 'fixedDamage':
     case 'pierceLevel':

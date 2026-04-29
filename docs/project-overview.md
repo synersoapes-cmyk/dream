@@ -20,6 +20,7 @@
 
 文档分工如下：
 
+- 产品目标、范围与优先级见 [product-requirements.md](/Users/czy/Documents/dream/docs/product-requirements.md)
 - 当前系统说明见 [project-overview.md](/Users/czy/Documents/dream/docs/project-overview.md)
 - 实现状态、缺口和开发任务见 [implementation-task-list.md](/Users/czy/Documents/dream/docs/implementation-task-list.md)
 - 测试验收、专项回归和发布链路见 [simulator-test-report.md](/Users/czy/Documents/dream/docs/simulator-test-report.md)

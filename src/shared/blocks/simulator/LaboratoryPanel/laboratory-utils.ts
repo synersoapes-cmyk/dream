@@ -178,6 +178,7 @@ export const LABORATORY_ATTRIBUTE_LIST: Array<{
   { key: 'endurance', label: '耐力', isBase: true },
   { key: 'agility', label: '敏捷', isBase: true },
   { key: 'magicDamage', label: '法术伤害', isBase: false },
+  { key: 'spellDamageLevel', label: '法术伤害等级', isBase: false },
   { key: 'spiritualPower', label: '灵力', isBase: false },
   { key: 'magicCritLevel', label: '法术暴击等级', isBase: false },
   { key: 'speed', label: '速度', isBase: false },

@@ -1109,6 +1109,48 @@ test('M8-06 10% 法爆可输出 10% 的长期期望伤害', () => {
   );
 });
 
+test('法术伤害等级会并入面板法伤，法暴等级会默认换算期望伤害', () => {
+  const bundle = createBundle();
+  bundle.profile = {
+    ...bundle.profile!,
+    rawBodyJson: JSON.stringify({
+      magicPower: 610,
+      dodge: 205,
+      magicCritLevel: 175,
+      spellDamageLevel: 48,
+    }),
+  };
+
+  const domain = buildSimulatorCharacterDomain(bundle);
+  assert.ok(domain);
+
+  const result = calculateDamageFromRuleSet({
+    bundle,
+    domain,
+    ruleSet: createRuleSet(),
+    request: {
+      skillCode: 'dragon_roll',
+      targetCount: 1,
+      formationFactor: 1,
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      transformCardFactor: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targets: [
+        { name: '法系木桩', magicDefense: 1200, magicDefenseCultivation: 20 },
+      ],
+    },
+  });
+
+  assert.equal(result.panelStats.spellDamageLevel, 48);
+  assert.equal(result.panelStats.magicCritLevel, 175);
+  assert.equal(
+    result.targets[0]?.expectedDamage,
+    Number((result.targets[0]!.damage * 1.1).toFixed(2))
+  );
+});
+
 test('M8-07 随机波动模拟可在 95% 到 105% 区间内采样 10 次', () => {
   const bundle = createBundle();
   const domain = buildSimulatorCharacterDomain(bundle);

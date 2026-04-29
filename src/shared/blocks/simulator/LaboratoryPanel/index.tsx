@@ -1898,9 +1898,6 @@ export function LaboratoryPanel() {
               </button>
             </div>
           </div>
-          <div className="mt-2 text-[11px] text-slate-400">
-            当前实验室席位和候选装备库都会保存到 Cloudflare D1
-          </div>
           <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-yellow-800/30 bg-slate-950/50 px-3 py-2">
             <div className="min-w-0">
               <div className="text-xs font-medium text-yellow-200">
@@ -2247,8 +2244,8 @@ export function LaboratoryPanel() {
           </div>
 
           {libTab === 'pending' ? (
-            <div className="relative flex h-full flex-col">
-              <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto pr-2 pb-[72px]">
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto pr-2">
                 {pendingList.length >= PENDING_EQUIPMENT_WARNING_THRESHOLD && (
                   <div className="rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
                     待确认装备已堆积到 {pendingList.length}{' '}
@@ -2382,9 +2379,9 @@ export function LaboratoryPanel() {
                 )}
               </div>
 
-              {/* 吸底上传区域 */}
-              <div className="absolute right-0 bottom-0 left-0 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent pt-3 pb-1">
-                <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+              {/* 底部上传工具区 */}
+              <div className="mt-3 shrink-0 border-t border-yellow-800/30 bg-gradient-to-t from-slate-950 via-slate-950/95 to-slate-950/70 pt-3">
+                <div className="mb-2 flex flex-wrap gap-1.5 px-1 pb-1">
                   {SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS.map((option) => (
                     <button
                       key={option.value}

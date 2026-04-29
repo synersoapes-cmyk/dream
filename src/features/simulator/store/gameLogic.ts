@@ -237,6 +237,7 @@ export const computeDerivedStats = (
       derivedSpirit +
       weaponDamageMagicDamageBonus +
       (equipmentTotals.magicDamage ?? 0) +
+      (equipmentTotals.spellDamageLevel ?? 0) +
       (treasureTotals.magicDamage ?? 0),
     defense:
       effectiveBaseAttributes.endurance *

@@ -11,6 +11,7 @@ import { Edit2, X } from 'lucide-react';
 import { usePopper } from 'react-popper';
 
 import { AccessoryEffectModifierEditor } from '@/shared/blocks/simulator/AccessoryEffectModifierEditor';
+import { EquipmentImprovementSummaryCard } from '@/shared/blocks/simulator/EquipmentSummary/EquipmentImprovementSummaryCard';
 import { GemstoneEditor } from '@/shared/blocks/simulator/GemstoneEditor';
 import { useEquipmentExtensionConfigs } from '@/shared/blocks/simulator/use-equipment-extension-configs';
 import { useSimulatorStarResonanceRules } from '@/shared/blocks/simulator/use-star-resonance-rules';
@@ -19,6 +20,10 @@ import {
   formatSimulatorEquipmentStatValue,
   getSimulatorEquipmentInitialValueEntries,
 } from '@/shared/lib/simulator-equipment-editor';
+import {
+  buildEquipmentImprovementDiffSummary,
+  buildEquipmentImprovementSummary,
+} from '@/shared/lib/simulator-equipment-improvement-summary';
 import { buildEquipmentRuleInsights } from '@/shared/lib/simulator-equipment-rule-insights';
 import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { resolveJadeAttributePoolForSlot } from '@/shared/lib/simulator-jade-attribute-pool';
@@ -239,6 +244,31 @@ export function LaboratoryEquipmentDetailModal({
     () => getEquipmentSpotlightTags(draftEquipment),
     [draftEquipment]
   );
+  const sampleSlotEquipment = useMemo(() => {
+    const sampleSeat = experimentSeats.find((seat) => seat.isSample);
+    if (!sampleSeat) {
+      return null;
+    }
+
+    return (
+      sampleSeat.equipment.find(
+        (item) =>
+          item.type === draftEquipment.type &&
+          Number(item.slot ?? -1) === Number(draftEquipment.slot ?? -1)
+      ) ??
+      sampleSeat.equipment.find((item) => item.type === draftEquipment.type) ??
+      null
+    );
+  }, [draftEquipment.slot, draftEquipment.type, experimentSeats]);
+  const improvementSummary = useMemo(
+    () => buildEquipmentImprovementSummary(draftEquipment),
+    [draftEquipment]
+  );
+  const improvementDiffSummary = useMemo(
+    () =>
+      buildEquipmentImprovementDiffSummary(draftEquipment, sampleSlotEquipment),
+    [draftEquipment, sampleSlotEquipment]
+  );
   const sourceKindLabels = useMemo(() => {
     return sourceKinds.map((sourceKind) => {
       if (sourceKind === 'inventory_asset') {
@@ -415,6 +445,11 @@ export function LaboratoryEquipmentDetailModal({
               </div>
             )}
           </div>
+
+          <EquipmentImprovementSummaryCard
+            summary={improvementSummary}
+            diffSummary={improvementDiffSummary}
+          />
 
           {(sourceLabels.length > 0 || sourceKindLabels.length > 0) && (
             <div className="rounded-xl border border-sky-800/40 bg-slate-900 p-4">

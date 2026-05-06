@@ -36,6 +36,12 @@ type ApiEnvelope<T> = {
   data: T;
 };
 
+type UserRow = typeof user.$inferSelect;
+type CharacterRow = typeof gameCharacter.$inferSelect;
+type CandidateEquipmentRow = typeof candidateEquipment.$inferSelect;
+type InventoryAssetRow = typeof inventoryEquipmentAsset.$inferSelect;
+type InventoryEntryRow = typeof inventoryEntry.$inferSelect;
+
 type OldRuleVersionSummary = {
   id: string;
 };
@@ -1173,13 +1179,16 @@ async function resolveUsers(userSeeds: OldUserSeed[]) {
   const database = db();
   const emails = [...new Set(userSeeds.map((item) => normalizeEmail(item.email)).filter(Boolean))];
 
-  const existingRows =
+  const existingRows: UserRow[] =
     emails.length > 0
       ? await database.select().from(user).where(inArray(user.email, emails))
       : [];
 
   const existingByEmail = new Map(
-    existingRows.map((row) => [normalizeEmail(row.email), row] as const)
+    existingRows.map((row: (typeof existingRows)[number]) => [
+      normalizeEmail(row.email),
+      row,
+    ] as const)
   );
   const mapping = new Map<string, UserMapping>();
 
@@ -1271,7 +1280,7 @@ async function resolveCharacters(
     ),
   ];
 
-  const existingRows =
+  const existingRows: CharacterRow[] =
     resolvedUserIds.length > 0
       ? await database
           .select()
@@ -1279,9 +1288,14 @@ async function resolveCharacters(
           .where(inArray(gameCharacter.userId, resolvedUserIds))
       : [];
 
-  const existingById = new Map(existingRows.map((row) => [row.id, row] as const));
+  const existingById = new Map(
+    existingRows.map((row: (typeof existingRows)[number]) => [row.id, row] as const)
+  );
   const existingByComposite = new Map(
-    existingRows.map((row) => [`${row.userId}::${row.name}`, row] as const)
+    existingRows.map((row: (typeof existingRows)[number]) => [
+      `${row.userId}::${row.name}`,
+      row,
+    ] as const)
   );
   const mapping = new Map<string, CharacterMapping>();
 
@@ -1673,14 +1687,16 @@ async function syncCandidateEquipmentData(
         .filter((value): value is string => Boolean(value))
     ),
   ];
-  const existingRows =
+  const existingRows: CandidateEquipmentRow[] =
     resolvedCharacterIds.length > 0
       ? await database
           .select()
           .from(candidateEquipment)
           .where(inArray(candidateEquipment.characterId, resolvedCharacterIds))
       : [];
-  const existingById = new Map(existingRows.map((row) => [row.id, row] as const));
+  const existingById = new Map(
+    existingRows.map((row: (typeof existingRows)[number]) => [row.id, row] as const)
+  );
   const nextSortByCharacterId = new Map<string, number>();
 
   for (const row of existingRows) {
@@ -1768,17 +1784,25 @@ async function syncInventoryData(
 ) {
   const database = db();
   const candidateById = new Map(data.candidates.map((item) => [item.id, item] as const));
-  const assetRows = await database.select().from(inventoryEquipmentAsset);
-  const entryRows = await database.select().from(inventoryEntry);
-  const existingAssetById = new Map(assetRows.map((row) => [row.id, row] as const));
+  const assetRows: InventoryAssetRow[] = await database
+    .select()
+    .from(inventoryEquipmentAsset);
+  const entryRows: InventoryEntryRow[] = await database
+    .select()
+    .from(inventoryEntry);
+  const existingAssetById = new Map(
+    assetRows.map((row: (typeof assetRows)[number]) => [row.id, row] as const)
+  );
   const existingAssetBySourceCandidateId = new Map(
     assetRows
-      .filter((row) => Boolean(row.sourceCandidateId))
-      .map((row) => [row.sourceCandidateId as string, row] as const)
+      .filter((row: (typeof assetRows)[number]) => Boolean(row.sourceCandidateId))
+      .map((row: (typeof assetRows)[number]) => [row.sourceCandidateId as string, row] as const)
   );
-  const existingEntryById = new Map(entryRows.map((row) => [row.id, row] as const));
+  const existingEntryById = new Map(
+    entryRows.map((row: (typeof entryRows)[number]) => [row.id, row] as const)
+  );
   const existingEntryByItemRefId = new Map(
-    entryRows.map((row) => [row.itemRefId, row] as const)
+    entryRows.map((row: (typeof entryRows)[number]) => [row.itemRefId, row] as const)
   );
 
   for (const item of data.inventory) {

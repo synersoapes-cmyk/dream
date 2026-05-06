@@ -135,6 +135,8 @@ type OldBundle = {
   }>;
 };
 
+type BattleContextPayload = Parameters<typeof updateSimulatorBattleContext>[1];
+
 type OldLabSessionBundle = {
   session: {
     id: string;
@@ -360,7 +362,9 @@ function buildCultivationPayload(bundle: OldBundle) {
   };
 }
 
-function buildBattleContextPayload(bundle: OldBundle) {
+function buildBattleContextPayload(
+  bundle: OldBundle
+): BattleContextPayload | null {
   const battleContext = bundle.battleContext;
   if (!battleContext) {
     return null;

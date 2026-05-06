@@ -82,7 +82,6 @@ function formatSkillLevel(skill: {
 }
 
 export function CharacterPanel() {
-  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const syncedCloudState = useGameStore((state) => state.syncedCloudState);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
@@ -328,11 +327,6 @@ export function CharacterPanel() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {currentCharacter && (
-            <span className="rounded-lg border border-yellow-700/30 bg-slate-900/60 px-4 py-1.5 text-sm text-yellow-100">
-              角色：{currentCharacter.name}
-            </span>
-          )}
           <span className="rounded-lg border border-yellow-700/40 bg-yellow-900/40 px-4 py-1.5 text-sm text-yellow-400/90">
             门派：{baseAttributes.faction}
           </span>
@@ -549,23 +543,23 @@ export function CharacterPanel() {
                       </div>
                       {expandedSourceKey === item.key && (
                         <div className="mt-3 rounded-lg border border-cyan-900/30 bg-cyan-950/10 p-3">
-                          <div className="grid grid-cols-3 gap-2 text-[11px]">
-                            <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                          <div className="space-y-2 text-[11px]">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2">
                               <div className="text-slate-500">当前结果</div>
-                              <div className="mt-1 font-semibold text-cyan-100">
+                              <div className="shrink-0 font-semibold text-cyan-100">
                                 {item.total}
                               </div>
                             </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2">
                               <div className="text-slate-500">OCR 基线</div>
-                              <div className="mt-1 font-semibold text-slate-100">
+                              <div className="shrink-0 font-semibold text-slate-100">
                                 {item.baseline}
                               </div>
                             </div>
-                            <div className="rounded-md border border-slate-800 bg-slate-950/60 px-2 py-2">
+                            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-800 bg-slate-950/60 px-3 py-2">
                               <div className="text-slate-500">总增量</div>
                               <div
-                                className={`mt-1 font-semibold ${
+                                className={`shrink-0 font-semibold ${
                                   item.delta > 0
                                     ? 'text-emerald-300'
                                     : item.delta < 0

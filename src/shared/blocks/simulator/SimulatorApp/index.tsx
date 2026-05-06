@@ -787,7 +787,7 @@ export default function SimulatorApp() {
             <div className="flex h-full flex-1 flex-col overflow-hidden">
               <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-yellow-800/60 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
-                  <div className="flex items-center justify-between border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-5 py-4">
+                  <div className="flex items-center border-b border-yellow-700/60 bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 px-5 py-4">
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-600">
                         <TrendingUp className="h-5 w-5 text-slate-900" />
@@ -800,9 +800,6 @@ export default function SimulatorApp() {
                           OCR 基准面板 + 当前增量联动结果
                         </p>
                       </div>
-                    </div>
-                    <div className="rounded-lg border border-yellow-700/40 bg-slate-900/60 px-3 py-1.5 text-xs text-yellow-100">
-                      {currentCharacter?.name || '未命名角色'}
                     </div>
                   </div>
 

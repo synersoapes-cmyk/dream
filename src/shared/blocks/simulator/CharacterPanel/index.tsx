@@ -15,6 +15,7 @@ import {
   ScrollText,
   Shield,
   Swords,
+  Trash2,
   TrendingUp,
   Upload,
   User,
@@ -82,6 +83,7 @@ function formatSkillLevel(skill: {
 }
 
 export function CharacterPanel() {
+  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const syncedCloudState = useGameStore((state) => state.syncedCloudState);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
@@ -96,6 +98,9 @@ export function CharacterPanel() {
   const updateCultivation = useGameStore((state) => state.updateCultivation);
   const meridian = useGameStore((state) => state.meridian);
   const updateMeridian = useGameStore((state) => state.updateMeridian);
+  const clearCurrentCharacterProfile = useGameStore(
+    (state) => state.clearCurrentCharacterProfile
+  );
   const equipment = useGameStore((state) => state.equipment);
   const playerSetup = useGameStore((state) => state.playerSetup);
   const activeRegularSetRules = useGameStore(
@@ -130,6 +135,23 @@ export function CharacterPanel() {
       Math.min(current, Math.max(0, baseAttributes.potentialPoints))
     );
   }, [baseAttributes.potentialPoints]);
+
+  const handleClearCurrentCharacterProfile = () => {
+    if (
+      !window.confirm(
+        '确认清空当前角色吗？这会清空当前角色面板中的属性、面板值、修炼和经脉，已装备内容不会删除。'
+      )
+    ) {
+      return;
+    }
+
+    clearCurrentCharacterProfile();
+    setSaveProfileError(null);
+    setSaveProfileMessage('当前角色已清空，记得按需保存到云端');
+    setSaveCultivationError(null);
+    setSaveCultivationMessage('当前角色已清空，记得按需保存到云端');
+    toast.success('当前角色已清空');
+  };
 
   const handleSaveProfile = async () => {
     setIsSavingProfile(true);
@@ -327,6 +349,11 @@ export function CharacterPanel() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {currentCharacter && (
+            <span className="rounded-lg border border-yellow-700/30 bg-slate-900/60 px-4 py-1.5 text-sm text-yellow-100">
+              角色：{currentCharacter.name}
+            </span>
+          )}
           <span className="rounded-lg border border-yellow-700/40 bg-yellow-900/40 px-4 py-1.5 text-sm text-yellow-400/90">
             门派：{baseAttributes.faction}
           </span>
@@ -372,6 +399,14 @@ export function CharacterPanel() {
               </span>
             )}
             <button
+              className="inline-flex items-center gap-1 rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-xs font-bold text-red-200 transition-colors hover:bg-red-900/30"
+              onClick={handleClearCurrentCharacterProfile}
+              type="button"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              清空当前角色
+            </button>
+            <button
               className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSavingProfile}
               onClick={handleSaveProfile}
@@ -392,6 +427,14 @@ export function CharacterPanel() {
                 {saveCultivationMessage}
               </span>
             )}
+            <button
+              className="inline-flex items-center gap-1 rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-xs font-bold text-red-200 transition-colors hover:bg-red-900/30"
+              onClick={handleClearCurrentCharacterProfile}
+              type="button"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              清空当前角色
+            </button>
             <button
               className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSavingCultivation}

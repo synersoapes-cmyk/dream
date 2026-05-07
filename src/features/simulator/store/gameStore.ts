@@ -296,6 +296,37 @@ export const useGameStore = create<GameState>()((set, get) => ({
     }
   },
 
+  clearCurrentEquipment: () => {
+    set((state) => {
+      const persistedSets = syncEquipmentSetsWithActiveEquipment(
+        state.equipmentSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const normalizedSets = ensureEquipmentSets(
+        persistedSets,
+        state.activeSetIndex,
+        state.equipment
+      );
+      const equipmentSets = normalizedSets.map((set, setIndex) => ({
+        ...set,
+        items:
+          setIndex === state.activeSetIndex ? [] : cloneEquipmentList(set.items),
+        isActive: setIndex === state.activeSetIndex,
+      }));
+
+      return buildEquipmentSetStatePatch(state, {
+        equipment: [],
+        equipmentSets,
+        activeSetIndex: state.activeSetIndex,
+      });
+    });
+
+    if (get().autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
+
   removeEquipmentInSet: (index, equipment) => {
     let shouldRecalculate = false;
 

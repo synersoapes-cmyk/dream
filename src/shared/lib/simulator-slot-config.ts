@@ -102,7 +102,7 @@ export const SIMULATOR_TRINKET_SLOT_DEFINITIONS: SimulatorSlotDefinition[] = [
     labels: {
       default: '戒指',
       laboratory: '戒指',
-      equipmentPanel: '灵符',
+      equipmentPanel: '戒指',
     },
   },
   {
@@ -113,7 +113,7 @@ export const SIMULATOR_TRINKET_SLOT_DEFINITIONS: SimulatorSlotDefinition[] = [
     labels: {
       default: '耳饰',
       laboratory: '耳饰',
-      equipmentPanel: '灵石',
+      equipmentPanel: '耳饰',
     },
   },
   {
@@ -124,7 +124,7 @@ export const SIMULATOR_TRINKET_SLOT_DEFINITIONS: SimulatorSlotDefinition[] = [
     labels: {
       default: '手镯',
       laboratory: '手镯',
-      equipmentPanel: '灵珏',
+      equipmentPanel: '手镯',
     },
   },
   {
@@ -135,7 +135,7 @@ export const SIMULATOR_TRINKET_SLOT_DEFINITIONS: SimulatorSlotDefinition[] = [
     labels: {
       default: '佩饰',
       laboratory: '佩饰',
-      equipmentPanel: '灵玉',
+      equipmentPanel: '佩饰',
     },
   },
 ];

@@ -4,10 +4,12 @@ import type { SimulatorEquipmentType } from '@/shared/lib/simulator-equipment';
 import { SIMULATOR_EQUIPMENT_ARTWORK_ENTRIES } from '@/shared/lib/simulator-equipment-artwork-manifest';
 
 const EQUIPMENT_ARTWORK_CANONICAL_ALIASES: Record<string, string> = {
-  灵符潮声: '灵符·潮声',
-  灵石观澜: '灵石·观澜',
-  灵佩追云: '灵佩·追云',
-  灵玉映月: '灵玉·映月',
+  灵符潮声: '太华指',
+  灵石观澜: '绣娇珰',
+  灵佩追云: '霜雪镯',
+  灵玉映月: '琢玉佩',
+  阳玉: '上古玉魄·阳',
+  阴玉: '上古玉魄·阴',
 };
 
 const QUALITY_PREFIX_PATTERN =
@@ -33,6 +35,7 @@ function buildEquipmentArtUrl(
 }
 
 const LOCAL_ARTWORK_PREFIX = '/simulator/equipment-art/';
+const CANONICAL_ARTWORK_NAME_REGISTRY = new Map<string, string>();
 
 export function compactEquipmentArtworkName(name: string) {
   return name
@@ -58,8 +61,22 @@ export function normalizeEquipmentArtworkName(name?: string) {
   const compact = compactEquipmentArtworkName(trimmed);
   return (
     EQUIPMENT_ARTWORK_CANONICAL_ALIASES[compact] ??
+    CANONICAL_ARTWORK_NAME_REGISTRY.get(compact) ??
     compact
   );
+}
+
+export function normalizeSimulatorEquipmentDisplayName(name?: string) {
+  if (!name) {
+    return '';
+  }
+
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  return normalizeEquipmentArtworkName(trimmed) || trimmed;
 }
 
 const STATIC_ARTWORK_REGISTRY = new Map<string, string>();
@@ -71,7 +88,7 @@ const DEFAULT_ARTWORK_BY_TYPE: Partial<Record<SimulatorEquipmentType, string>> =
   belt: '/simulator/equipment-art/belt/腰带.jpg',
   shoes: '/simulator/equipment-art/shoes/布鞋.jpg',
   trinket: '/simulator/equipment-art/trinket/碧木镯.jpg',
-  jade: '/simulator/equipment-art/jade/上古玉魄·阳.jpg',
+  jade: '/simulator/equipment-art/jade/上古玉魄·阳.png',
 };
 
 function registerArtworkRegistryKey(
@@ -102,6 +119,17 @@ function registerArtworkRegistryKey(
 }
 
 for (const entry of SIMULATOR_EQUIPMENT_ARTWORK_ENTRIES) {
+  const canonicalCompactName = compactEquipmentArtworkName(entry.canonicalName);
+  if (
+    canonicalCompactName &&
+    !CANONICAL_ARTWORK_NAME_REGISTRY.has(canonicalCompactName)
+  ) {
+    CANONICAL_ARTWORK_NAME_REGISTRY.set(
+      canonicalCompactName,
+      entry.canonicalName
+    );
+  }
+
   registerArtworkRegistryKey(
     STATIC_ARTWORK_REGISTRY,
     entry.type,

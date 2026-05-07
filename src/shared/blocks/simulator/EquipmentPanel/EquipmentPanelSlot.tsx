@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 
 import type { SimulatorPrimaryEquipmentType } from '@/shared/lib/simulator-equipment';
 import { EquipmentImage } from '@/shared/blocks/simulator/EquipmentPanel/EquipmentImage';
+import { normalizeSimulatorEquipmentDisplayName } from '@/shared/lib/simulator-equipment-artwork';
 import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 
 type EquipmentPanelSlotTheme = 'yellow' | 'blue' | 'purple';
@@ -90,6 +91,9 @@ export function EquipmentPanelSlot({
   const Icon = slotInfo.icon;
   const config = themeConfig[theme];
   const spotlightTags = equip ? getEquipmentSpotlightTags(equip) : [];
+  const displayName = equip
+    ? normalizeSimulatorEquipmentDisplayName(equip.name) || equip.name
+    : slotInfo.name;
 
   return (
     <div className="relative">
@@ -116,7 +120,7 @@ export function EquipmentPanelSlot({
                   <div
                     className={`${config.nameColor} max-w-[100px] truncate text-sm font-bold`}
                   >
-                    {equip.name}
+                    {displayName}
                   </div>
                   <span
                     className={`${config.nameColor.replace('-100', '-400')} rounded border bg-slate-800/50 px-1.5 py-0.5 text-[10px] font-medium ${config.tooltipBorder}`}

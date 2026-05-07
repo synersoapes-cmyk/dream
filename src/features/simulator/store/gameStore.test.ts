@@ -369,6 +369,125 @@ test('removeEquipmentListInSet removes multiple slots from the active plan and c
   assert.equal(state.equipmentSets[0]?.items[0]?.id, 'helmet_a');
 });
 
+test('clearCurrentEquipment only clears the active plan equipment', () => {
+  const baseSetA = [
+    createEquipment('weapon_a', 'weapon', 100),
+    createEquipment('helmet_a', 'helmet', 20),
+  ];
+  const baseSetB = [
+    createEquipment('weapon_b', 'weapon', 200),
+    createEquipment('helmet_b', 'helmet', 40),
+  ];
+
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: false,
+    equipment: cloneEquipment(baseSetA),
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '方案一',
+        items: cloneEquipment(baseSetA),
+        isActive: true,
+      },
+      {
+        id: 'set_2',
+        name: '方案二',
+        items: cloneEquipment(baseSetB),
+        isActive: false,
+      },
+    ],
+    activeSetIndex: 0,
+  }));
+
+  useGameStore.getState().clearCurrentEquipment();
+
+  const state = useGameStore.getState();
+  assert.deepEqual(state.equipment, []);
+  assert.deepEqual(state.equipmentSets[0]?.items, []);
+  assert.equal(state.equipmentSets[1]?.items[0]?.id, 'weapon_b');
+  assert.equal(state.activeSetIndex, 0);
+});
+
+test('clearCurrentCharacterProfile clears editable role fields and keeps identity fields', () => {
+  useGameStore.setState((state) => ({
+    ...state,
+    autoRecalculateDerivedStats: false,
+    baseAttributes: {
+      level: 89,
+      faction: '龙宫',
+      hp: 4200,
+      magic: 1800,
+      potentialPoints: 25,
+      physique: 40,
+      magicPower: 520,
+      strength: 20,
+      endurance: 30,
+      agility: 25,
+    },
+    combatStats: {
+      hp: 3850,
+      magic: 1720,
+      hit: 990,
+      damage: 860,
+      magicDamage: 1460,
+      spellDamageLevel: 18,
+      defense: 920,
+      magicDefense: 1180,
+      speed: 540,
+      dodge: 180,
+      sealHit: 10,
+      spiritualPower: 500,
+      magicCritLevel: 80,
+      fixedDamage: 22,
+      pierceLevel: 77,
+      elementalMastery: 133,
+      block: 12,
+      antiCritLevel: 16,
+      sealResistLevel: 18,
+      elementalResistance: 14,
+    },
+    cultivation: {
+      bodyStrength: 12,
+      meditation: 8,
+      physicalFitness: 4,
+      divineSpeed: 3,
+      physicalAttack: 20,
+      physicalDefense: 15,
+      magicAttack: 18,
+      magicDefense: 16,
+      petPhysicalAttack: 12,
+      petPhysicalDefense: 11,
+      petMagicAttack: 10,
+      petMagicDefense: 9,
+    },
+    meridian: {
+      physique: 3,
+      magic: 5,
+      strength: 1,
+      endurance: 2,
+      agility: 4,
+      magicPower: 6,
+    },
+  }));
+
+  useGameStore.getState().clearCurrentCharacterProfile();
+
+  const state = useGameStore.getState();
+  assert.equal(state.baseAttributes.level, 89);
+  assert.equal(state.baseAttributes.faction, '龙宫');
+  assert.equal(state.baseAttributes.hp, 0);
+  assert.equal(state.baseAttributes.magic, 0);
+  assert.equal(state.baseAttributes.magicPower, 0);
+  assert.equal(state.baseAttributes.potentialPoints, 0);
+  assert.equal(state.combatStats.magicDamage, 0);
+  assert.equal(state.combatStats.speed, 0);
+  assert.equal(state.cultivation.magicAttack, 0);
+  assert.equal(state.cultivation.petMagicDefense, 0);
+  assert.equal(state.meridian.magic, 0);
+  assert.equal(state.meridian.magicPower, 0);
+});
+
 test('laboratory sample plan index is clamped to available equipment sets', () => {
   const baseSetA = [createEquipment('weapon_a', 'weapon', 100)];
   const baseSetB = [createEquipment('weapon_b', 'weapon', 200)];

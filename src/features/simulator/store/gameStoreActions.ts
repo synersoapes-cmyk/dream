@@ -393,6 +393,74 @@ export const createStatActions = (set: StoreSet, get: StoreGet) => ({
     }));
   },
   setFormation: (formation: string) => set({ formation }),
+  clearCurrentCharacterProfile: () => {
+    const state = get();
+
+    set({
+      baseAttributes: {
+        level: state.baseAttributes.level,
+        faction: state.baseAttributes.faction,
+        hp: 0,
+        magic: 0,
+        potentialPoints: 0,
+        physique: 0,
+        magicPower: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+      },
+      combatStats: state.autoRecalculateDerivedStats
+        ? state.combatStats
+        : {
+            hp: 0,
+            magic: 0,
+            hit: 0,
+            damage: 0,
+            magicDamage: 0,
+            spellDamageLevel: 0,
+            defense: 0,
+            magicDefense: 0,
+            speed: 0,
+            dodge: 0,
+            sealHit: 0,
+            spiritualPower: 0,
+            magicCritLevel: 0,
+            fixedDamage: 0,
+            pierceLevel: 0,
+            elementalMastery: 0,
+            block: 0,
+            antiCritLevel: 0,
+            sealResistLevel: 0,
+            elementalResistance: 0,
+          },
+      cultivation: {
+        bodyStrength: 0,
+        meditation: 0,
+        physicalFitness: 0,
+        divineSpeed: 0,
+        physicalAttack: 0,
+        physicalDefense: 0,
+        magicAttack: 0,
+        magicDefense: 0,
+        petPhysicalAttack: 0,
+        petPhysicalDefense: 0,
+        petMagicAttack: 0,
+        petMagicDefense: 0,
+      },
+      meridian: {
+        physique: 0,
+        magic: 0,
+        strength: 0,
+        endurance: 0,
+        agility: 0,
+        magicPower: 0,
+      },
+    });
+
+    if (state.autoRecalculateDerivedStats) {
+      get().recalculateCombatStats();
+    }
+  },
   updateBaseAttribute: (
     key: keyof GameState['baseAttributes'],
     value: number

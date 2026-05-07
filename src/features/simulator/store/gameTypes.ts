@@ -457,6 +457,7 @@ export interface GameState {
   updateEquipment: (equipment: Equipment) => void;
   updateEquipmentInSet: (index: number, equipment: Equipment) => void;
   updateEquipmentListInSet: (index: number, equipmentList: Equipment[]) => void;
+  clearCurrentEquipment: () => void;
   removeEquipmentInSet: (index: number, equipment: Equipment) => void;
   removeEquipmentListInSet: (index: number, equipmentList: Equipment[]) => void;
   setLaboratorySampleSetIndex: (index: number) => void;
@@ -527,6 +528,7 @@ export interface GameState {
     key: PotentialAllocationTarget,
     amount: number
   ) => void;
+  clearCurrentCharacterProfile: () => void;
   updateCombatStat: (key: keyof CombatStats, value: number) => void;
   updateCultivation: (key: keyof Cultivation, value: number) => void;
   updateMeridian: (key: keyof MeridianConfig, value: number) => void;

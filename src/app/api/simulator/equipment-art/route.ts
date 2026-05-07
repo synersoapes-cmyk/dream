@@ -1,9 +1,7 @@
-import { getAllConfigs } from '@/shared/models/config';
 import { respErr } from '@/shared/lib/resp';
 import {
   getSimulatorEquipmentArtworkAssetPath,
   getSimulatorEquipmentDefaultArtworkAssetPath,
-  getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath,
 } from '@/shared/lib/simulator-equipment-artwork';
 
 const TYPE_THEME = {
@@ -91,31 +89,6 @@ function splitNameLines(name: string) {
   return [trimmed.slice(0, 5), trimmed.slice(5, 10)];
 }
 
-function stripTrailingSlash(value: string) {
-  return value.replace(/\/+$/g, '');
-}
-
-function buildArtworkR2ProxyUrl(req: Request, assetPath: string, configs: Awaited<ReturnType<typeof getAllConfigs>>) {
-  const bucket = (configs.r2_bucket_name ?? '').trim();
-  const endpoint =
-    (configs.r2_endpoint ?? '').trim() ||
-    ((configs.r2_account_id ?? '').trim()
-      ? `https://${String(configs.r2_account_id).trim()}.r2.cloudflarestorage.com`
-      : '');
-  const accessKey = (configs.r2_access_key ?? '').trim();
-  const secretKey = (configs.r2_secret_key ?? '').trim();
-  const objectKey = getSimulatorEquipmentArtworkR2ObjectKeyFromAssetPath(assetPath);
-
-  if (!bucket || !endpoint || !accessKey || !secretKey || !objectKey) {
-    return null;
-  }
-
-  const targetUrl = `${stripTrailingSlash(endpoint)}/${bucket}/${objectKey}`;
-  const proxyUrl = new URL('/api/proxy/file', req.url);
-  proxyUrl.searchParams.set('url', targetUrl);
-  return proxyUrl;
-}
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const rawType = searchParams.get('type')?.trim() ?? '';
@@ -135,11 +108,6 @@ export async function GET(req: Request) {
     rawName
   );
   if (matchedAssetPath) {
-    const configs = await getAllConfigs();
-    const r2Url = buildArtworkR2ProxyUrl(req, matchedAssetPath, configs);
-    if (r2Url) {
-      return Response.redirect(r2Url, 307);
-    }
     return Response.redirect(new URL(matchedAssetPath, req.url), 307);
   }
 
@@ -147,11 +115,6 @@ export async function GET(req: Request) {
     rawType as keyof typeof TYPE_THEME
   );
   if (defaultAssetPath) {
-    const configs = await getAllConfigs();
-    const r2Url = buildArtworkR2ProxyUrl(req, defaultAssetPath, configs);
-    if (r2Url) {
-      return Response.redirect(r2Url, 307);
-    }
     return Response.redirect(new URL(defaultAssetPath, req.url), 307);
   }
 

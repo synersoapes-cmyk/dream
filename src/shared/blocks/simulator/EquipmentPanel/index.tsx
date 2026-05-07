@@ -12,7 +12,6 @@ import {
   Copy,
   Edit2,
   Gem,
-  Package,
   Plus,
   Settings,
   Shield,
@@ -21,6 +20,7 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import {
   buildSimulatorArtifactConfigFromTreasure,
@@ -58,6 +58,7 @@ import {
   SIMULATOR_PRIMARY_SLOT_DEFINITIONS,
   SIMULATOR_TRINKET_SLOT_DEFINITIONS,
 } from '@/shared/lib/simulator-slot-config';
+import { requestSimulatorOpenPendingReview } from '@/shared/lib/simulator-pending-review-request';
 
 import { useEquipmentExtensionConfigs } from '../use-equipment-extension-configs';
 import { EquipmentDetailModal } from './EquipmentDetailModal';
@@ -133,7 +134,15 @@ type EquipmentPanelSlotType =
   | SimulatorPrimaryEquipmentType
   | SimulatorAccessoryEquipmentType;
 
-export function EquipmentPanel() {
+interface EquipmentPanelProps {
+  showInventoryModal: boolean;
+  onCloseInventoryModal: () => void;
+}
+
+export function EquipmentPanel({
+  showInventoryModal,
+  onCloseInventoryModal,
+}: EquipmentPanelProps) {
   const currentCharacter = useGameStore((state) => state.currentCharacter);
   const baseAttributes = useGameStore((state) => state.baseAttributes);
   const combatStats = useGameStore((state) => state.combatStats);
@@ -154,6 +163,9 @@ export function EquipmentPanel() {
   );
   const removeEquipmentSet = useGameStore((state) => state.removeEquipmentSet);
   const updateEquipment = useGameStore((state) => state.updateEquipment);
+  const clearCurrentEquipment = useGameStore(
+    (state) => state.clearCurrentEquipment
+  );
   const updateTreasure = useGameStore((state) => state.updateTreasure);
   const setActiveRegularSetRules = useGameStore(
     (state) => state.setActiveRegularSetRules
@@ -183,7 +195,6 @@ export function EquipmentPanel() {
     name: string;
     slot?: number;
   } | null>(null);
-  const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [managedInventoryItems, setManagedInventoryItems] = useState<
     ReturnType<typeof mapSimulatorInventoryLibraryItemToPendingEquipment>[]
   >([]);
@@ -259,6 +270,12 @@ export function EquipmentPanel() {
       pendingEquipments,
     ]
   );
+  const pendingList = useMemo(
+    () => pendingEquipments.filter((item) => item.status === 'pending'),
+    [pendingEquipments]
+  );
+  const latestPendingEquipment = pendingList[pendingList.length - 1] ?? null;
+  const pendingQueueCount = pendingList.length;
   const handleRemoveCandidateInventoryItems = async (
     items: Array<{
       id: string;
@@ -595,6 +612,21 @@ export function EquipmentPanel() {
     }
   };
 
+  const handleClearCurrentEquipment = () => {
+    if (
+      !window.confirm(
+        '确认清空当前装备吗？这会清空当前激活方案里的装备，其他方案不会受影响。'
+      )
+    ) {
+      return;
+    }
+
+    clearCurrentEquipment();
+    setSaveEquipmentError(null);
+    setSaveEquipmentMessage('当前装备已清空，记得按需保存到云端');
+    toast.success('当前装备已清空');
+  };
+
   const handleSaveArtifact = async () => {
     setIsSavingArtifact(true);
     setSaveArtifactError(null);
@@ -683,6 +715,14 @@ export function EquipmentPanel() {
             </span>
           )}
           <button
+            className="inline-flex items-center gap-1 rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-xs font-bold text-red-200 transition-colors hover:bg-red-900/30"
+            onClick={handleClearCurrentEquipment}
+            type="button"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            清空当前装备
+          </button>
+          <button
             className="rounded-lg border border-yellow-700/50 bg-slate-900/70 px-4 py-2 text-xs font-bold text-yellow-200 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSavingEquipment}
             onClick={handleSaveEquipment}
@@ -694,19 +734,38 @@ export function EquipmentPanel() {
 
       {/* 当前装备内容 */}
       <div className="flex-1 space-y-4 overflow-x-visible overflow-y-auto p-4">
+        {pendingQueueCount > 0 && (
+          <div className="rounded-xl border border-sky-700/40 bg-sky-950/20 px-4 py-3 shadow-[0_0_0_1px_rgba(14,165,233,0.06)]">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-sky-100">
+                  刚上传的装备不会直接显示在当前穿戴区
+                </div>
+                <p className="mt-1 text-xs leading-5 text-sky-200/80">
+                  它们会先进入实验室的“待确认新品”区。当前还有{' '}
+                  {pendingQueueCount} 件待确认，确认入库或应用后，才会出现在当前装备页和装备总库里。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (latestPendingEquipment) {
+                    requestSimulatorOpenPendingReview(latestPendingEquipment.id);
+                  }
+                }}
+                className="inline-flex shrink-0 items-center justify-center rounded-lg border border-sky-500/40 bg-sky-900/30 px-3 py-2 text-xs font-semibold text-sky-100 transition-colors hover:bg-sky-900/50"
+              >
+                去实验室查看待确认装备
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 装备区域 - 包含装备组合切换器 */}
         <div className="rounded-xl border border-yellow-800/40 bg-slate-900/40 p-3">
           <div className="mb-3 flex items-center gap-2 border-b border-yellow-800/30 pb-2">
             <Sword className="h-4 w-4 text-yellow-400" />
             <div className="text-sm font-medium text-yellow-400">装备</div>
-            <button
-              type="button"
-              onClick={() => setShowInventoryModal(true)}
-              className="ml-auto inline-flex items-center gap-1 rounded-md border border-yellow-700/50 bg-slate-900/70 px-2 py-1 text-[11px] font-medium text-yellow-200 transition-colors hover:bg-slate-800"
-            >
-              <Package className="h-3.5 w-3.5" />
-              装备总库
-            </button>
           </div>
 
           {/* 装备组合切换器 */}
@@ -1200,7 +1259,7 @@ export function EquipmentPanel() {
           onRefreshInventoryLibrarySources={
             handleRefreshInventoryLibrarySources
           }
-          onClose={() => setShowInventoryModal(false)}
+          onClose={onCloseInventoryModal}
         />
       )}
     </div>

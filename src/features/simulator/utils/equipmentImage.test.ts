@@ -47,7 +47,15 @@ test('getEquipmentDefaultImage normalizes aliases before building resolver url',
   expectArtworkResolverUrl(
     getEquipmentDefaultImage('trinket', '【珍品】灵符 潮声'),
     'trinket',
-    '灵符·潮声'
+    '太华指'
+  );
+});
+
+test('getEquipmentDefaultImage maps jade aliases to canonical yin yang names', () => {
+  expectArtworkResolverUrl(
+    getEquipmentDefaultImage('jade', '阴玉'),
+    'jade',
+    '上古玉魄·阴'
   );
 });
 
@@ -56,7 +64,12 @@ test('getEquipmentDefaultImage uses artwork resolver without name when input is 
 });
 
 test('normalizeEquipmentArtworkName strips quality wrappers and keeps canonical punctuation', () => {
-  assert.equal(normalizeEquipmentArtworkName('【珍品】灵玉 映月'), '灵玉·映月');
+  assert.equal(normalizeEquipmentArtworkName('【珍品】灵玉 映月'), '琢玉佩');
+});
+
+test('normalizeEquipmentArtworkName maps jade short names to canonical names', () => {
+  assert.equal(normalizeEquipmentArtworkName('阳玉'), '上古玉魄·阳');
+  assert.equal(normalizeEquipmentArtworkName('阴玉'), '上古玉魄·阴');
 });
 
 test('normalizeEquipmentArtworkName strips generic level and screenshot labels', () => {

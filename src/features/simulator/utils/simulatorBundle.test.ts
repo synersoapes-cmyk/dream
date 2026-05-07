@@ -422,6 +422,96 @@ test('applySimulatorBundleToStore restores persisted equipment plans', () => {
   assert.equal(state.equipment[0]?.gemstone, '8 舍利子，10 黑宝石');
 });
 
+test('applySimulatorBundleToStore normalizes legacy trinket and jade display names', () => {
+  const bundle = createBundle();
+  bundle.equipments = [
+    {
+      id: 'eq_trinket_legacy',
+      characterId: 'char_1',
+      slot: 'trinket1',
+      name: '灵符·潮声',
+      level: 160,
+      quality: '珍品',
+      price: 123456,
+      source: 'manual',
+      status: 'equipped',
+      isLocked: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      build: {
+        equipmentId: 'eq_trinket_legacy',
+        holeCount: 0,
+        gemLevelTotal: 0,
+        refineLevel: 6,
+        specialEffectJson: '{}',
+        setEffectJson: '{}',
+        notesJson: '{}',
+      },
+      attrs: [
+        {
+          id: 'attr_1',
+          equipmentId: 'eq_trinket_legacy',
+          attrGroup: 'base',
+          attrType: 'magicDamage',
+          valueType: 'flat',
+          attrValue: 86,
+          displayOrder: 0,
+        },
+      ],
+      snapshotSlot: 'trinket1',
+    },
+    {
+      id: 'eq_jade_legacy',
+      characterId: 'char_1',
+      slot: 'jade1',
+      name: '阳玉',
+      level: 120,
+      quality: '珍品',
+      price: 654321,
+      source: 'manual',
+      status: 'equipped',
+      isLocked: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      build: {
+        equipmentId: 'eq_jade_legacy',
+        holeCount: 0,
+        gemLevelTotal: 0,
+        refineLevel: 0,
+        specialEffectJson: '{}',
+        setEffectJson: '{}',
+        notesJson: '{}',
+      },
+      attrs: [
+        {
+          id: 'attr_2',
+          equipmentId: 'eq_jade_legacy',
+          attrGroup: 'base',
+          attrType: 'magicDamage',
+          valueType: 'flat',
+          attrValue: 55,
+          displayOrder: 0,
+        },
+      ],
+      snapshotSlot: 'jade1',
+    },
+  ];
+
+  applySimulatorBundleToStore(bundle);
+
+  const state = useGameStore.getState();
+  assert.equal(state.equipment[0]?.name, '太华指');
+  assert.equal(state.equipment[1]?.name, '上古玉魄·阳');
+  assert.match(
+    state.equipment[0]?.imageUrl ?? '',
+    /name=%E5%A4%AA%E5%8D%8E%E6%8C%87/
+  );
+  assert.match(
+    state.equipment[1]?.imageUrl ?? '',
+    /name=%E4%B8%8A%E5%8F%A4%E7%8E%89%E9%AD%84%C2%B7%E9%98%B3/
+  );
+});
+
 test('applySimulatorBundleToStore restores persisted combat workbench state', () => {
   const bundle = createBundle();
   const existingBattleContext = bundle.battleContext;

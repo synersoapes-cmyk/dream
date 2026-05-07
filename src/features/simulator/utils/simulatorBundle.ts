@@ -37,6 +37,7 @@ import {
   normalizeSimulatorEquipmentType,
 } from '@/shared/lib/simulator-equipment';
 import { getSimulatorStatLabel } from '@/shared/lib/simulator-stat-labels';
+import { normalizeSimulatorEquipmentDisplayName } from '@/shared/lib/simulator-equipment-artwork';
 import type { SimulatorCharacterBundle } from '@/shared/models/simulator-types';
 
 const FALLBACK_FACTION: Faction = '龙宫';
@@ -585,9 +586,12 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       ])
     ).slice(0, 3);
 
+    const normalizedName =
+      normalizeSimulatorEquipmentDisplayName(item.name) || item.name;
+
     return {
       id: item.id,
-      name: item.name,
+      name: normalizedName,
       type,
       slot:
         type === 'trinket' || type === 'jade'
@@ -597,7 +601,7 @@ function mapEquipments(bundle: SimulatorCharacterBundle): Equipment[] {
       baseStats: attrMap,
       stats: attrMap,
       price: item.price,
-      imageUrl: getEquipmentDefaultImage(type, item.name),
+      imageUrl: getEquipmentDefaultImage(type, normalizedName),
       level: item.level,
       quality: item.quality,
       setName:
@@ -703,6 +707,8 @@ function toPersistedEquipment(
   }
 
   const type = normalizeSimulatorEquipmentType(rawType);
+  const normalizedName =
+    normalizeSimulatorEquipmentDisplayName(value.name) || value.name;
   const baseStats = toStatRecord(value.baseStats);
   const stats = toStatRecord(value.stats);
 
@@ -711,7 +717,7 @@ function toPersistedEquipment(
       typeof value.id === 'string' && value.id.trim().length > 0
         ? value.id
         : fallbackId,
-    name: value.name,
+    name: normalizedName,
     type,
     slot:
       toOptionalNumber(value.slot) ??
@@ -733,7 +739,7 @@ function toPersistedEquipment(
     imageUrl:
       typeof value.imageUrl === 'string'
         ? value.imageUrl
-        : getEquipmentDefaultImage(type, value.name),
+        : getEquipmentDefaultImage(type, normalizedName),
     runeStoneSets: toRuneStoneSets(value.runeStoneSets),
     runeStoneSetsNames: normalizeEquipmentRuneStoneSetNames(
       value.runeStoneSetsNames

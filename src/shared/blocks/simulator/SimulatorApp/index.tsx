@@ -18,6 +18,7 @@ import {
   Compass,
   LogIn,
   MessageSquare,
+  Package,
   Shield,
   Sparkles,
   Swords,
@@ -147,6 +148,7 @@ export default function SimulatorApp() {
 
   const [mainTab, setMainTab] = useState<'status' | 'lab'>('status');
   const [showAI, setShowAI] = useState(false);
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [isCombatPanelExpanded, setIsCombatPanelExpanded] = useState(false);
   const [expandedFinalSourceKey, setExpandedFinalSourceKey] = useState<
     string | null
@@ -751,7 +753,10 @@ export default function SimulatorApp() {
                   ? 'scale-105 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 shadow-lg shadow-amber-950/30'
                   : 'text-yellow-100/72 hover:bg-yellow-950/20 hover:text-yellow-100'
               }`}
-              onClick={() => setMainTab('lab')}
+              onClick={() => {
+                setMainTab('lab');
+                setShowInventoryModal(false);
+              }}
             >
               实验室
             </button>
@@ -759,6 +764,21 @@ export default function SimulatorApp() {
         </div>
 
         <div className="flex items-center gap-3">
+          {mainTab === 'status' && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowInventoryModal(true)}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
+                showInventoryModal
+                  ? 'bg-yellow-600 text-slate-900'
+                  : 'border border-yellow-700/60 bg-slate-900/60 text-yellow-400 hover:border-yellow-600/80'
+              }`}
+            >
+              <Package className="h-4 w-4" />
+              <span className="text-sm font-medium">装备总库</span>
+            </motion.button>
+          )}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -782,7 +802,10 @@ export default function SimulatorApp() {
               <CharacterPanel />
             </div>
             <div className="flex h-full flex-1 flex-col overflow-hidden">
-              <EquipmentPanel />
+              <EquipmentPanel
+                showInventoryModal={showInventoryModal}
+                onCloseInventoryModal={() => setShowInventoryModal(false)}
+              />
             </div>
             <div className="flex h-full flex-1 flex-col overflow-hidden">
               <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">

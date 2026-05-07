@@ -242,7 +242,7 @@ export const DEFAULT_SIMULATOR_EQUIPMENTS: SimulatorSeedEquipment[] = [
   {
     slot: 'trinket1',
     snapshotSlot: 'trinket1',
-    name: '灵符·潮声',
+    name: '太华指',
     level: 160,
     quality: '珍品',
     price: 2200000,
@@ -255,7 +255,7 @@ export const DEFAULT_SIMULATOR_EQUIPMENTS: SimulatorSeedEquipment[] = [
   {
     slot: 'trinket2',
     snapshotSlot: 'trinket2',
-    name: '灵石·观澜',
+    name: '绣娇珰',
     level: 160,
     quality: '珍品',
     price: 1980000,
@@ -268,7 +268,7 @@ export const DEFAULT_SIMULATOR_EQUIPMENTS: SimulatorSeedEquipment[] = [
   {
     slot: 'trinket3',
     snapshotSlot: 'trinket3',
-    name: '灵佩·追云',
+    name: '霜雪镯',
     level: 160,
     quality: '稀有',
     price: 1760000,
@@ -281,7 +281,7 @@ export const DEFAULT_SIMULATOR_EQUIPMENTS: SimulatorSeedEquipment[] = [
   {
     slot: 'trinket4',
     snapshotSlot: 'trinket4',
-    name: '灵玉·映月',
+    name: '琢玉佩',
     level: 160,
     quality: '稀有',
     price: 1680000,

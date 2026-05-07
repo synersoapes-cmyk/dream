@@ -182,7 +182,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   // 灵饰
   {
     id: 'trinket1',
-    name: '神命须弥',
+    name: '流光指',
     type: 'trinket',
     slot: 1,
     mainStat: '法术伤害 +125',
@@ -192,7 +192,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   },
   {
     id: 'trinket2',
-    name: '破军须弥',
+    name: '云霞珰',
     type: 'trinket',
     slot: 2,
     mainStat: '法力 +180',
@@ -202,7 +202,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   },
   {
     id: 'trinket3',
-    name: '皓雪无痕',
+    name: '清水镯',
     type: 'trinket',
     slot: 3,
     mainStat: '速度 +38',
@@ -212,7 +212,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   },
   {
     id: 'trinket4',
-    name: '坠星无痕',
+    name: '流光佩',
     type: 'trinket',
     slot: 4,
     mainStat: '法术伤害 +118',
@@ -223,7 +223,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   // 玉魄
   {
     id: 'jade1',
-    name: '阳玉',
+    name: '上古玉魄·阳',
     type: 'jade',
     slot: 1,
     mainStat: '法术伤害 +95',
@@ -233,7 +233,7 @@ export const PRESET_EQUIPMENTS: Equipment[] = [
   },
   {
     id: 'jade2',
-    name: '阴玉',
+    name: '上古玉魄·阴',
     type: 'jade',
     slot: 2,
     mainStat: '法力 +120',

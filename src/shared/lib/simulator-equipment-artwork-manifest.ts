@@ -2250,6 +2250,11 @@ export const SIMULATOR_EQUIPMENT_ARTWORK_ENTRIES: SimulatorEquipmentArtworkEntry
     {
       type: 'jade',
       canonicalName: '上古玉魄·阳',
-      assetPath: '/simulator/equipment-art/jade/上古玉魄·阳.jpg',
+      assetPath: '/simulator/equipment-art/jade/上古玉魄·阳.png',
+    },
+    {
+      type: 'jade',
+      canonicalName: '上古玉魄·阴',
+      assetPath: '/simulator/equipment-art/jade/上古玉魄·阴.png',
     },
   ];

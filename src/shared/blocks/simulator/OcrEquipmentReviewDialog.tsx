@@ -183,7 +183,7 @@ export function OcrEquipmentReviewDialog({
     >
       <DialogContent
         showCloseButton={false}
-        className="max-w-3xl border-yellow-700/60 bg-slate-950 p-0 text-slate-100 shadow-2xl"
+        className="flex max-h-[calc(100vh-2rem)] max-w-3xl flex-col overflow-hidden border-yellow-700/60 bg-slate-950 p-0 text-slate-100 shadow-2xl"
       >
         <DialogHeader className="border-b border-yellow-800/40 bg-slate-950/80 px-6 py-5">
           <DialogTitle className="flex items-center gap-2 text-yellow-100">
@@ -195,7 +195,7 @@ export function OcrEquipmentReviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 px-6 py-5">
+        <div className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {item ? (
             <>
               <div className="grid gap-4 lg:grid-cols-[220px_1fr]">

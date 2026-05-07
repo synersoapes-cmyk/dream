@@ -22,6 +22,7 @@ export function EquipmentReplaceDialog() {
   const calculateStatsDiff = useGameStore((state) => state.calculateStatsDiff);
   const combatTarget = useGameStore((state) => state.combatTarget);
   const selectedSkill = useGameStore((state) => state.selectedSkill);
+  const currentCharacter = useGameStore((state) => state.currentCharacter);
   const equipment = useGameStore((state) => state.equipment);
   const equipmentSets = useGameStore((state) => state.equipmentSets);
   const activeSetIndex = useGameStore((state) => state.activeSetIndex);
@@ -82,6 +83,7 @@ export function EquipmentReplaceDialog() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          characterId: currentCharacter?.id,
           equipment: nextEquipment,
           equipmentSets,
           activeSetIndex,

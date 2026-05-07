@@ -587,6 +587,7 @@ export function EquipmentPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          characterId: currentCharacter?.id,
           equipment,
           equipmentSets,
           activeSetIndex,

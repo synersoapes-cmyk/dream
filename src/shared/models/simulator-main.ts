@@ -2713,6 +2713,7 @@ export async function listAdminSimulatorUserDiagnostics(params?: {
 export async function updateSimulatorEquipment(
   userId: string,
   payload: {
+    characterId?: string;
     equipment: Array<{
       id?: string;
       name: string;
@@ -2766,6 +2767,7 @@ export async function updateSimulatorEquipment(
     const normalizedEquipment = normalizeEquipmentPayload(payload.equipment);
 
     const context = await loadActiveSimulatorContext(userId, {
+      characterId: payload.characterId,
       includeEquipments: false,
     });
     timer.mark('load_context');

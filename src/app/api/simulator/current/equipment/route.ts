@@ -89,6 +89,10 @@ export async function PATCH(req: Request) {
     const equipmentSets = Array.isArray(body?.equipmentSets)
       ? body.equipmentSets
       : undefined;
+    const characterId =
+      typeof body?.characterId === 'string' && body.characterId.trim().length > 0
+        ? body.characterId.trim()
+        : undefined;
     const activeSetIndex = Number.isInteger(body?.activeSetIndex)
       ? Number(body.activeSetIndex)
       : undefined;
@@ -110,6 +114,7 @@ export async function PATCH(req: Request) {
         : undefined;
     const bundle = await withTransientRetry('updateSimulatorEquipment', () =>
       updateSimulatorEquipment(user.id, {
+        characterId,
         equipment,
         equipmentSets,
         activeSetIndex,

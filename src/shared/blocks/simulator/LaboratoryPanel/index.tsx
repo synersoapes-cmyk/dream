@@ -1153,6 +1153,7 @@ export function LaboratoryPanel() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          characterId: currentCharacter?.id,
           equipment: nextEquipment,
           equipmentSets,
           activeSetIndex,

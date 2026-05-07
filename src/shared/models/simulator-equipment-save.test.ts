@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import { initD1ContextForDev, resetD1DevBindingCache } from '@/core/db/d1';
@@ -15,7 +15,10 @@ import {
   user,
 } from '@/config/db/schema';
 import { withTransientD1Retry } from '@/shared/models/simulator-core';
-import { updateSimulatorEquipment } from '@/shared/models/simulator-main';
+import {
+  getSimulatorCharacterBundle,
+  updateSimulatorEquipment,
+} from '@/shared/models/simulator-main';
 
 async function createCharacterFixture(suffix: string) {
   const userId = `itest_user_${suffix}`;
@@ -119,7 +122,98 @@ async function createCharacterFixture(suffix: string) {
     });
   });
 
-  return { userId };
+  return { userId, characterId, snapshotId };
+}
+
+async function createCharacterForExistingUser(params: {
+  userId: string;
+  suffix: string;
+  name: string;
+}) {
+  const characterId = `itest_character_${params.suffix}`;
+  const snapshotId = `itest_snapshot_${params.suffix}`;
+  const now = new Date();
+
+  await withTransientD1Retry('createCharacterForExistingUser', async () => {
+    const database = db();
+
+    await database.insert(gameCharacter).values({
+      id: characterId,
+      userId: params.userId,
+      name: params.name,
+      serverName: '测试服',
+      school: '龙宫',
+      roleType: '法师',
+      level: 89,
+      race: '仙族',
+      status: 'active',
+      currentSnapshotId: snapshotId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.insert(characterSnapshot).values({
+      id: snapshotId,
+      characterId,
+      snapshotType: 'current',
+      name: '当前状态',
+      versionNo: 1,
+      source: 'manual',
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.insert(characterProfile).values({
+      snapshotId,
+      school: '龙宫',
+      level: 89,
+      physique: 40,
+      magic: 210,
+      strength: 20,
+      endurance: 30,
+      agility: 25,
+      potentialPoints: 0,
+      hp: 3850,
+      mp: 1720,
+      damage: 860,
+      defense: 920,
+      magicDamage: 1460,
+      magicDefense: 1180,
+      speed: 540,
+      hit: 990,
+      sealHit: 0,
+      rawBodyJson: '{}',
+    });
+
+    await database.insert(snapshotBattleContext).values({
+      snapshotId,
+      ruleVersionId: null,
+      selfFormation: '天覆阵',
+      selfElement: '水',
+      formationCounterState: '无克/普通',
+      elementRelation: '无克/普通',
+      transformCardFactor: 1,
+      splitTargetCount: 1,
+      shenmuValue: 0,
+      magicResult: 0,
+      targetTemplateId: null,
+      targetName: '默认目标',
+      targetLevel: 0,
+      targetHp: 0,
+      targetDefense: 0,
+      targetMagicDefense: 0,
+      targetSpeed: 0,
+      targetMagicDefenseCultivation: 0,
+      targetElement: '',
+      targetFormation: '普通阵',
+      notesJson: '{}',
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  return { characterId, snapshotId };
 }
 
 test('updateSimulatorEquipment can save the same structured equipment plan twice', async (t) => {
@@ -239,6 +333,76 @@ test('updateSimulatorEquipment can save the same structured equipment plan twice
   );
 });
 
+test('updateSimulatorEquipment creates a rollback snapshot before equipment replacement', async (t) => {
+  await resetD1DevBindingCache();
+  await initD1ContextForDev();
+
+  const suffix = randomUUID();
+  const { userId, characterId } = await createCharacterFixture(suffix);
+
+  t.after(async () => {
+    await db()
+      .delete(user)
+      .where(eq(user.id, userId))
+      .catch(() => undefined);
+    await resetD1DevBindingCache();
+  });
+
+  const equipmentItem = {
+    id: 'weapon_src_history',
+    name: '历史快照测试杖',
+    type: 'weapon',
+    level: 90,
+    quality: '稀有',
+    price: 1280000,
+    forgeLevel: 7,
+    baseStats: {
+      damage: 300,
+      magicDamage: 120,
+    },
+    stats: {
+      damage: 300,
+      magicDamage: 120,
+    },
+  };
+
+  const bundle = await updateSimulatorEquipment(userId, {
+    equipment: [equipmentItem],
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '当前方案',
+        items: [equipmentItem],
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+    createHistorySnapshot: true,
+    historySnapshotName: 'ITest 替换前快照',
+    historySnapshotNotes: '用于覆盖实验室替换前快照写入链路',
+  });
+
+  const rollbackSnapshots = await db()
+    .select({
+      id: characterSnapshot.id,
+      name: characterSnapshot.name,
+      source: characterSnapshot.source,
+    })
+    .from(characterSnapshot)
+    .where(
+      and(
+        eq(characterSnapshot.characterId, characterId),
+        eq(characterSnapshot.snapshotType, 'history'),
+        eq(characterSnapshot.source, 'equipment_backup')
+      )
+    );
+
+  assert.ok(bundle);
+  assert.equal(bundle.equipments.length, 1);
+  assert.equal(rollbackSnapshots.length, 1);
+  assert.equal(rollbackSnapshots[0]?.name, 'ITest 替换前快照');
+});
+
 test('updateSimulatorEquipment assigns unique persisted plan ids for different users', async (t) => {
   await resetD1DevBindingCache();
   await initD1ContextForDev();
@@ -338,4 +502,121 @@ test('updateSimulatorEquipment assigns unique persisted plan ids for different u
   assert.notEqual(firstPlan.id, 'set_1');
   assert.notEqual(secondPlan.id, 'set_1');
   assert.notEqual(firstPlan.id, secondPlan.id);
+});
+
+test('updateSimulatorEquipment saves to the requested character id when a user has multiple active characters', async (t) => {
+  await resetD1DevBindingCache();
+  await initD1ContextForDev();
+
+  const suffix = randomUUID();
+  const userId = `itest_multi_user_${suffix}`;
+  const now = new Date();
+
+  await withTransientD1Retry('createMultiCharacterUserFixture', async () => {
+    await db()
+      .delete(user)
+      .where(eq(user.id, userId))
+      .catch(() => undefined);
+
+    await db().insert(user).values({
+      id: userId,
+      name: 'ITest Multi User',
+      email: `itest.multi.${suffix}@example.com`,
+      emailVerified: true,
+      createdAt: now,
+      updatedAt: now,
+      utmSource: '',
+      ip: '',
+      locale: 'zh',
+    });
+  });
+
+  const firstCharacter = await createCharacterForExistingUser({
+    userId,
+    suffix: `${suffix}_a`,
+    name: 'ITest 角色A',
+  });
+  const secondCharacter = await createCharacterForExistingUser({
+    userId,
+    suffix: `${suffix}_b`,
+    name: 'ITest 角色B',
+  });
+
+  t.after(async () => {
+    await db()
+      .delete(user)
+      .where(eq(user.id, userId))
+      .catch(() => undefined);
+    await resetD1DevBindingCache();
+  });
+
+  const payload = {
+    characterId: firstCharacter.characterId,
+    equipment: [
+      {
+        id: 'weapon_src_1',
+        name: '醉浮生',
+        type: 'weapon',
+        level: 160,
+        quality: '稀有',
+        price: 8880000,
+        forgeLevel: 12,
+        baseStats: {
+          damage: 622,
+          magicDamage: 210,
+        },
+        stats: {
+          damage: 622,
+          magicDamage: 210,
+        },
+      },
+    ],
+    equipmentSets: [
+      {
+        id: 'set_1',
+        name: '当前方案',
+        items: [
+          {
+            id: 'weapon_src_1',
+            name: '醉浮生',
+            type: 'weapon',
+            level: 160,
+            quality: '稀有',
+            price: 8880000,
+            forgeLevel: 12,
+            baseStats: {
+              damage: 622,
+              magicDamage: 210,
+            },
+            stats: {
+              damage: 622,
+              magicDamage: 210,
+            },
+          },
+        ],
+        isActive: true,
+      },
+    ],
+    activeSetIndex: 0,
+  };
+
+  const bundle = await updateSimulatorEquipment(userId, payload);
+  const firstBundle = await getSimulatorCharacterBundle(
+    userId,
+    firstCharacter.characterId
+  );
+  const secondBundle = await getSimulatorCharacterBundle(
+    userId,
+    secondCharacter.characterId
+  );
+
+  assert.ok(bundle);
+  assert.ok(firstBundle);
+  assert.ok(secondBundle);
+  assert.equal(bundle.character.id, firstCharacter.characterId);
+  assert.equal(firstBundle.character.id, firstCharacter.characterId);
+  assert.equal(firstBundle.equipments.length, 1);
+  assert.equal(firstBundle.equipments[0]?.name, '醉浮生');
+  assert.equal(secondBundle.character.id, secondCharacter.characterId);
+  assert.equal(secondBundle.equipments.length, 0);
 });

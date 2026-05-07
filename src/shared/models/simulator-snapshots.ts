@@ -704,16 +704,24 @@ export async function createEquipmentRollbackSnapshot(params: {
       updatedAt: now,
     });
 
-  await insertSnapshotState({
-    snapshotId: nextSnapshotId,
-    characterId: params.character.id,
-    profile: params.snapshotState.profile,
-    skills: params.snapshotState.skills,
-    cultivations: params.snapshotState.cultivations,
-    battleContext: params.snapshotState.battleContext,
-    equipments: params.snapshotState.equipments,
-    now,
-  });
+  try {
+    await insertSnapshotState({
+      snapshotId: nextSnapshotId,
+      characterId: params.character.id,
+      profile: params.snapshotState.profile,
+      skills: params.snapshotState.skills,
+      cultivations: params.snapshotState.cultivations,
+      battleContext: params.snapshotState.battleContext,
+      equipments: params.snapshotState.equipments,
+      now,
+    });
+  } catch (error) {
+    await db()
+      .delete(characterSnapshot)
+      .where(eq(characterSnapshot.id, nextSnapshotId))
+      .catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function findLatestEquipmentRollbackSnapshot(characterId: string) {

@@ -2807,19 +2807,31 @@ export async function updateSimulatorEquipment(
     const now = new Date();
     let nextEquipments: SimulatorEquipment[] = [];
 
+    let historySnapshotCreated = false;
+    let historySnapshotFailed = false;
+
     if (payload.createHistorySnapshot) {
-      const snapshotState = await loadSnapshotState({
-        characterId: character.id,
-        snapshotId: snapshot.id,
-      });
-      await createEquipmentRollbackSnapshot({
-        character,
-        snapshotState,
-        name: payload.historySnapshotName,
-        notes: payload.historySnapshotNotes,
-        source: payload.historySnapshotSource,
-      });
-      timer.mark('history_snapshot');
+      try {
+        const snapshotState = await loadSnapshotState({
+          characterId: character.id,
+          snapshotId: snapshot.id,
+        });
+        await createEquipmentRollbackSnapshot({
+          character,
+          snapshotState,
+          name: payload.historySnapshotName,
+          notes: payload.historySnapshotNotes,
+          source: payload.historySnapshotSource,
+        });
+        historySnapshotCreated = true;
+        timer.mark('history_snapshot');
+      } catch (error) {
+        historySnapshotFailed = true;
+        console.error(
+          'failed to create simulator equipment rollback snapshot:',
+          error
+        );
+      }
     }
 
     await deleteCurrentSnapshotEquipments({
@@ -3212,7 +3224,8 @@ export async function updateSimulatorEquipment(
     timer.finish({
       status: 'ok',
       equipmentCount: nextEquipments.length,
-      createdHistorySnapshot: Boolean(payload.createHistorySnapshot),
+      createdHistorySnapshot: historySnapshotCreated,
+      historySnapshotFailed,
       reusedSnapshotRelations: true,
       ruleCount: rules.length,
     });

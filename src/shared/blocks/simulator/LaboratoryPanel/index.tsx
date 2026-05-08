@@ -51,6 +51,7 @@ import {
   buildEquipmentSlotKey,
   resolveLaboratoryCompareSeatCardState,
 } from '@/shared/lib/simulator-equipment-plan-assignment';
+import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import { mapSimulatorInventoryLibraryItemToPendingEquipment } from '@/shared/lib/simulator-inventory-library';
 import {
   buildSimulatorInventoryEmptyStateCopy,
@@ -65,7 +66,6 @@ import {
   SIMULATOR_EQUIPMENT_OCR_IMAGE_HINT_OPTIONS,
   type SimulatorEquipmentOcrImageHint,
 } from '@/shared/lib/simulator-ocr-image-hint';
-import { getEquipmentSpotlightTags } from '@/shared/lib/simulator-equipment-spotlight';
 import {
   clearSimulatorPendingReviewRequest,
   readSimulatorPendingReviewRequest,
@@ -1121,10 +1121,21 @@ export function LaboratoryPanel() {
   };
 
   const buildNextCurrentEquipment = (equipment: Equipment) => {
+    const isSupportedSlot = (item: Equipment) => {
+      const category = resolveEquipmentCategory(item);
+      return getSimulatorSlotDefinitions(category).some((definition) =>
+        matchesSimulatorSlotDefinition(definition, item)
+      );
+    };
+    const isAccessory =
+      equipment.type === 'trinket' || equipment.type === 'jade';
+    const canTargetExactSlot =
+      !isAccessory ||
+      (equipment.slot !== undefined && isSupportedSlot(equipment));
     const existingIndex = currentEquipment.findIndex(
       (item) =>
         item.type === equipment.type &&
-        (equipment.slot === undefined || item.slot === equipment.slot)
+        (canTargetExactSlot ? item.slot === equipment.slot : true)
     );
 
     if (existingIndex === -1) {
@@ -1132,7 +1143,12 @@ export function LaboratoryPanel() {
     }
 
     return currentEquipment.map((item, index) =>
-      index === existingIndex ? equipment : item
+      index === existingIndex
+        ? {
+            ...equipment,
+            slot: isAccessory ? item.slot : equipment.slot,
+          }
+        : item
     );
   };
 
@@ -2334,11 +2350,12 @@ export function LaboratoryPanel() {
                             </div>
                           )}
 
-                          {getEquipmentSpotlightTags(item.equipment).length > 0 && (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {getEquipmentSpotlightTags(item.equipment)
-                                  .slice(0, 4)
-                                  .map((hl, idx) => (
+                          {getEquipmentSpotlightTags(item.equipment).length >
+                            0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {getEquipmentSpotlightTags(item.equipment)
+                                .slice(0, 4)
+                                .map((hl, idx) => (
                                   <span
                                     key={idx}
                                     className="rounded border border-red-500/50 px-1 py-0.5 text-[10px] text-red-400"
@@ -2346,8 +2363,8 @@ export function LaboratoryPanel() {
                                     {hl}
                                   </span>
                                 ))}
-                              </div>
-                            )}
+                            </div>
+                          )}
                         </div>
 
                         {/* 右列：价格信息 - 固定宽度容纳8位数 */}

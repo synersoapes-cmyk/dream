@@ -12,6 +12,7 @@ import {
 } from '@/shared/lib/simulator-inventory-mirror';
 
 import {
+  chunkArray,
   ensureSimulatorDbReady,
   findActiveCharacter,
   mapInventoryStatusToCandidateStatus,
@@ -36,6 +37,7 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
   currentEquipment: Array<Record<string, unknown>>;
   equipmentPlan?: SimulatorEquipmentPlanState | null;
 }) {
+  const database = db();
   const nextDescriptors = buildSimulatorInventoryMirrorDescriptors({
     characterId: params.characterId,
     currentEquipment: params.currentEquipment,
@@ -46,7 +48,7 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
   );
 
   const [existingAssets, existingEntries] = await Promise.all([
-    db()
+    database
       .select()
       .from(inventoryEquipmentAsset)
       .where(
@@ -55,7 +57,7 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
           eq(inventoryEquipmentAsset.itemType, 'equipment')
         )
       ),
-    db()
+    database
       .select()
       .from(inventoryEntry)
       .where(
@@ -83,24 +85,26 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
       .filter((entry) => managedAssetById.has(entry.itemRefId))
       .map((entry) => [entry.itemRefId, entry] as const)
   );
+  const writeQueries: any[] = [];
 
   for (const descriptor of nextDescriptors) {
     const existingAsset = managedAssetById.get(descriptor.assetId);
     if (existingAsset) {
-      await db()
-        .update(inventoryEquipmentAsset)
-        .set({
-          itemName: descriptor.itemName,
-          itemSubtype: descriptor.itemSubtype,
-          slotKey: descriptor.slotKey,
-          payloadJson: descriptor.payloadJson,
-          priceSnapshot: descriptor.price,
-        })
-        .where(eq(inventoryEquipmentAsset.id, descriptor.assetId));
+      writeQueries.push(
+        database
+          .update(inventoryEquipmentAsset)
+          .set({
+            itemName: descriptor.itemName,
+            itemSubtype: descriptor.itemSubtype,
+            slotKey: descriptor.slotKey,
+            payloadJson: descriptor.payloadJson,
+            priceSnapshot: descriptor.price,
+          })
+          .where(eq(inventoryEquipmentAsset.id, descriptor.assetId))
+      );
     } else {
-      await db()
-        .insert(inventoryEquipmentAsset)
-        .values({
+      writeQueries.push(
+        database.insert(inventoryEquipmentAsset).values({
           id: descriptor.assetId,
           characterId: params.characterId,
           itemType: 'equipment',
@@ -111,23 +115,25 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
           slotKey: descriptor.slotKey,
           payloadJson: descriptor.payloadJson,
           priceSnapshot: descriptor.price,
-        });
+        })
+      );
     }
 
     const existingEntry = managedEntryByAssetId.get(descriptor.assetId);
     if (existingEntry) {
-      await db()
-        .update(inventoryEntry)
-        .set({
-          folderKey: descriptor.folderKey,
-          price: descriptor.price,
-          status: 'active',
-        })
-        .where(eq(inventoryEntry.id, existingEntry.id));
+      writeQueries.push(
+        database
+          .update(inventoryEntry)
+          .set({
+            folderKey: descriptor.folderKey,
+            price: descriptor.price,
+            status: 'active',
+          })
+          .where(eq(inventoryEntry.id, existingEntry.id))
+      );
     } else {
-      await db()
-        .insert(inventoryEntry)
-        .values({
+      writeQueries.push(
+        database.insert(inventoryEntry).values({
           id: descriptor.entryId,
           characterId: params.characterId,
           itemType: 'equipment',
@@ -136,7 +142,8 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
           folderKey: descriptor.folderKey,
           price: descriptor.price,
           status: 'active',
-        });
+        })
+      );
     }
   }
 
@@ -147,11 +154,32 @@ export async function syncMirroredInventoryEntriesForCharacter(params: {
 
     const linkedEntry = managedEntryByAssetId.get(assetId);
     if (linkedEntry) {
-      await db().delete(inventoryEntry).where(eq(inventoryEntry.id, linkedEntry.id));
+      writeQueries.push(
+        database
+          .delete(inventoryEntry)
+          .where(eq(inventoryEntry.id, linkedEntry.id))
+      );
     }
-    await db()
-      .delete(inventoryEquipmentAsset)
-      .where(eq(inventoryEquipmentAsset.id, assetId));
+    writeQueries.push(
+      database
+        .delete(inventoryEquipmentAsset)
+        .where(eq(inventoryEquipmentAsset.id, assetId))
+    );
+  }
+
+  if (writeQueries.length === 0) {
+    return;
+  }
+
+  if (typeof database.batch === 'function') {
+    for (const chunk of chunkArray(writeQueries, 50)) {
+      await database.batch(chunk);
+    }
+    return;
+  }
+
+  for (const query of writeQueries) {
+    await query;
   }
 }
 
@@ -193,63 +221,70 @@ export async function listSimulatorInventoryLibraryItems(params: {
           eq(inventoryEntry.itemRefId, inventoryEquipmentAsset.id)
         )
         .where(and(...conditions))
-        .orderBy(desc(inventoryEntry.updatedAt), desc(inventoryEntry.createdAt));
+        .orderBy(
+          desc(inventoryEntry.updatedAt),
+          desc(inventoryEntry.createdAt)
+        );
 
-      return rows.map((row: {
-        inventory_entry: SimulatorInventoryEntry;
-        inventory_equipment_asset: SimulatorInventoryEquipmentAsset;
-      }) => {
-        const payload = parseJsonObject(row.inventory_equipment_asset.payloadJson);
-        const mirrorMeta = readSimulatorInventoryMirrorMeta(payload);
-        const nextEquipment = {
-          ...payload,
-          id:
-            typeof payload.id === 'string' && payload.id.trim().length > 0
-              ? payload.id
-              : row.inventory_equipment_asset.id,
-          name:
-            typeof payload.name === 'string' && payload.name.trim().length > 0
-              ? payload.name
-              : row.inventory_equipment_asset.itemName || '未命名装备',
-          type:
-            typeof payload.type === 'string' && payload.type.trim().length > 0
-              ? payload.type
-              : row.inventory_equipment_asset.itemSubtype || 'equipment',
-          price:
-            payload.price === undefined || payload.price === null
-              ? row.inventory_entry.price
-              : payload.price,
-        };
+      return rows.map(
+        (row: {
+          inventory_entry: SimulatorInventoryEntry;
+          inventory_equipment_asset: SimulatorInventoryEquipmentAsset;
+        }) => {
+          const payload = parseJsonObject(
+            row.inventory_equipment_asset.payloadJson
+          );
+          const mirrorMeta = readSimulatorInventoryMirrorMeta(payload);
+          const nextEquipment = {
+            ...payload,
+            id:
+              typeof payload.id === 'string' && payload.id.trim().length > 0
+                ? payload.id
+                : row.inventory_equipment_asset.id,
+            name:
+              typeof payload.name === 'string' && payload.name.trim().length > 0
+                ? payload.name
+                : row.inventory_equipment_asset.itemName || '未命名装备',
+            type:
+              typeof payload.type === 'string' && payload.type.trim().length > 0
+                ? payload.type
+                : row.inventory_equipment_asset.itemSubtype || 'equipment',
+            price:
+              payload.price === undefined || payload.price === null
+                ? row.inventory_entry.price
+                : payload.price,
+          };
 
-        return {
-          id: row.inventory_entry.id,
-          characterId: character.id,
-          entryId: row.inventory_entry.id,
-          assetId: row.inventory_equipment_asset.id,
-          folderKey: row.inventory_entry.folderKey,
-          price:
-            row.inventory_entry.price === null ||
-            row.inventory_entry.price === undefined
-              ? null
-              : Number(row.inventory_entry.price),
-          status: row.inventory_entry.status,
-          timestamp:
-            row.inventory_entry.updatedAt?.getTime?.() ??
-            row.inventory_entry.createdAt?.getTime?.() ??
-            0,
-          inventorySourceKind:
-            mirrorMeta?.sourceKind ??
-            (row.inventory_equipment_asset.sourceCandidateId
-              ? 'candidate_library'
-              : null),
-          inventorySourceLabel:
-            mirrorMeta?.sourceLabel?.trim() ||
-            (row.inventory_equipment_asset.sourceCandidateId
-              ? '候选装备库'
-              : null),
-          equipment: nextEquipment,
-        } satisfies SimulatorInventoryLibraryItem;
-      });
+          return {
+            id: row.inventory_entry.id,
+            characterId: character.id,
+            entryId: row.inventory_entry.id,
+            assetId: row.inventory_equipment_asset.id,
+            folderKey: row.inventory_entry.folderKey,
+            price:
+              row.inventory_entry.price === null ||
+              row.inventory_entry.price === undefined
+                ? null
+                : Number(row.inventory_entry.price),
+            status: row.inventory_entry.status,
+            timestamp:
+              row.inventory_entry.updatedAt?.getTime?.() ??
+              row.inventory_entry.createdAt?.getTime?.() ??
+              0,
+            inventorySourceKind:
+              mirrorMeta?.sourceKind ??
+              (row.inventory_equipment_asset.sourceCandidateId
+                ? 'candidate_library'
+                : null),
+            inventorySourceLabel:
+              mirrorMeta?.sourceLabel?.trim() ||
+              (row.inventory_equipment_asset.sourceCandidateId
+                ? '候选装备库'
+                : null),
+            equipment: nextEquipment,
+          } satisfies SimulatorInventoryLibraryItem;
+        }
+      );
     }
   );
 }
@@ -287,8 +322,7 @@ export async function updateSimulatorInventoryLibraryEntry(params: {
       }
 
       const nextStatus =
-        params.status ??
-        (existing.status as 'active' | 'sold' | 'discarded');
+        params.status ?? (existing.status as 'active' | 'sold' | 'discarded');
 
       await db()
         .update(inventoryEntry)
@@ -351,7 +385,9 @@ export async function updateSimulatorInventoryLibraryEntry(params: {
         return null;
       }
 
-      const payload = parseJsonObject(row.inventory_equipment_asset.payloadJson);
+      const payload = parseJsonObject(
+        row.inventory_equipment_asset.payloadJson
+      );
       const mirrorMeta = readSimulatorInventoryMirrorMeta(payload);
 
       return {

@@ -215,26 +215,39 @@ export function extractSimulatorEquipmentSlotNumber(
 
   const normalized = String(value).trim().toLowerCase();
 
-  if (normalized === 'ring' || normalized === 'trinket1') {
+  if (
+    normalized === 'ring' ||
+    normalized === 'trinket1' ||
+    normalized === '戒指'
+  ) {
     return 1;
   }
-  if (normalized === 'earring' || normalized === 'trinket2') {
+  if (
+    normalized === 'earring' ||
+    normalized === 'trinket2' ||
+    normalized === '耳饰'
+  ) {
     return 2;
   }
-  if (normalized === 'bracelet' || normalized === 'trinket3') {
+  if (
+    normalized === 'bracelet' ||
+    normalized === 'trinket3' ||
+    normalized === '手镯'
+  ) {
     return 3;
   }
   if (
     normalized === 'amulet' ||
     normalized === 'pendant' ||
-    normalized === 'trinket4'
+    normalized === 'trinket4' ||
+    normalized === '佩饰'
   ) {
     return 4;
   }
-  if (normalized === 'jade1') {
+  if (normalized === 'jade1' || normalized === '阳玉') {
     return 1;
   }
-  if (normalized === 'jade2') {
+  if (normalized === 'jade2' || normalized === '阴玉') {
     return 2;
   }
 
@@ -252,21 +265,24 @@ export function toSimulatorTrinketSlotKey(
   if (
     normalized === 'ring' ||
     normalized === 'trinket1' ||
-    normalized === '1'
+    normalized === '1' ||
+    normalized === '戒指'
   ) {
     return 'ring';
   }
   if (
     normalized === 'earring' ||
     normalized === 'trinket2' ||
-    normalized === '2'
+    normalized === '2' ||
+    normalized === '耳饰'
   ) {
     return 'earring';
   }
   if (
     normalized === 'bracelet' ||
     normalized === 'trinket3' ||
-    normalized === '3'
+    normalized === '3' ||
+    normalized === '手镯'
   ) {
     return 'bracelet';
   }
@@ -281,7 +297,7 @@ export function toSimulatorJadeSlotKey(
     .trim()
     .toLowerCase();
 
-  if (normalized === 'jade2' || normalized === '2') {
+  if (normalized === 'jade2' || normalized === '2' || normalized === '阴玉') {
     return 'jade2';
   }
 

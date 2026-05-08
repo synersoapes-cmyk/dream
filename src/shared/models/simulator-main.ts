@@ -8,6 +8,7 @@ import {
   characterProfile,
   characterSkill,
   characterSnapshot,
+  characterStarResonance,
   equipmentAttr,
   equipmentBuild,
   equipmentItem,
@@ -27,7 +28,6 @@ import {
   ornamentSubAttr,
   ruleAttribute,
   ruleVersion,
-  characterStarResonance,
   snapshotBattleContext,
   snapshotEquipmentSlot,
   snapshotJadeSlot,
@@ -40,9 +40,7 @@ import {
 import { getUuid } from '@/shared/lib/hash';
 import { createPerfTimer } from '@/shared/lib/perf';
 import { inferBaseHpSource } from '@/shared/lib/simulator-base-hp';
-import {
-  resolveBattleContextDerivedFields,
-} from '@/shared/lib/simulator-battle-context';
+import { resolveBattleContextDerivedFields } from '@/shared/lib/simulator-battle-context';
 import {
   countEquipmentGemLevelTotal,
   parseEquipmentGemstones,
@@ -78,6 +76,7 @@ import {
   toPersistedJadeSlot,
   toPersistedOrnamentSlot,
 } from './simulator-equipment-persistence';
+import { syncMirroredInventoryEntriesForCharacter } from './simulator-inventory';
 import { buildSimulatorLabSessionBundle } from './simulator-mappers';
 import {
   buildEquipmentNotesMeta,
@@ -96,7 +95,6 @@ import {
   insertSnapshotState,
   type PersistedSnapshotState,
 } from './simulator-snapshots';
-import { syncMirroredInventoryEntriesForCharacter } from './simulator-inventory';
 import type {
   AdminBattleTargetTemplateItem,
   AdminSimulatorInventoryEntryItem,
@@ -111,8 +109,8 @@ import type {
   SimulatorCandidateEquipmentItem,
   SimulatorCharacter,
   SimulatorCharacterBundle,
-  SimulatorCharacterSummary,
   SimulatorCharacterStarResonance,
+  SimulatorCharacterSummary,
   SimulatorCultivation,
   SimulatorEquipment,
   SimulatorEquipmentAttr,
@@ -137,13 +135,13 @@ import type {
   SimulatorRollbackSnapshotSummary,
   SimulatorRule,
   SimulatorSkill,
-  SimulatorStarResonanceRule,
-  SimulatorStarStoneAttr,
-  SimulatorStarStoneItem,
   SimulatorSnapshot,
   SimulatorSnapshotJadeSlot,
   SimulatorSnapshotOrnamentSlot,
   SimulatorSnapshotSlot,
+  SimulatorStarResonanceRule,
+  SimulatorStarStoneAttr,
+  SimulatorStarStoneItem,
 } from './simulator-types';
 
 export { resolveLabSessionEquipmentReferenceId } from './simulator-payload';
@@ -335,7 +333,7 @@ async function loadActiveSimulatorContext(
   }
 
   const includeEquipments =
-    typeof options === 'string' ? true : options?.includeEquipments ?? true;
+    typeof options === 'string' ? true : (options?.includeEquipments ?? true);
   const [profileRows, skills, cultivations, battleContextRows, equipments] =
     await Promise.all([
       db()
@@ -347,7 +345,10 @@ async function loadActiveSimulatorContext(
         .select()
         .from(characterSkill)
         .where(eq(characterSkill.snapshotId, snapshot.id))
-        .orderBy(desc(characterSkill.finalLevel), asc(characterSkill.skillName)),
+        .orderBy(
+          desc(characterSkill.finalLevel),
+          asc(characterSkill.skillName)
+        ),
       db()
         .select()
         .from(characterCultivation)
@@ -414,7 +415,10 @@ async function resolveSimulatorBundleDependencies(params: {
 async function writeSnapshotBattleContext(params: {
   snapshotId: string;
   existingContext: SimulatorBattleContext | null;
-  nextValue: Omit<SimulatorBattleContext, 'snapshotId' | 'createdAt' | 'updatedAt'>;
+  nextValue: Omit<
+    SimulatorBattleContext,
+    'snapshotId' | 'createdAt' | 'updatedAt'
+  >;
   now: Date;
 }) {
   const nextBattleContext: SimulatorBattleContext = params.existingContext
@@ -492,7 +496,14 @@ function sanitizeEquipmentPlanNotes(
             ? set.name.trim()
             : `配置${index + 1}`,
         items: Array.isArray(set.items)
-          ? set.items.filter(isRecord).map((item) => ({ ...item }))
+          ? normalizeEquipmentPayload(
+              set.items.filter(isRecord).map((item) => ({ ...item })) as Array<
+                Record<string, unknown> & {
+                  type: string;
+                  slot?: number | string;
+                }
+              >
+            )
           : [],
         isActive: false,
       }))
@@ -546,7 +557,14 @@ function syncEquipmentPlanNotes(
       index === activeSetIndex
         ? equipment.map((item) => ({ ...item }))
         : Array.isArray(set.items)
-          ? set.items.filter(isRecord).map((item) => ({ ...item }))
+          ? normalizeEquipmentPayload(
+              set.items.filter(isRecord).map((item) => ({ ...item })) as Array<
+                Record<string, unknown> & {
+                  type: string;
+                  slot?: number | string;
+                }
+              >
+            )
           : [],
     isActive: index === activeSetIndex,
   }));
@@ -670,14 +688,14 @@ function buildBattleContextNotesJson(
     specialMagicDamageReductionFactor?: unknown;
   }
 ) {
-  const notes = parseJsonObject(removeEquipmentPlanFromNotesJson(currentNotesJson));
+  const notes = parseJsonObject(
+    removeEquipmentPlanFromNotesJson(currentNotesJson)
+  );
 
   if (patch.manualTargets !== undefined) {
     const manualTargets = patch.manualTargets
       .map(toPersistedManualTarget)
-      .filter(
-        (item): item is Record<string, unknown> => item !== null
-      );
+      .filter((item): item is Record<string, unknown> => item !== null);
     notes[MANUAL_TARGETS_NOTES_KEY] = manualTargets;
   }
 
@@ -710,10 +728,7 @@ function buildBattleContextNotesJson(
 
   if (patch.specialMagicDamageReductionFactor !== undefined) {
     notes[SPECIAL_MAGIC_DAMAGE_REDUCTION_FACTOR_NOTES_KEY] =
-      sanitizeDamageReductionFactor(
-        patch.specialMagicDamageReductionFactor,
-        1
-      );
+      sanitizeDamageReductionFactor(patch.specialMagicDamageReductionFactor, 1);
   }
 
   return JSON.stringify(notes);
@@ -737,18 +752,21 @@ function buildEquipmentPlanItemSlotKey(
   sort: number
 ) {
   const type = String(item.type ?? '').trim();
+
+  if (type) {
+    return toEquipmentSlotValue({
+      type,
+      slot:
+        typeof item.slot === 'number' || typeof item.slot === 'string'
+          ? item.slot
+          : undefined,
+    });
+  }
+
   const slot =
     item.slot === undefined || item.slot === null
       ? ''
       : String(item.slot).trim();
-
-  if (type && slot) {
-    return `${type}:${slot}`;
-  }
-
-  if (type) {
-    return type;
-  }
 
   if (slot) {
     return slot;
@@ -1121,9 +1139,15 @@ async function loadPersistedBundleEquipments(params: {
   const primaryAttrsByEquipmentId = new Map<string, SimulatorEquipmentAttr[]>();
   const ornamentAttrsById = new Map<string, SimulatorOrnamentSubAttrRow[]>();
   const jadeAttrsById = new Map<string, SimulatorJadeAttrRow[]>();
-  const starStoneRowsByEquipmentId = new Map<string, SimulatorStarStoneItem[]>();
+  const starStoneRowsByEquipmentId = new Map<
+    string,
+    SimulatorStarStoneItem[]
+  >();
   const starStoneAttrsById = new Map<string, SimulatorStarStoneAttr[]>();
-  const starResonanceBySlot = new Map<string, SimulatorCharacterStarResonance>();
+  const starResonanceBySlot = new Map<
+    string,
+    SimulatorCharacterStarResonance
+  >();
   const starResonanceRuleById = new Map<string, SimulatorStarResonanceRule>(
     starResonanceRuleRows.map((row) => [row.id, row] as const)
   );
@@ -1173,7 +1197,8 @@ async function loadPersistedBundleEquipments(params: {
     const primaryBuild = buildByEquipmentId.get(item.id) as
       | SimulatorEquipmentBuild
       | undefined;
-    const equipmentStarStoneRows = starStoneRowsByEquipmentId.get(item.id) ?? [];
+    const equipmentStarStoneRows =
+      starStoneRowsByEquipmentId.get(item.id) ?? [];
     const mergedNotesJson = mergeStarStateIntoNotesJson({
       notesJson: primaryBuild?.notesJson ?? '{}',
       starStoneRows: equipmentStarStoneRows,
@@ -1194,7 +1219,7 @@ async function loadPersistedBundleEquipments(params: {
           )?.slot ?? item.slot;
         const resonance = starResonanceBySlot.get(slotKey) ?? null;
         return resonance?.ruleId
-          ? starResonanceRuleById.get(resonance.ruleId) ?? null
+          ? (starResonanceRuleById.get(resonance.ruleId) ?? null)
           : null;
       })(),
     });
@@ -1488,7 +1513,9 @@ function getDefaultCharacterName(userName: string | null | undefined) {
 }
 
 function normalizeCharacterName(name: string | null | undefined) {
-  return String(name || '').trim().slice(0, 40);
+  return String(name || '')
+    .trim()
+    .slice(0, 40);
 }
 
 async function findActiveCharacterByName(userId: string, name: string) {
@@ -1535,7 +1562,10 @@ export async function listSimulatorCharacters(
   });
 }
 
-export async function selectSimulatorCharacter(userId: string, characterId: string) {
+export async function selectSimulatorCharacter(
+  userId: string,
+  characterId: string
+) {
   await ensureSimulatorDbReady();
 
   return withTransientD1Retry('selectSimulatorCharacter', async () => {
@@ -1568,12 +1598,18 @@ export async function renameSimulatorCharacter(params: {
   }
 
   return withTransientD1Retry('renameSimulatorCharacter', async () => {
-    const character = await findActiveCharacter(params.userId, params.characterId);
+    const character = await findActiveCharacter(
+      params.userId,
+      params.characterId
+    );
     if (!character) {
       return null;
     }
 
-    const existing = await findActiveCharacterByName(params.userId, normalizedName);
+    const existing = await findActiveCharacterByName(
+      params.userId,
+      normalizedName
+    );
     if (existing && existing.id !== params.characterId) {
       throw new Error('名称已存在');
     }
@@ -1604,7 +1640,10 @@ export async function deleteSimulatorCharacter(params: {
   await ensureSimulatorDbReady();
 
   return withTransientD1Retry('deleteSimulatorCharacter', async () => {
-    const character = await findActiveCharacter(params.userId, params.characterId);
+    const character = await findActiveCharacter(
+      params.userId,
+      params.characterId
+    );
     if (!character) {
       return null;
     }
@@ -1664,7 +1703,10 @@ export async function createSimulatorCharacter(params: {
     throw new Error('character name is required');
   }
 
-  const existing = await findActiveCharacterByName(params.userId, normalizedName);
+  const existing = await findActiveCharacterByName(
+    params.userId,
+    normalizedName
+  );
   if (existing) {
     throw new Error('名称已存在');
   }
@@ -2188,8 +2230,8 @@ export async function updateSimulatorProfile(
     payload.meridianConfig ?? currentRawBody.meridianConfig
   );
   const currentBodyStrength =
-    cultivations.find((item) => item.cultivationType === 'bodyStrength')?.level ??
-    0;
+    cultivations.find((item) => item.cultivationType === 'bodyStrength')
+      ?.level ?? 0;
   const nextBaseHp =
     Number.isFinite(payload.baseHp) && Number(payload.baseHp) > 0
       ? Number(payload.baseHp)
@@ -2220,13 +2262,13 @@ export async function updateSimulatorProfile(
       payload.elementalMastery ?? currentRawBody.elementalMastery,
     block: payload.block ?? currentRawBody.block,
     antiCritLevel: payload.antiCritLevel ?? currentRawBody.antiCritLevel,
-    sealResistLevel:
-      payload.sealResistLevel ?? currentRawBody.sealResistLevel,
+    sealResistLevel: payload.sealResistLevel ?? currentRawBody.sealResistLevel,
     elementalResistance:
       payload.elementalResistance ?? currentRawBody.elementalResistance,
     dodge: payload.dodge,
     meridianConfig: nextMeridianConfig,
-    artifactConfig: payload.artifactConfig ?? currentRawBody.artifactConfig ?? null,
+    artifactConfig:
+      payload.artifactConfig ?? currentRawBody.artifactConfig ?? null,
   });
   const nextCharacter: SimulatorCharacter = {
     ...character,
@@ -2527,7 +2569,8 @@ export async function updateSimulatorBattleContext(
   timer.mark('rules');
   const derivedBattleContext = resolveBattleContextDerivedFields({
     selfFormation: payload.selfFormation || existingContext?.selfFormation,
-    targetFormation: payload.targetFormation || existingContext?.targetFormation,
+    targetFormation:
+      payload.targetFormation || existingContext?.targetFormation,
     selfElement: payload.selfElement || existingContext?.selfElement,
     targetElement: payload.targetElement || existingContext?.targetElement,
   });
@@ -2783,12 +2826,15 @@ export async function updateSimulatorEquipment(
       cultivations,
       battleContext: existingContext,
     } = context;
-    const { targetTemplate, rules, equipmentPlan: existingPlanNotes } =
-      await resolveSimulatorBundleDependencies({
-        character,
-        profile,
-        battleContext: existingContext,
-      });
+    const {
+      targetTemplate,
+      rules,
+      equipmentPlan: existingPlanNotes,
+    } = await resolveSimulatorBundleDependencies({
+      character,
+      profile,
+      battleContext: existingContext,
+    });
     timer.mark('rules');
 
     const nextPlan = syncEquipmentPlanNotes(
@@ -2798,7 +2844,7 @@ export async function updateSimulatorEquipment(
         activeSetIndex:
           payload.activeSetIndex ?? existingPlanNotes?.activeSetIndex ?? 0,
       }),
-      payload.equipment.filter(isRecord).map((item) => ({ ...item }))
+      normalizedEquipment.map((item) => ({ ...item }))
     );
     const nextNotesJson = removeEquipmentPlanFromNotesJson(
       existingContext?.notesJson
@@ -3016,10 +3062,7 @@ export async function updateSimulatorEquipment(
 
         const nextPrimaryBuild: SimulatorEquipmentBuild = {
           equipmentId,
-          holeCount: Math.max(
-            0,
-            Math.floor(Number(item.luckyHoles ?? 0) || 0)
-          ),
+          holeCount: Math.max(0, Math.floor(Number(item.luckyHoles ?? 0) || 0)),
           gemLevelTotal: countEquipmentGemLevelTotal(
             parseEquipmentGemstones({
               gemstones: item.gemstones,

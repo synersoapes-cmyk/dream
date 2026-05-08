@@ -1,14 +1,20 @@
+import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
+
+import {
+  extractSimulatorEquipmentSlotNumber,
+  toSimulatorJadeSlotKey,
+  toSimulatorTrinketSlotKey,
+} from '@/shared/lib/simulator-equipment';
 import {
   normalizeEquipmentRuneStoneSetNames,
   normalizeEquipmentRuneStoneSets,
   parseEquipmentGemstones,
   summarizeEquipmentGemstones,
 } from '@/shared/lib/simulator-equipment-meta';
-import { LABORATORY_MAX_COMPARE_SEATS } from '@/features/simulator/utils/simulatorExperimentSeats';
 
 type EquipmentSlotLike = {
   type: string;
-  slot?: number;
+  slot?: number | string;
 };
 
 type EquipmentStatsLike = {
@@ -65,11 +71,17 @@ function buildLabSeatDefaultName(seatId: string, index: number) {
 
 export function toEquipmentSlotValue(item: EquipmentSlotLike) {
   if (item.type === 'trinket') {
-    return `trinket${item.slot ?? 1}`;
+    const slot = extractSimulatorEquipmentSlotNumber(
+      String(item.slot ?? item.type)
+    );
+    return toSimulatorTrinketSlotKey(slot ?? 1);
   }
 
   if (item.type === 'jade') {
-    return `jade${item.slot ?? 1}`;
+    const slot = extractSimulatorEquipmentSlotNumber(
+      String(item.slot ?? item.type)
+    );
+    return toSimulatorJadeSlotKey(slot ?? 1);
   }
 
   if (item.type === 'runeStone' || item.type === 'rune') {
@@ -79,17 +91,40 @@ export function toEquipmentSlotValue(item: EquipmentSlotLike) {
   return item.type;
 }
 
+function getEquipmentSlotPriority(item: EquipmentSlotLike) {
+  if (item.type !== 'trinket' && item.type !== 'jade') {
+    return 2;
+  }
+
+  const slot = extractSimulatorEquipmentSlotNumber(
+    String(item.slot ?? item.type)
+  );
+
+  if (item.type === 'trinket') {
+    return slot && slot >= 1 && slot <= 4 ? 2 : 0;
+  }
+
+  return slot && slot >= 1 && slot <= 2 ? 2 : 0;
+}
+
 export function normalizeEquipmentPayload<T extends EquipmentSlotLike>(
   equipment: T[]
 ): T[] {
-  const deduped = new Map<string, T>();
+  const deduped = new Map<string, { item: T; priority: number }>();
 
   for (const item of equipment) {
     const slotKey = toEquipmentSlotValue(item);
-    deduped.set(slotKey, item);
+    const priority = getEquipmentSlotPriority(item);
+    const existing = deduped.get(slotKey);
+
+    if (existing && existing.priority > priority) {
+      continue;
+    }
+
+    deduped.set(slotKey, { item, priority });
   }
 
-  return Array.from(deduped.values());
+  return Array.from(deduped.values()).map(({ item }) => item);
 }
 
 export function toEquipmentAttrRows(item: EquipmentStatsLike) {
@@ -157,7 +192,8 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
     fallbackLevel: item.forgeLevel,
   });
   const gemstoneSummary =
-    toOptionalEquipmentString(item.gemstone) ?? summarizeEquipmentGemstones(gemstones);
+    toOptionalEquipmentString(item.gemstone) ??
+    summarizeEquipmentGemstones(gemstones);
 
   if (crossServerFee !== undefined) {
     meta.crossServerFee = crossServerFee;
@@ -189,7 +225,9 @@ export function buildEquipmentNotesMeta(item: EquipmentMetadataLike) {
     typeof item.starAlignmentConfig === 'object' &&
     !Array.isArray(item.starAlignmentConfig)
   ) {
-    meta.starAlignmentConfig = cloneEquipmentJsonValue(item.starAlignmentConfig);
+    meta.starAlignmentConfig = cloneEquipmentJsonValue(
+      item.starAlignmentConfig
+    );
   }
 
   for (const key of [
@@ -265,12 +303,8 @@ export function normalizeLabSeatPayload(
             : buildLabSeatDefaultName(seatId, compareSeats.length))
       ),
       isSample,
-      inheritGemstones: isSample
-        ? false
-        : seat?.inheritGemstones !== false,
-      inheritRuneStones: isSample
-        ? false
-        : seat?.inheritRuneStones !== false,
+      inheritGemstones: isSample ? false : seat?.inheritGemstones !== false,
+      inheritRuneStones: isSample ? false : seat?.inheritRuneStones !== false,
       equipment: equipment as Array<Record<string, unknown>>,
     };
 

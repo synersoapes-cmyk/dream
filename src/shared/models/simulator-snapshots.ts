@@ -572,6 +572,19 @@ async function deleteRowsByIdInChunks(
   }
 }
 
+async function selectRowsBySnapshotIdsInChunks<T>(params: {
+  snapshotIds: string[];
+  selectChunk: (chunk: string[]) => Promise<T[]>;
+}) {
+  const rows: T[] = [];
+
+  for (const chunk of chunkArray(params.snapshotIds)) {
+    rows.push(...(await params.selectChunk(chunk)));
+  }
+
+  return rows;
+}
+
 export async function deleteCurrentSnapshotEquipments(params: {
   characterId: string;
   snapshotId: string;
@@ -603,22 +616,30 @@ export async function deleteCurrentSnapshotEquipments(params: {
   const [protectedEquipmentRows, protectedOrnamentRows, protectedJadeRows] =
     protectedSnapshotIds.length
       ? await Promise.all([
-          database
-            .select({ equipmentId: snapshotEquipmentSlot.equipmentId })
-            .from(snapshotEquipmentSlot)
-            .where(
-              inArray(snapshotEquipmentSlot.snapshotId, protectedSnapshotIds)
-            ),
-          database
-            .select({ ornamentId: snapshotOrnamentSlot.ornamentId })
-            .from(snapshotOrnamentSlot)
-            .where(
-              inArray(snapshotOrnamentSlot.snapshotId, protectedSnapshotIds)
-            ),
-          database
-            .select({ jadeId: snapshotJadeSlot.jadeId })
-            .from(snapshotJadeSlot)
-            .where(inArray(snapshotJadeSlot.snapshotId, protectedSnapshotIds)),
+          selectRowsBySnapshotIdsInChunks<{ equipmentId: string }>({
+            snapshotIds: protectedSnapshotIds,
+            selectChunk: (chunk) =>
+              database
+                .select({ equipmentId: snapshotEquipmentSlot.equipmentId })
+                .from(snapshotEquipmentSlot)
+                .where(inArray(snapshotEquipmentSlot.snapshotId, chunk)),
+          }),
+          selectRowsBySnapshotIdsInChunks<{ ornamentId: string }>({
+            snapshotIds: protectedSnapshotIds,
+            selectChunk: (chunk) =>
+              database
+                .select({ ornamentId: snapshotOrnamentSlot.ornamentId })
+                .from(snapshotOrnamentSlot)
+                .where(inArray(snapshotOrnamentSlot.snapshotId, chunk)),
+          }),
+          selectRowsBySnapshotIdsInChunks<{ jadeId: string }>({
+            snapshotIds: protectedSnapshotIds,
+            selectChunk: (chunk) =>
+              database
+                .select({ jadeId: snapshotJadeSlot.jadeId })
+                .from(snapshotJadeSlot)
+                .where(inArray(snapshotJadeSlot.snapshotId, chunk)),
+          }),
         ])
       : [[], [], []];
   const protectedEquipmentIds = new Set(

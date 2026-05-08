@@ -1,87 +1,57 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildOrnamentSetEffectRows } from '@/shared/models/simulator-equipment-persistence';
+import {
+  buildStarStonePersistenceRows,
+  mergeStarStateIntoNotesJson,
+} from './simulator-equipment-persistence';
 
-test('buildOrnamentSetEffectRows requires four matching trinkets before activation', () => {
-  const rows = buildOrnamentSetEffectRows({
+test('buildStarStonePersistenceRows does not persist fake star alignment config ids as rule ids', () => {
+  const rows = buildStarStonePersistenceRows({
     snapshotId: 'snapshot_1',
-    equipments: [
-      {
-        id: 'trinket_1',
-        type: 'trinket',
-        slot: 1,
-        level: 80,
-        setName: '健步如飞',
+    characterId: 'character_1',
+    equipmentId: 'equipment_1',
+    slot: 'necklace',
+    notesJson: JSON.stringify({
+      starAlignment: '魔力 +2',
+      starAlignmentConfig: {
+        id: 'ui_config_only_id',
+        label: '魔力 +2',
+        attrType: 'magic',
+        attrValue: 2,
       },
-      {
-        id: 'trinket_2',
-        type: 'trinket',
-        slot: 2,
-        level: 80,
-        setName: '健步如飞',
-      },
-      {
-        id: 'trinket_3',
-        type: 'trinket',
-        slot: 3,
-        level: 80,
-        setName: '健步如飞',
-      },
-    ],
+    }),
+    availableRules: [],
+    createdAt: new Date('2026-05-08T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-08T00:00:00.000Z'),
   });
 
-  assert.equal(rows.length, 0);
+  assert.equal(rows.resonanceRow?.ruleId, null);
+  assert.equal(rows.resonanceRow?.matched, false);
 });
 
-test('buildOrnamentSetEffectRows activates only when four matching trinkets reach tier threshold', () => {
-  const rows = buildOrnamentSetEffectRows({
-    snapshotId: 'snapshot_1',
-    equipments: [
-      {
-        id: 'trinket_1',
-        type: 'trinket',
-        slot: 1,
-        level: 80,
-        setName: '健步如飞',
-      },
-      {
-        id: 'trinket_2',
-        type: 'trinket',
-        slot: 2,
-        level: 80,
-        setName: '健步如飞',
-      },
-      {
-        id: 'trinket_3',
-        type: 'trinket',
-        slot: 3,
-        level: 80,
-        setName: '健步如飞',
-      },
-      {
-        id: 'trinket_4',
-        type: 'trinket',
-        slot: 4,
-        level: 80,
-        setName: '健步如飞',
-      },
-    ],
+test('mergeStarStateIntoNotesJson avoids synthesizing fake star alignment config ids', () => {
+  const nextNotesJson = mergeStarStateIntoNotesJson({
+    notesJson: JSON.stringify({ starAlignment: '魔力 +2' }),
+    starStoneRows: [],
+    starStoneAttrRows: [],
+    resonanceRow: {
+      id: 'resonance_row_1',
+      snapshotId: 'snapshot_1',
+      slot: 'necklace',
+      ruleId: null,
+      matched: false,
+      bonusJson: JSON.stringify({
+        label: '魔力 +2',
+        attrType: 'magic',
+        attrValue: 2,
+      }),
+      createdAt: new Date('2026-05-08T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-08T00:00:00.000Z'),
+    },
+    resonanceRule: null,
   });
 
-  assert.equal(rows.length, 1);
-  const row = rows[0];
-  if (!row) {
-    throw new Error('expected ornament set effect row to exist');
-  }
-  assert.equal(row.setName, '健步如飞');
-  assert.equal(row.totalLevel, 320);
-  assert.equal(row.tier, 32);
-
-  const effect = JSON.parse(row.effectJson ?? '{}') as {
-    slotCount?: number;
-    slots?: string[];
-  };
-  assert.equal(effect.slotCount, 4);
-  assert.deepEqual(effect.slots, ['1', '2', '3', '4']);
+  assert.equal(nextNotesJson.includes('starAlignmentConfig'), false);
+  assert.equal(nextNotesJson.includes('starAlignment'), true);
 });

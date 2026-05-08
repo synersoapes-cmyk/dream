@@ -207,6 +207,60 @@ function parseStructuredStarAlignmentConfig(value: unknown) {
   };
 }
 
+function findStarResonanceRuleByStructuredConfig(params: {
+  slot: string;
+  config: ReturnType<typeof parseStructuredStarAlignmentConfig>;
+  availableRules: SimulatorStarResonanceRule[];
+}) {
+  const { config } = params;
+  if (!config) {
+    return null;
+  }
+
+  const normalizedConfigColors = Array.isArray(config.colors)
+    ? config.colors
+        .map((item) => normalizeRuneColor(item))
+        .filter((item): item is string => Boolean(item))
+    : [];
+
+  return (
+    params.availableRules.find((rule) => {
+      if (rule.slot !== params.slot) {
+        return false;
+      }
+
+      if (rule.id === config.id) {
+        return true;
+      }
+
+      if (
+        typeof config.comboName === 'string' &&
+        config.comboName.trim().length > 0 &&
+        rule.comboName.trim() !== config.comboName.trim()
+      ) {
+        return false;
+      }
+
+      if (rule.bonusAttrType !== config.attrType) {
+        return false;
+      }
+
+      if (Number(rule.bonusAttrValue ?? 0) !== Number(config.attrValue ?? 0)) {
+        return false;
+      }
+
+      if (normalizedConfigColors.length === 0) {
+        return false;
+      }
+
+      return matchesRuneColorsIgnoringOrder(
+        requiredColorsFromRule(rule),
+        normalizedConfigColors
+      );
+    }) ?? null
+  );
+}
+
 function requiredColorsFromRule(
   rule: Pick<SimulatorStarResonanceRule, 'requiredColorsJson'>
 ) {
@@ -374,26 +428,6 @@ export function mergeStarStateIntoNotesJson(params: {
         comboName: params.resonanceRule.comboName,
         colors: requiredColorsFromRule(params.resonanceRule),
       };
-    } else if (
-      typeof bonus.label === 'string' &&
-      bonus.label.trim() &&
-      typeof bonus.attrType === 'string' &&
-      bonus.attrType.trim()
-    ) {
-      notes.starAlignmentConfig = {
-        id:
-          typeof params.resonanceRow.ruleId === 'string' &&
-          params.resonanceRow.ruleId.trim()
-            ? params.resonanceRow.ruleId.trim()
-            : params.resonanceRow.id,
-        label: bonus.label.trim(),
-        attrType: bonus.attrType.trim(),
-        attrValue: Number(bonus.attrValue ?? 0),
-        comboName:
-          typeof bonus.comboName === 'string' && bonus.comboName.trim()
-            ? bonus.comboName.trim()
-            : undefined,
-      };
     }
   }
 
@@ -416,6 +450,13 @@ export function buildStarStonePersistenceRows(params: {
   );
   const structuredStarAlignment = parseStructuredStarAlignmentConfig(
     notes.starAlignmentConfig
+  );
+  const matchedStructuredStarAlignmentRule = findStarResonanceRuleByStructuredConfig(
+    {
+      slot: params.slot,
+      config: structuredStarAlignment,
+      availableRules: params.availableRules,
+    }
   );
   const starPosition =
     structuredStarPosition ?? parseStarBonus(notes.starPosition, STAR_POSITION_ATTR_ALIAS);
@@ -470,7 +511,7 @@ export function buildStarStonePersistenceRows(params: {
       id: getUuid(),
       snapshotId: params.snapshotId,
       slot: params.slot,
-      ruleId: structuredStarAlignment.id,
+      ruleId: matchedStructuredStarAlignmentRule?.id ?? null,
       matched: isStrictStarAlignmentConfigActive({
         notes,
         config: structuredStarAlignment,
